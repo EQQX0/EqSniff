@@ -1,5 +1,7 @@
 mod capture;
 mod filters;
+mod geo;
+mod update;
 mod settings;
 mod traffic;
 
@@ -17,6 +19,8 @@ pub fn run() {
             filters::save_filters,
             filters::get_store,
             filters::save_store,
+            geo::geo_lookup,
+            update::check_update,
             traffic::traffic_status,
             traffic::traffic_limit,
             traffic::traffic_stop,

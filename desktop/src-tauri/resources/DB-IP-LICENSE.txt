@@ -1,0 +1,10 @@
+country.mmdb is the "IP to Country Lite" database from DB-IP (https://db-ip.com), edition 2026-11.
+
+It is licensed under the Creative Commons Attribution 4.0 International License
+(https://creativecommons.org/licenses/by/4.0/).
+
+Attribution required: "IP Geolocation by DB-IP" (https://db-ip.com).
+
+The app shows this credit in Settings. If you redistribute the app, keep the credit and this file.
+To refresh the data, download the new monthly edition of the free country database from db-ip.com,
+unpack it, and replace country.mmdb.

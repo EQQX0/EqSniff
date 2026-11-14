@@ -30,6 +30,10 @@ const FAQ: { q: string; a: string }[] = [
     a: "It caps how fast this computer sends data, using a Windows speed policy, so you can test your own apps on a slow link. It cannot affect other devices. Press Ctrl+Shift+X or Stop limiting to remove it at once.",
   },
   {
+    q: "What does the Country column show?",
+    a: "The country of the computer on the other end of a connection, looked up in a database built into the app. Nothing is sent anywhere, and it shows the country only. Many sites use servers in other countries, so treat it as a rough guide.",
+  },
+  {
     q: "Where are my files?",
     a: "Settings shows the data folder. Deleting that folder removes everything the app saved.",
   },

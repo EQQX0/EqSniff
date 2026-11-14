@@ -9,7 +9,7 @@ Enable/disable individual filters,filtering,must,yes,partial,One filter is chose
 Global capture-level filter (protocol/length/port/hex),filtering,should,yes,no,Not built. Filters change the view only; capture always records everything on the adapter.
 Export captures to CSV/JSON/TXT,export,should,yes,partial,"CSV, JSON and TXT built and tested; formula-safe CSV. Save dialog not seen in the real window."
 Copy row/cell/table to clipboard,export,should,yes,no,Not built. Never scoped.
-Traffic Control: drop/lag/throttle/reorder/duplicate rules on own device traffic,traffic-control,must,yes,partial,"Only an outgoing speed cap (Windows QoS, IPv4). No drop, lag, reorder or duplicate: those need a kernel driver (WinDivert). Success path needs administrator; only the non-admin error path was tested."
+Traffic Control: drop/lag/throttle/reorder/duplicate rules on own device traffic,traffic-control,must,yes,partial,"Only an outgoing speed cap (Windows QoS, IPv4). The driver route (WinDivert) was blocked by Windows Defender as potentially unwanted software, so drop, lag, reorder and duplicate are not built."
 Per-rule probability and burst scheduling,traffic-control,should,yes,no,Needs the driver-based engine.
 Live traffic-control stats + emergency stop,traffic-control,must,yes,partial,"Emergency stop built (Ctrl+Shift+X, red bar, removal on exit). No live stats."
 Packet Tester: craft/send packets to a device you own,testing,skip,yes,skip,Out by decision 2026-11-15.
@@ -25,7 +25,7 @@ Offline help and FAQ,support,must,yes,yes,"Eight questions, bundled, works offli
 Discord Rich Presence,integrations,skip,yes,skip,Out by decision 2026-11-15.
 One-time purchase + optional add-on pricing model,billing,skip,yes,skip,Out. The app is free.
 License check / device activation limit,billing,skip,yes,skip,Out. The app is free.
-Offline GeoIP lookup (bundled database),discovery,must,yes,no,Not built. No legally bundled database available and none downloaded without your permission.
+Offline GeoIP lookup (bundled database),discovery,must,yes,yes,"Country only, from a DB-IP Lite database built into the app (CC BY 4.0, credit shown in Settings). Verified in a live capture."
 PSN account link + auto-filter switching by detected game,integrations,could,yes,no,Maybe-later: only if optional accounts return.
 "Xbox account link (gamertag display only, no messages/party actions)",integrations,could,yes,no,Maybe-later: only if optional accounts return.
 Device labels (local),account,should,yes,yes,"Names for local devices, saved on this computer."
@@ -41,8 +41,8 @@ Cloud filters / community filter library,filtering,skip,yes,skip,"the original's
 Packet Tester sending arbitrary crafted packets to third-party IPs,testing,skip,yes,skip,only the own-device version is kept
 Filter import/export as files,filtering,must,no,partial,Built (JSON file with validation). The file picker was not exercised in the real window.
 "All data local, no account",platform,must,no,yes,"Settings, filters and labels in the app data folder. No sign-in, no outbound calls."
-"Update check (only outbound call, can be turned off)",platform,must,yes,partial,Off switch built and saved. The check itself is not built: there is no update server.
-Signed installer and portable zip,platform,must,yes,partial,"Portable zip built and smoke-tested. No installer, no code signing."
+"Update check (only outbound call, can be turned off)",platform,must,yes,yes,Built and tested against a local stand-in server. Off switch sends no request. Notice only. Cannot work for the public until update.json is published at a public address.
+Signed installer and portable zip,platform,must,yes,partial,"Portable zip and NSIS installer built; portable exe smoke-tested, installer not run. Not code-signed (needs a paid certificate)."
 pcap import/export,export,should,no,no,Not built.
 Usage and crash reporting,platform,skip,no,skip,Moved to Out 2026-11-15: it conflicts with the local-only rule.
 macOS and Linux builds,platform,skip,no,skip,Out by decision 2026-11-15.

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, type Adapter, type PacketRow } from "@/lib/api";
+import { api, type Adapter, type Country, type PacketRow } from "@/lib/api";
 import { matches, type Filter } from "@/lib/filters";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -37,6 +37,8 @@ export function CaptureView({ filters, activeId, onActiveId, onSeen }: Props) {
   const [replayBusy, setReplayBusy] = useState(false);
   const [replayError, setReplayError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [geo, setGeo] = useState<Record<string, Country>>({});
+  const asked = useRef(new Set<string>());
   const tableEnd = useRef<HTMLDivElement>(null);
   const active = filters.find((f) => f.id === activeId);
   const shown = useMemo(() => (active ? rows.filter((r) => matches(active, r)) : rows), [rows, active]);
@@ -66,6 +68,15 @@ export function CaptureView({ filters, activeId, onActiveId, onSeen }: Props) {
         if (cancelled) return;
         if (poll.rows.length > 0) {
           onSeen(poll.rows);
+          const fresh = new Set<string>();
+          for (const r of poll.rows) {
+            const far = isLocalAddress(r.src) ? r.dst : r.src;
+            if (!isLocalAddress(far) && !asked.current.has(far)) fresh.add(far);
+          }
+          if (fresh.size > 0) {
+            fresh.forEach((ip) => asked.current.add(ip));
+            api.geoLookup([...fresh]).then((found) => !cancelled && setGeo((g) => ({ ...g, ...found }))).catch(() => {});
+          }
           setTotal((n) => n + poll.rows.length);
           setRows((prev) => {
             const next = prev.concat(poll.rows);
@@ -237,6 +248,7 @@ export function CaptureView({ filters, activeId, onActiveId, onSeen }: Props) {
                 <th scope="col" className="px-3 py-2 font-semibold">Time</th>
                 <th scope="col" className="px-3 py-2 font-semibold">Source</th>
                 <th scope="col" className="px-3 py-2 font-semibold">Destination</th>
+                <th scope="col" className="px-3 py-2 font-semibold">Country</th>
                 <th scope="col" className="px-3 py-2 font-semibold">Protocol</th>
                 <th scope="col" className="px-3 py-2 text-right font-semibold">Bytes</th>
                 <th scope="col" className="px-3 py-2"><span className="sr-only">Actions</span></th>
@@ -248,6 +260,12 @@ export function CaptureView({ filters, activeId, onActiveId, onSeen }: Props) {
                   <td className="px-3 py-1.5 text-muted">{clock(r.time)}</td>
                   <td className="px-3 py-1.5 text-text">{endpoint(r.src, r.srcPort)}</td>
                   <td className="px-3 py-1.5 text-text">{endpoint(r.dst, r.dstPort)}</td>
+                  <td className="px-3 py-1.5 text-muted">
+                    {(() => {
+                      const hit = geo[isLocalAddress(r.src) ? r.dst : r.src];
+                      return hit ? <span title={hit.name}>{hit.code}</span> : "";
+                    })()}
+                  </td>
                   <td className="px-3 py-1.5 text-muted">{r.protocol}</td>
                   <td className="px-3 py-1.5 text-right text-muted">{r.length}</td>
                   <td className="px-3 py-1 text-right">

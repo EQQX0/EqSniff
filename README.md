@@ -24,13 +24,16 @@ $env:LIBPCAP_LIBDIR   = 'C:\nt-libs'        # folder that holds wpcap.lib
 npm run tauri dev
 ```
 
-`npm run tauri build` makes the installer.
+`npm run tauri build` makes the installer. It lands in the `release/bundle/nsis` folder under your `CARGO_TARGET_DIR`. The first build downloads Tauri's NSIS tooling. The installer is not code-signed.
 
 ## Running
 
 Install Npcap first. Run the app as administrator to use traffic control. Press Ctrl+Shift+X to stop any limit at once.
 
+## Update check
+
+The app can fetch one small file, `update.json`, from `https://raw.githubusercontent.com/EQQX0/EqSniff/main/update.json`. While this repository is private, that address returns 404 to the app, which shows "No update information has been published yet." Publish `update.json` somewhere public, or make the repository public, to turn updates on. The switch in Settings turns the check off completely.
+
 ## Data sources and licences
 
 - Country lookup uses the DB-IP Lite country database (CC BY 4.0). See `desktop/src-tauri/resources/DB-IP-LICENSE.txt`.
-- Packet effects use the WinDivert driver (LGPL v3). See `desktop/src-tauri/vendor/windivert/`.

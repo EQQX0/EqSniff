@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type LimitStatus, type PacketRow } from "@/lib/api";
+import { api, type LimitStatus, type PacketRow, type UpdateInfo } from "@/lib/api";
 import { isLocalAddress } from "@/lib/export";
 import { DevicesView, type Seen } from "@/views/DevicesView";
 import { TrafficView } from "@/views/TrafficView";
@@ -27,6 +27,12 @@ export default function App() {
 
   const [seen, setSeen] = useState<Record<string, Seen>>({});
   const [limit, setLimit] = useState<LimitStatus>({ active: false, kbps: null });
+  const [update, setUpdate] = useState<UpdateInfo | null>(null);
+
+  // One check at start-up. If the user turned checking off, this makes no request.
+  useEffect(() => {
+    api.checkUpdate().then(setUpdate).catch(() => {});
+  }, []);
 
   const onSeen = useCallback((rows: PacketRow[]) => {
     setSeen((prev) => {
@@ -71,6 +77,18 @@ export default function App() {
 
   return (
     <div className="flex h-screen flex-col">
+      {update?.status === "available" && (
+        <div role="status" className="flex items-center justify-between gap-3 border-b border-border bg-surface px-4 py-2 text-sm text-text">
+          <span>{update.message} Details are in Settings.</span>
+          <button
+            type="button"
+            onClick={() => setView("settings")}
+            className="rounded-md border border-border px-3 py-1 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            Open Settings
+          </button>
+        </div>
+      )}
       {limit.active && (
         <div role="alert" className="flex items-center justify-between gap-3 bg-danger px-4 py-2 text-sm font-medium text-on-accent">
           <span>Speed limit is on: {limit.kbps?.toLocaleString()} kbps outgoing.</span>
@@ -128,7 +146,7 @@ export default function App() {
           <HelpView />
         </div>
         <div className={view === "settings" ? "" : "hidden"}>
-          <SettingsView />
+          <SettingsView update={update} onUpdate={setUpdate} />
         </div>
       </main>
       </div>

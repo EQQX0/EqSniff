@@ -22,6 +22,20 @@ export interface Settings {
   lastAdapter: string | null;
 }
 
+export interface Country {
+  code: string;
+  name: string;
+}
+
+export interface UpdateInfo {
+  status: "disabled" | "up-to-date" | "available" | "unreachable";
+  current: string;
+  latest: string | null;
+  url: string | null;
+  notes: string | null;
+  message: string;
+}
+
 export interface LimitStatus {
   active: boolean;
   kbps: number | null;
@@ -48,5 +62,7 @@ export const api = {
   trafficStatus: () => invoke<LimitStatus>("traffic_status"),
   trafficLimit: (kbps: number) => invoke<LimitStatus>("traffic_limit", { kbps }),
   trafficStop: () => invoke<LimitStatus>("traffic_stop"),
+  geoLookup: (ips: string[]) => invoke<Record<string, Country>>("geo_lookup", { ips }),
+  checkUpdate: () => invoke<UpdateInfo>("check_update"),
   dataFolder: () => invoke<string>("data_folder"),
 };

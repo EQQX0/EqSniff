@@ -22,7 +22,7 @@ fn file(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir.join("settings.json"))
 }
 
-fn read(app: &AppHandle) -> Settings {
+pub(crate) fn read(app: &AppHandle) -> Settings {
     file(app)
         .ok()
         .and_then(|p| fs::read_to_string(p).ok())

@@ -74,3 +74,5 @@ t-libs`). Npcap must be installed to run.
 - **Step 3, filters: done (2026-11-15).** Filters page (create, edit, delete, starter set of 5, import and export as a JSON file), saved to `filters.json` in the app data folder, applied to the Capture table through a Filter drop-down. Verified in the app: starter filters added, bad port rejected with a message, "port 443" filter showed only TCP rows touching 443 (106 of 171), 6 filters persisted. Not yet tested: the import and export buttons (file picker). Filters only change what the table shows, not what is captured.
 
 - **Steps 4 to 7, finished 2026-11-15:** replay, export, devices and labels, speed-cap traffic control with emergency stop, offline help, portable zip. Bug pass done. Full status, reasons and open risks: `replica/unbuilt.md`.
+
+- **Round two, 2026-11-15:** offline country lookup (DB-IP Lite), update check with a tested off switch, NSIS installer, private repo EQQX0/EqSniff. The WinDivert driver download was blocked by Windows Defender and removed; traffic control stays a speed cap. Details and open risks: `replica/unbuilt.md`.

@@ -1,7 +1,7 @@
 Network Toolkit (portable)
 
 What it is
-A Windows app that shows the network traffic on your own computer, lets you filter and export it, and lets you cap your own computer's upload speed for testing. Everything stays on your computer. The app has no account and sends no data anywhere.
+A Windows app that shows the network traffic on your own computer, lets you filter and export it, and lets you cap your own computer's upload speed for testing. It shows the country at the far end of each connection. Everything stays on your computer. The app has no account and sends none of your data anywhere. Its only connection is an optional update check, which you can turn off in Settings.
 
 What you need
 1. Windows 10 or 11 (64-bit).
@@ -22,5 +22,6 @@ Press Ctrl+Shift+X in the app to remove a speed limit at once. Closing the app r
 
 Limits of this version
 - The file is not code-signed, so Windows SmartScreen may warn you the first time. Choose More info, then Run anyway, only if you trust where you got the file.
-- No automatic updates yet.
+- The update check shows a notice only. It does not download or install anything. Turn it off in Settings and the app never connects.
+- The Country column uses a database built into the app. It is a rough guide.
 - Capture shows traffic that crosses your selected network adapter.
