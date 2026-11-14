@@ -78,3 +78,5 @@ t-libs`). Npcap must be installed to run.
 - **Round two, 2026-11-15:** offline country lookup (DB-IP Lite), update check with a tested off switch, NSIS installer, private repo EQQX0/EqSniff. The WinDivert driver download was blocked by Windows Defender and removed; traffic control stays a speed cap. Details and open risks: `replica/unbuilt.md`.
 
 - **Round three, 2026-11-15:** Traffic control dropped (code, screen, help text, emergency-stop key removed). Added the Network scan: own subnet only, 256-address cap, 22 ports, consent box. Tested against this PC and the router. Router MAC missing at first because Windows lists it as `static` in the ARP table; fixed.
+
+- **2026-11-15:** update file now served from a separate Vercel project (eqsniff-updates, public) so the repo stays private; installer and portable exe self-signed (not trusted by Windows until the user imports the .cer). Live check returned up-to-date.

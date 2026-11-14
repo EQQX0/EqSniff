@@ -32,7 +32,7 @@ Install Npcap first. The network scan works without it, but capture needs it.
 
 ## Update check
 
-The app can fetch one small file, `update.json`, from `https://raw.githubusercontent.com/EQQX0/EqSniff/main/update.json`. While this repository is private, that address returns 404 to the app, which shows "No update information has been published yet." Publish `update.json` somewhere public, or make the repository public, to turn updates on. The switch in Settings turns the check off completely.
+The app can fetch one small file, `update.json`, from `https://eqsniff-updates.vercel.app/update.json` (a separate Vercel project, so this repository stays private). Once DNS for `updates.eqqx2.com` points at Vercel, that name serves the same file. The switch in Settings turns the check off completely.
 
 ## Data sources and licences
 

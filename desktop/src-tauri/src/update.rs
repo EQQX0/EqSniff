@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::{io::Read, time::Duration};
 use tauri::AppHandle;
 
-const DEFAULT_URL: &str = "https://raw.githubusercontent.com/EQQX0/EqSniff/main/update.json";
+const DEFAULT_URL: &str = "https://eqsniff-updates.vercel.app/update.json";
 const MAX_BYTES: u64 = 64 * 1024;
 
 #[derive(Deserialize)]
