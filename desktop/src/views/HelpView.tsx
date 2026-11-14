@@ -19,15 +19,27 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "How do filters work?",
-    a: "A filter picks which packets the table shows. A packet must match every box that is filled in. Filters change the view only; the capture keeps running underneath. Export and import filters as files from the Filters page.",
+    a: "A filter picks which packets the table shows. A packet must match every box that is filled in: protocol, port, address, packet size, and bytes in the payload (hex). Direction says whether the port and address boxes check the sender, the receiver or either. Switch filters on and off with the chips above the table or the checkboxes on the Filters page. With several on, a packet shows if it matches any of them; with none on, everything shows. Filters change the view only; the capture keeps running underneath. Export and import filters as files from the Filters page.",
   },
   {
     q: "What does Replay do?",
-    a: "It sends one saved packet again, once, from the adapter it was captured on. It only works for packets between two devices on your own network (neither end can be an internet address), and it asks you to confirm first. The app keeps the most recent 2,000 packets. Packets larger than the saved size cannot be replayed.",
+    a: "It sends one saved packet again, once, from the adapter it was captured on. It only works for packets between two devices on your own network (neither end can be an internet address), and it asks you to confirm first. The app keeps the most recent 20,000 packets. Packets opened from a file cannot be replayed. Packets larger than the saved size cannot be replayed.",
   },
   {
     q: "What does the Network scan do?",
     a: "It finds the devices on your own network and checks 22 common ports on each, using ordinary connections like a browser makes. It scans only the network this computer is on, up to 256 addresses, and asks you to confirm you own or manage the network. Devices that block every connection may show up only by their MAC address, or not at all. Scan only networks you are allowed to scan.",
+  },
+  {
+    q: "Can I save a capture and open it in Wireshark?",
+    a: "Yes. The PCAP button saves the packets in the table as a standard .pcap file. Open capture file loads a .pcap file (up to 5,000 packets are shown, from the first 32 MB). Files saved as pcapng must be converted to classic pcap first. Opening a file replaces the table, and its packets can be exported again but not replayed.",
+  },
+  {
+    q: "How do I copy packets?",
+    a: "Copy on a row copies that packet as tab-separated text. Double-click a cell to copy just that cell. Copy table copies every row in the table with a header line, and pastes into a spreadsheet as separate cells.",
+  },
+  {
+    q: "How do I watch one device?",
+    a: "On the Devices page, press Watch next to the device. The Capture page then shows only packets to or from that address. This computer sees only the traffic sent to or from itself, plus traffic the network shares with everyone. The app does not intercept other devices' traffic.",
   },
   {
     q: "What does the Country column show?",

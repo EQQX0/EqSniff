@@ -1,4 +1,5 @@
 mod capture;
+mod pcapfile;
 mod filters;
 mod geo;
 mod update;
@@ -16,6 +17,8 @@ pub fn run() {
             capture::poll_capture,
             capture::stop_capture,
             capture::replay_packet,
+            capture::export_pcap,
+            capture::import_pcap,
             filters::get_filters,
             filters::save_filters,
             filters::get_store,

@@ -1,14 +1,29 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type Adapter, type Country, type PacketRow } from "@/lib/api";
-import { matches, type Filter } from "@/lib/filters";
+import { matchesAny, type Filter } from "@/lib/filters";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Modal } from "@/components/ui/Modal";
-import { download, isLocalAddress, toCsv, toJson, toTxt } from "@/lib/export";
+import {
+  base64ToBytes,
+  bytesToBase64,
+  copyText,
+  download,
+  downloadBlob,
+  isLocalAddress,
+  rowToTsv,
+  tableToTsv,
+  toCsv,
+  toJson,
+  toTxt,
+} from "@/lib/export";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { NetworkIcon } from "@/components/ui/icons";
 
 const MAX_ROWS = 1000;
+/** The window reads at most this much of a capture file. */
+const MAX_FILE_BYTES = 32 * 1024 * 1024;
+const MAX_OPEN_ROWS = 5000;
 
 function clock(t: number) {
   const d = new Date(t * 1000);
@@ -20,12 +35,11 @@ const endpoint = (ip: string, port: number | null) => (port === null ? ip : ip.i
 
 interface Props {
   filters: Filter[];
-  activeId: string;
-  onActiveId: (id: string) => void;
+  onToggle: (id: string) => void;
   onSeen: (rows: PacketRow[]) => void;
 }
 
-export function CaptureView({ filters, activeId, onActiveId, onSeen }: Props) {
+export function CaptureView({ filters, onToggle, onSeen }: Props) {
   const [adapters, setAdapters] = useState<Adapter[]>([]);
   const [adapter, setAdapter] = useState("");
   const [running, setRunning] = useState(false);
@@ -33,6 +47,7 @@ export function CaptureView({ filters, activeId, onActiveId, onSeen }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<PacketRow[]>([]);
   const [total, setTotal] = useState(0);
+  const [fromFile, setFromFile] = useState<string | null>(null);
   const [replayRow, setReplayRow] = useState<PacketRow | null>(null);
   const [replayBusy, setReplayBusy] = useState(false);
   const [replayError, setReplayError] = useState<string | null>(null);
@@ -40,8 +55,28 @@ export function CaptureView({ filters, activeId, onActiveId, onSeen }: Props) {
   const [geo, setGeo] = useState<Record<string, Country>>({});
   const asked = useRef(new Set<string>());
   const tableEnd = useRef<HTMLDivElement>(null);
-  const active = filters.find((f) => f.id === activeId);
-  const shown = useMemo(() => (active ? rows.filter((r) => matches(active, r)) : rows), [rows, active]);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const anyOn = filters.some((f) => f.enabled);
+  const shown = useMemo(() => rows.filter((r) => matchesAny(filters, r)), [rows, filters]);
+
+  const countryOf = useCallback(
+    (r: PacketRow) => {
+      const hit = geo[isLocalAddress(r.src) ? r.dst : r.src];
+      return hit ? hit.code : "";
+    },
+    [geo]
+  );
+
+  const askGeo = useCallback((list: PacketRow[]) => {
+    const fresh = new Set<string>();
+    for (const r of list) {
+      const far = isLocalAddress(r.src) ? r.dst : r.src;
+      if (!isLocalAddress(far) && !asked.current.has(far)) fresh.add(far);
+    }
+    if (fresh.size === 0) return;
+    fresh.forEach((ip) => asked.current.add(ip));
+    api.geoLookup([...fresh]).then((found) => setGeo((g) => ({ ...g, ...found }))).catch(() => {});
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,15 +103,7 @@ export function CaptureView({ filters, activeId, onActiveId, onSeen }: Props) {
         if (cancelled) return;
         if (poll.rows.length > 0) {
           onSeen(poll.rows);
-          const fresh = new Set<string>();
-          for (const r of poll.rows) {
-            const far = isLocalAddress(r.src) ? r.dst : r.src;
-            if (!isLocalAddress(far) && !asked.current.has(far)) fresh.add(far);
-          }
-          if (fresh.size > 0) {
-            fresh.forEach((ip) => asked.current.add(ip));
-            api.geoLookup([...fresh]).then((found) => !cancelled && setGeo((g) => ({ ...g, ...found }))).catch(() => {});
-          }
+          askGeo(poll.rows);
           setTotal((n) => n + poll.rows.length);
           setRows((prev) => {
             const next = prev.concat(poll.rows);
@@ -99,7 +126,7 @@ export function CaptureView({ filters, activeId, onActiveId, onSeen }: Props) {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [running, onSeen]);
+  }, [running, onSeen, askGeo]);
 
   // Follow new packets only while the user is at the bottom, so they can scroll back and read.
   const stick = useRef(true);
@@ -123,6 +150,8 @@ export function CaptureView({ filters, activeId, onActiveId, onSeen }: Props) {
       await api.startCapture(adapter);
       setRows([]);
       setTotal(0);
+      setFromFile(null);
+      setNotice(null);
       setRunning(true);
       const settings = await api.getSettings();
       await api.setSettings({ ...settings, lastAdapter: adapter });
@@ -145,11 +174,47 @@ export function CaptureView({ filters, activeId, onActiveId, onSeen }: Props) {
     }
   }, []);
 
+  async function copy(text: string, what: string) {
+    setNotice((await copyText(text)) ? `Copied ${what}.` : "Copying was blocked by Windows. Select the text and press Ctrl+C instead.");
+  }
+
+  async function exportPcap() {
+    setError(null);
+    try {
+      const b64 = await api.exportPcap(shown.map((r) => r.id));
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+      downloadBlob(`capture-${stamp}.pcap`, new Blob([base64ToBytes(b64) as BlobPart], { type: "application/vnd.tcpdump.pcap" }));
+      setNotice(`Exported ${shown.length.toLocaleString()} packets as PCAP. Windows saved the file in your Downloads folder.`);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function openPcap(file: File | undefined) {
+    if (!file) return;
+    setError(null);
+    try {
+      const part = file.size > MAX_FILE_BYTES ? file.slice(0, MAX_FILE_BYTES) : file;
+      const res = await api.importPcap(bytesToBase64(new Uint8Array(await part.arrayBuffer())));
+      setRows(res.rows);
+      setTotal(res.rows.length);
+      setFromFile(file.name);
+      onSeen(res.rows);
+      askGeo(res.rows);
+      const cut = res.totalRecords > res.rows.length ? ` Showing the first ${MAX_OPEN_ROWS.toLocaleString()} of ${res.totalRecords.toLocaleString()}.` : "";
+      const big = file.size > MAX_FILE_BYTES ? " Only the first 32 MB of the file was read." : "";
+      setNotice(`Opened ${file.name}: ${res.rows.length.toLocaleString()} packets.${cut}${big}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+    if (fileInput.current) fileInput.current.value = "";
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col gap-4">
       <div>
         <h1 className="text-xl font-bold text-text">Capture</h1>
-        <p className="mt-1 text-sm text-muted">Watch traffic on one of your network adapters.</p>
+        <p className="mt-1 text-sm text-muted">Watch traffic on one of your network adapters, or open a saved capture file.</p>
       </div>
 
       <Card className="flex flex-wrap items-end gap-3">
@@ -170,20 +235,6 @@ export function CaptureView({ filters, activeId, onActiveId, onSeen }: Props) {
             ))}
           </select>
         </label>
-        <label className="flex w-56 flex-col gap-1.5 text-sm">
-          <span className="font-medium text-text">Filter</span>
-          <select
-            value={active ? activeId : ""}
-            onChange={(e) => onActiveId(e.target.value)}
-            className="h-10 min-w-0 rounded-md border border-border-input bg-surface px-3 text-sm text-text
-              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            <option value="">Show everything</option>
-            {filters.map((f) => (
-              <option key={f.id} value={f.id}>{f.name}</option>
-            ))}
-          </select>
-        </label>
         {running ? (
           <Button variant="danger" onClick={stop} loading={busy}>
             Stop capture
@@ -193,15 +244,46 @@ export function CaptureView({ filters, activeId, onActiveId, onSeen }: Props) {
             Start capture
           </Button>
         )}
+        <Button variant="secondary" disabled={running} onClick={() => fileInput.current?.click()}>
+          Open capture file
+        </Button>
+        <input
+          ref={fileInput}
+          type="file"
+          accept=".pcap,.cap,application/vnd.tcpdump.pcap"
+          className="sr-only"
+          tabIndex={-1}
+          aria-label="Choose a .pcap capture file to open"
+          onChange={(e) => openPcap(e.target.files?.[0])}
+        />
         <p className="ml-auto text-sm text-muted" aria-live="polite">
-          {running ? "Capturing" : "Stopped"} · {total.toLocaleString()} packets
-          {active && ` · ${shown.length.toLocaleString()} match`}
-          {total > MAX_ROWS && ` (keeping last ${MAX_ROWS.toLocaleString()})`}
+          {fromFile ? `File: ${fromFile}` : running ? "Capturing" : "Stopped"} · {total.toLocaleString()} packets
+          {anyOn && ` · ${shown.length.toLocaleString()} match`}
+          {!fromFile && total > MAX_ROWS && ` (keeping last ${MAX_ROWS.toLocaleString()})`}
         </p>
       </Card>
 
+      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filters">
+        <span className="text-sm text-muted">Filters:</span>
+        {filters.length === 0 && <span className="text-sm text-muted">none yet. Add some on the Filters page.</span>}
+        {filters.map((f) => (
+          <button
+            key={f.id}
+            type="button"
+            aria-pressed={f.enabled}
+            onClick={() => onToggle(f.id)}
+            className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors duration-fast
+              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent
+              ${f.enabled ? "border-accent bg-surface text-text" : "border-border text-muted hover:text-text"}`}
+          >
+            {f.enabled ? "✓ " : ""}{f.name}
+          </button>
+        ))}
+        {!anyOn && filters.length > 0 && <span className="text-xs text-muted">None switched on, so everything shows.</span>}
+      </div>
+
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm text-muted">Export {active ? "matching" : "shown"} packets:</span>
+        <span className="text-sm text-muted">Export {anyOn ? "matching" : "shown"} packets:</span>
         {(["CSV", "JSON", "TXT"] as const).map((kind) => (
           <Button
             key={kind}
@@ -213,12 +295,24 @@ export function CaptureView({ filters, activeId, onActiveId, onSeen }: Props) {
               if (kind === "CSV") download(`capture-${stamp}.csv`, toCsv(shown), "text/csv");
               if (kind === "JSON") download(`capture-${stamp}.json`, toJson(shown), "application/json");
               if (kind === "TXT") download(`capture-${stamp}.txt`, toTxt(shown), "text/plain");
-              setNotice(`Exported ${shown.length.toLocaleString()} packets as ${kind}.`);
+              setNotice(`Exported ${shown.length.toLocaleString()} packets as ${kind}. Windows saved the file in your Downloads folder.`);
             }}
           >
             {kind}
           </Button>
         ))}
+        <Button size="sm" variant="secondary" disabled={shown.length === 0} onClick={exportPcap}>
+          PCAP
+        </Button>
+        <span className="mx-1 text-sm text-muted">·</span>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={shown.length === 0}
+          onClick={() => copy(tableToTsv(shown, countryOf), `${shown.length.toLocaleString()} rows`)}
+        >
+          Copy table
+        </Button>
         <span role="status" className="text-sm text-muted">{notice}</span>
       </div>
 
@@ -232,17 +326,17 @@ export function CaptureView({ filters, activeId, onActiveId, onSeen }: Props) {
         {shown.length === 0 ? (
           <EmptyState
             icon={<NetworkIcon className="h-6 w-6" />}
-            title={rows.length > 0 ? "Nothing matches this filter" : running ? "Waiting for traffic" : "No capture yet"}
+            title={rows.length > 0 ? "Nothing matches these filters" : running ? "Waiting for traffic" : "No capture yet"}
             body={
               rows.length > 0
-                ? "Pick “Show everything” in the Filter box to see all captured packets."
+                ? "Switch the filters off to see all captured packets."
                 : running
                 ? "Packets appear here as they cross the adapter."
-                : "Pick an adapter and press Start capture. Nothing leaves your computer."
+                : "Pick an adapter and press Start capture, or open a .pcap file. Nothing leaves your computer."
             }
           />
         ) : (
-          <table className="w-full min-w-[40rem] text-left font-mono text-xs">
+          <table className="w-full min-w-[44rem] text-left font-mono text-xs">
             <thead className="sticky top-0 bg-surface text-muted">
               <tr className="border-b border-border">
                 <th scope="col" className="px-3 py-2 font-semibold">Time</th>
@@ -255,33 +349,55 @@ export function CaptureView({ filters, activeId, onActiveId, onSeen }: Props) {
               </tr>
             </thead>
             <tbody>
-              {shown.map((r) => (
-                <tr key={r.id} className="border-b border-border last:border-0">
-                  <td className="px-3 py-1.5 text-muted">{clock(r.time)}</td>
-                  <td className="px-3 py-1.5 text-text">{endpoint(r.src, r.srcPort)}</td>
-                  <td className="px-3 py-1.5 text-text">{endpoint(r.dst, r.dstPort)}</td>
-                  <td className="px-3 py-1.5 text-muted">
-                    {(() => {
-                      const hit = geo[isLocalAddress(r.src) ? r.dst : r.src];
-                      return hit ? <span title={hit.name}>{hit.code}</span> : "";
-                    })()}
-                  </td>
-                  <td className="px-3 py-1.5 text-muted">{r.protocol}</td>
-                  <td className="px-3 py-1.5 text-right text-muted">{r.length}</td>
-                  <td className="px-3 py-1 text-right">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={!(isLocalAddress(r.src) && isLocalAddress(r.dst))}
-                      title={isLocalAddress(r.src) && isLocalAddress(r.dst) ? undefined : "Replay works only for packets between two devices on your own network."}
-                      aria-label={`Replay packet from ${r.src} to ${r.dst}`}
-                      onClick={() => { setReplayRow(r); setReplayError(null); }}
-                    >
-                      Replay
-                    </Button>
-                  </td>
-                </tr>
-              ))}
+              {shown.map((r) => {
+                const local = isLocalAddress(r.src) && isLocalAddress(r.dst);
+                const replayable = local && !fromFile;
+                const cellCopy = (text: string, what: string) => ({
+                  title: "Double-click to copy",
+                  onDoubleClick: () => copy(text, what),
+                });
+                return (
+                  <tr key={r.id} className="border-b border-border last:border-0">
+                    <td className="px-3 py-1.5 text-muted" {...cellCopy(clock(r.time), "the time")}>{clock(r.time)}</td>
+                    <td className="px-3 py-1.5 text-text" {...cellCopy(endpoint(r.src, r.srcPort), "the source")}>{endpoint(r.src, r.srcPort)}</td>
+                    <td className="px-3 py-1.5 text-text" {...cellCopy(endpoint(r.dst, r.dstPort), "the destination")}>{endpoint(r.dst, r.dstPort)}</td>
+                    <td className="px-3 py-1.5 text-muted">
+                      {(() => {
+                        const hit = geo[isLocalAddress(r.src) ? r.dst : r.src];
+                        return hit ? <span title={hit.name}>{hit.code}</span> : "";
+                      })()}
+                    </td>
+                    <td className="px-3 py-1.5 text-muted">{r.protocol}</td>
+                    <td className="px-3 py-1.5 text-right text-muted" {...cellCopy(String(r.length), "the size")}>{r.length}</td>
+                    <td className="whitespace-nowrap px-3 py-1 text-right">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`Copy row: ${r.src} to ${r.dst}`}
+                        onClick={() => copy(rowToTsv(r, countryOf(r)), "the row")}
+                      >
+                        Copy
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={!replayable}
+                        title={
+                          fromFile
+                            ? "Packets opened from a file cannot be sent again."
+                            : local
+                            ? undefined
+                            : "Replay works only for packets between two devices on your own network."
+                        }
+                        aria-label={`Replay packet from ${r.src} to ${r.dst}`}
+                        onClick={() => { setReplayRow(r); setReplayError(null); }}
+                      >
+                        Replay
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}

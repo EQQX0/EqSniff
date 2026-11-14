@@ -18,6 +18,7 @@ pcap = "2"
 etherparse = "0.17"
 maxminddb = "0.24"
 ureq = "2"
+base64 = "0.22"
 
 [profile.release]
 lto = true

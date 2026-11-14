@@ -1962,6 +1962,7 @@ dependencies = [
 name = "network-toolkit"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "etherparse",
  "maxminddb",
  "pcap",

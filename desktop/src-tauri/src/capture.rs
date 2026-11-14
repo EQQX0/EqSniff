@@ -11,12 +11,15 @@ use std::{
     thread::JoinHandle,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+use crate::pcapfile;
 use tauri::State;
 
 /// If the window stops asking for packets, keep memory bounded.
 const MAX_BUFFERED: usize = 50_000;
 /// Whole packets kept so one can be replayed. Older ones are dropped.
-const MAX_FRAMES: usize = 2_000;
+const MAX_FRAMES: usize = 20_000;
+/// Packets shown after opening a capture file.
+const MAX_IMPORT: usize = 5_000;
 
 #[derive(Serialize, Clone)]
 pub struct Adapter {
@@ -37,6 +40,8 @@ pub struct PacketRow {
     pub dst_port: Option<u16>,
     pub protocol: String,
     pub length: u32,
+    /// First bytes of the payload as hex, so the filter editor can match on content.
+    pub head: String,
 }
 
 /// What the capture thread hands to the window. The window asks for it with `poll_capture`.
@@ -50,6 +55,8 @@ struct Shared {
 
 struct Frame {
     id: u64,
+    time: f64,
+    wire_len: u32,
     data: Vec<u8>,
     /// The driver kept only part of the packet, so it cannot be sent again.
     truncated: bool,
@@ -195,10 +202,11 @@ fn run(mut cap: Capture<pcap::Active>, stop: Arc<AtomicBool>, shared: Arc<Shared
     while !stop.load(Ordering::Relaxed) {
         match cap.next_packet() {
             Ok(p) => {
-                if let Some(mut row) = summarize(p.data, p.header.len) {
+                let now = now_secs();
+                if let Some(mut row) = summarize(p.data, p.header.len, now) {
                     row.id = next_id;
                     if let Ok(mut frames) = shared.frames.lock() {
-                        frames.push_back(Frame { id: next_id, data: p.data.to_vec(), truncated: p.header.caplen < p.header.len });
+                        frames.push_back(Frame { id: next_id, time: now, wire_len: p.header.len, data: p.data.to_vec(), truncated: p.header.caplen < p.header.len });
                         if frames.len() > MAX_FRAMES {
                             frames.pop_front();
                         }
@@ -224,7 +232,15 @@ fn run(mut cap: Capture<pcap::Active>, stop: Arc<AtomicBool>, shared: Arc<Shared
     shared.done.store(true, Ordering::Release);
 }
 
-fn summarize(data: &[u8], wire_len: u32) -> Option<PacketRow> {
+fn now_secs() -> f64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0)
+}
+
+fn hex_head(bytes: &[u8]) -> String {
+    bytes.iter().take(32).map(|b| format!("{b:02x}")).collect()
+}
+
+fn summarize(data: &[u8], wire_len: u32, time: f64) -> Option<PacketRow> {
     let parsed = SlicedPacket::from_ethernet(data).ok()?;
     let (src, dst, ip_proto) = match parsed.net.as_ref()? {
         NetSlice::Ipv4(ip) => {
@@ -243,8 +259,12 @@ fn summarize(data: &[u8], wire_len: u32) -> Option<PacketRow> {
         Some(TransportSlice::Icmpv4(_)) | Some(TransportSlice::Icmpv6(_)) => ("ICMP", None, None),
         None => (ip_proto, None, None),
     };
-    let time = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0);
-    Some(PacketRow { id: 0, time, src, dst, src_port, dst_port, protocol: protocol.into(), length: wire_len })
+    let payload: &[u8] = match parsed.transport.as_ref() {
+        Some(TransportSlice::Tcp(t)) => t.payload(),
+        Some(TransportSlice::Udp(u)) => u.payload(),
+        _ => &[],
+    };
+    Some(PacketRow { id: 0, time, src, dst, src_port, dst_port, protocol: protocol.into(), length: wire_len, head: hex_head(payload) })
 }
 
 /// Turns driver errors into something a person can act on.
@@ -293,11 +313,14 @@ pub fn replay_packet(state: State<CaptureState>, id: u64) -> Result<String, Stri
         .ok_or("Capture some traffic first.")?;
     let (data, truncated) = {
         let frames = shared.frames.lock().map_err(|_| "capture buffer is locked")?;
-        let f = frames.iter().find(|f| f.id == id).ok_or("That packet is no longer saved. Only the most recent 2,000 are kept.")?;
+        let f = frames.iter().find(|f| f.id == id).ok_or("That packet is no longer saved. Only the most recent 20,000 are kept.")?;
         (f.data.clone(), f.truncated)
     };
     if truncated {
         return Err("This packet was too large to save in full, so it cannot be replayed.".into());
+    }
+    if adapter.is_empty() {
+        return Err("Packets opened from a file cannot be sent again. Replay works on a live capture.".into());
     }
     both_ends_local(&data)?;
     require_npcap()?;
@@ -306,4 +329,62 @@ pub fn replay_packet(state: State<CaptureState>, id: u64) -> Result<String, Stri
         .map_err(explain)?;
     cap.sendpacket(data.as_slice()).map_err(explain)?;
     Ok(format!("Sent 1 packet ({} bytes).", data.len()))
+}
+
+/// Builds a .pcap file from the saved packets with these ids (in the order given) and returns it
+/// as base64 text, which is how the window receives binary data.
+#[tauri::command]
+pub fn export_pcap(state: State<CaptureState>, ids: Vec<u64>) -> Result<String, String> {
+    use base64::Engine;
+    let (_, shared) = state.last.lock().map_err(|_| "capture state is locked")?.clone().ok_or("Capture some traffic first.")?;
+    let frames = shared.frames.lock().map_err(|_| "capture buffer is locked")?;
+    let wanted: std::collections::HashSet<u64> = ids.into_iter().collect();
+    let recs: Vec<pcapfile::Rec> = frames
+        .iter()
+        .filter(|f| wanted.contains(&f.id))
+        .map(|f| pcapfile::Rec { time: f.time, data: f.data.clone(), wire_len: f.wire_len })
+        .collect();
+    if recs.is_empty() {
+        return Err("None of those packets are still saved. Only the most recent 20,000 are kept.".into());
+    }
+    Ok(base64::engine::general_purpose::STANDARD.encode(pcapfile::write(&recs)))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportResult {
+    pub rows: Vec<PacketRow>,
+    /// Records in the file, including ones that were not shown.
+    pub total_records: usize,
+}
+
+/// Opens a .pcap file (sent as base64). The packets become the saved capture, so they can be
+/// exported again, but not replayed.
+#[tauri::command]
+pub fn import_pcap(state: State<CaptureState>, data: String) -> Result<ImportResult, String> {
+    use base64::Engine;
+    if state.slot.lock().map_err(|_| "capture state is locked")?.is_some() {
+        return Err("Stop the capture before opening a file.".into());
+    }
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data.trim()).map_err(|_| "The file could not be read.".to_string())?;
+    let (recs, total_records) = pcapfile::read(&bytes, MAX_IMPORT)?;
+    let shared = Arc::new(Shared::default());
+    let mut rows = Vec::new();
+    {
+        let mut frames = shared.frames.lock().map_err(|_| "capture buffer is locked")?;
+        let mut next_id = 1u64;
+        for r in recs {
+            if let Some(mut row) = summarize(&r.data, r.wire_len, r.time) {
+                row.id = next_id;
+                frames.push_back(Frame { id: next_id, time: r.time, wire_len: r.wire_len, truncated: (r.data.len() as u32) < r.wire_len, data: r.data });
+                next_id += 1;
+                rows.push(row);
+            }
+        }
+    }
+    if rows.is_empty() {
+        return Err("No IPv4 or IPv6 packets were found in that file.".into());
+    }
+    *state.last.lock().map_err(|_| "capture state is locked")? = Some((String::new(), shared));
+    Ok(ImportResult { rows, total_records })
 }

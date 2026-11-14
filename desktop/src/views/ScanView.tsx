@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type ScanPoll } from "@/lib/api";
+import { api, type ScanHost, type ScanPoll } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/Input";
 import { NetworkIcon } from "@/components/ui/icons";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 
-export function ScanView() {
+export function ScanView({ onHosts }: { onHosts?: (hosts: ScanHost[]) => void }) {
   const [target, setTarget] = useState("");
   const [owns, setOwns] = useState(false);
   const [network, setNetwork] = useState<string | null>(null);
@@ -28,7 +28,10 @@ export function ScanView() {
         const p = await api.scanPoll();
         if (cancelled) return;
         setPoll(p);
-        if (!p.running) setRunning(false);
+        if (!p.running) {
+          setRunning(false);
+          onHosts?.(p.hosts);
+        }
       } catch (e) {
         if (!cancelled) {
           setError(String(e));
@@ -40,7 +43,7 @@ export function ScanView() {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [running]);
+  }, [running, onHosts]);
 
   async function start() {
     setError(null);

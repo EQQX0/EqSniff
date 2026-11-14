@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
-import { api, type PacketRow, type UpdateInfo } from "@/lib/api";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { api, type PacketRow, type ScanHost, type UpdateInfo } from "@/lib/api";
 import { isLocalAddress } from "@/lib/export";
 import { DevicesView, type Seen } from "@/views/DevicesView";
 import { ScanView } from "@/views/ScanView";
 import { HelpView } from "@/views/HelpView";
-import { fromStored, type Filter } from "@/lib/filters";
+import { blankFilter, fromStored, newId, type Filter } from "@/lib/filters";
 import { FiltersView } from "@/views/FiltersView";
 import { CaptureView } from "@/views/CaptureView";
 import { SettingsView } from "@/views/SettingsView";
@@ -23,7 +23,7 @@ type ViewId = (typeof NAV)[number]["id"];
 export default function App() {
   const [view, setView] = useState<ViewId>("capture");
   const [filters, setFilters] = useState<Filter[]>([]);
-  const [activeId, setActiveId] = useState("");
+  const [scanHosts, setScanHosts] = useState<ScanHost[]>([]);
 
   const [seen, setSeen] = useState<Record<string, Seen>>({});
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
@@ -49,14 +49,74 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    api.getFilters().then((raw) => setFilters(fromStored(raw))).catch(() => {});
+    api
+      .getFilters()
+      .then((raw) => {
+        latest.current = fromStored(raw);
+        setFilters(latest.current);
+      })
+      .catch(() => {});
   }, []);
 
+  // The newest list lives in a ref, so two quick clicks build on each other instead of the older one
+  // overwriting the newer. Saves go to disk one after another, in click order.
+  const latest = useRef<Filter[]>([]);
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
   const saveFilters = useCallback(async (next: Filter[]) => {
-    await api.saveFilters(next);
+    const before = latest.current;
+    latest.current = next;
     setFilters(next);
-    setActiveId((id) => (next.some((f) => f.id === id) ? id : ""));
+    const write = queue.current.then(() => api.saveFilters(next));
+    queue.current = write.catch(() => {});
+    try {
+      await write;
+    } catch (e) {
+      if (latest.current === next) {
+        latest.current = before;
+        setFilters(before);
+      }
+      throw e;
+    }
   }, []);
+
+  const toggleFilter = useCallback(
+    (id: string) => {
+      saveFilters(latest.current.map((f) => (f.id === id ? { ...f, enabled: !f.enabled } : f))).catch(() => {});
+    },
+    [saveFilters]
+  );
+
+  // Devices from captures, with anything the network scan found added on top.
+  const devices = useMemo(() => {
+    const merged: Record<string, Seen> = { ...seen };
+    for (const h of scanHosts) {
+      const ports = h.ports.map((p) => `${p.port} (${p.service})`).join(", ");
+      merged[h.ip] = { ...(merged[h.ip] ?? { ip: h.ip, packets: 0, bytes: 0, last: 0 }), mac: h.mac, ports };
+    }
+    return Object.values(merged);
+  }, [seen, scanHosts]);
+
+  // Show only one device's packets: its own filter, switched on alone. Nothing is intercepted.
+  const watchDevice = useCallback(
+    (ip: string) => {
+      const name = `Watching ${ip}`;
+      const list = latest.current;
+      const have = list.find((f) => f.name === name);
+      const mine: Filter = have ?? { ...blankFilter(newId()), name, address: ip };
+      const next = (have ? list : [...list, mine]).map((f) => ({ ...f, enabled: f.id === mine.id }));
+      saveFilters(next).then(() => setView("capture")).catch(() => {});
+    },
+    [saveFilters]
+  );
+
+  const useAlone = useCallback(
+    (id: string) => {
+      saveFilters(latest.current.map((f) => ({ ...f, enabled: f.id === id })))
+        .then(() => setView("capture"))
+        .catch(() => {});
+    },
+    [saveFilters]
+  );
 
   return (
     <div className="flex h-screen flex-col">
@@ -95,23 +155,20 @@ export default function App() {
       <main className="min-w-0 flex-1 overflow-auto p-6">
         {/* Both views stay mounted so a running capture keeps its table while Settings is open. */}
         <div className={view === "capture" ? "h-full" : "hidden"}>
-          <CaptureView filters={filters} activeId={activeId} onActiveId={setActiveId} onSeen={onSeen} />
+          <CaptureView filters={filters} onToggle={toggleFilter} onSeen={onSeen} />
         </div>
         <div className={view === "filters" ? "" : "hidden"}>
           <FiltersView
             filters={filters}
             onChange={saveFilters}
-            onUse={(id) => {
-              setActiveId(id);
-              setView("capture");
-            }}
+            onUse={useAlone}
           />
         </div>
         <div className={view === "devices" ? "" : "hidden"}>
-          <DevicesView seen={Object.values(seen)} />
+          <DevicesView seen={devices} onWatch={watchDevice} onScan={() => setView("scan")} />
         </div>
         <div className={view === "scan" ? "" : "hidden"}>
-          <ScanView />
+          <ScanView onHosts={setScanHosts} />
         </div>
         <div className={view === "help" ? "" : "hidden"}>
           <HelpView />

@@ -15,6 +15,7 @@ export interface PacketRow {
   dstPort: number | null;
   protocol: string;
   length: number;
+  head: string;
 }
 
 export interface Settings {
@@ -50,6 +51,11 @@ export interface ScanPoll {
   error: string | null;
 }
 
+export interface ImportResult {
+  rows: PacketRow[];
+  totalRecords: number;
+}
+
 export interface Poll {
   rows: PacketRow[];
   running: boolean;
@@ -66,6 +72,8 @@ export const api = {
   getFilters: () => invoke<unknown>("get_filters"),
   saveFilters: (filters: unknown) => invoke<void>("save_filters", { filters }),
   replayPacket: (id: number) => invoke<string>("replay_packet", { id }),
+  exportPcap: (ids: number[]) => invoke<string>("export_pcap", { ids }),
+  importPcap: (data: string) => invoke<ImportResult>("import_pcap", { data }),
   getStore: (name: string) => invoke<unknown>("get_store", { name }),
   saveStore: (name: string, value: unknown) => invoke<void>("save_store", { name, value }),
   scanStart: (target: string) => invoke<string>("scan_start", { target }),

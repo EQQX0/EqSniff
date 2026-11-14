@@ -26,13 +26,11 @@ Updated 2026-11-15, after the second round (GeoIP, update check, installer, repo
 | Feature | Why it is missing | What it would take |
 | --- | --- | --- |
 | Traffic control: drop, lag, reorder, duplicate, throttle; live stats; per-rule probability | **Dropped by decision, 2026-11-15.** The speed cap that existed was removed, and the WinDivert driver route was never installed (Windows Defender flagged the download). Not planned. |
-| Code signing | Needs a paid certificate. Unsigned files trigger SmartScreen warnings. | A certificate (about 100 to 400 USD a year) and its password stored outside the repo. |
+| Trusted code signing | Self-signed by decision (2026-11-15). A certificate from a certificate authority is what removes the warning on other PCs. | A paid certificate or cloud signing service, kept outside the repo. |
 | Update check working end to end | The check is built and tested. It cannot work for the public yet: the repository is private, so the app's anonymous request gets 404. | Make the repository public, or host `update.json` at a public address and change `DEFAULT_URL` in `update.rs`. |
-| Selecting another device and watching its traffic | Needs interception (ARP spoofing or a mirror port). Out by the safety rule. The network scan lists devices and open ports only. |
+| Intercepting another device's traffic | Needs ARP spoofing or a mirror port. Out by the safety rule. The Watch button filters this computer's own capture instead. |
 | Global capture-level filter | Never scoped. The view filter covers the use. | Small. |
-| Per-filter on/off, direction and hex matching | Time. The editor handles protocol, port, address prefix and size. | Small to medium. |
-| Copy to clipboard | Never scoped. | Small. |
-| pcap import and export | Not done. Needs the file format on both sides. | Medium. |
+| Hex matching deeper than 32 payload bytes | Only the first 32 bytes of each payload are kept per row, to keep the table light. | Small. |
 | Themes, languages, packet tester, packet inspector, Discord, macOS and Linux, accounts, billing | Out by your decision. | None. |
 
 ## Skipped for safety (will not be built)

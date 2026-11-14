@@ -1,14 +1,14 @@
 feature,area,priority,original,clone,notes
 One-click network interface detection and capture start/stop,capture,must,yes,yes,Core. Verified on the wired adapter; defaults to the connected one. Wi-Fi and VPN adapters not tested.
 Live traffic table (IP/port/protocol/bytes/timestamp),capture,must,yes,yes,"Core. Last 1,000 rows shown. Non-IP frames (ARP) not shown. Large tables may get slow on very busy networks."
-ARP network device discovery (own LAN),discovery,should,yes,partial,"Passive only: lists local devices seen in a capture. No active ARP scan, on purpose."
-Select a discovered device and monitor its traffic,discovery,should,yes,no,"Not built. Use a filter on the device's address instead. Watching another device's traffic needs interception, which is out."
-Custom packet filter editor (protocol/direction/port/length/hex/title ID),filtering,must,yes,partial,"Protocol, port, address prefix, minimum size. No direction, length range, or hex matching."
-Enable/disable individual filters,filtering,must,yes,partial,One filter is chosen at a time in the Capture page; there are no per-filter on/off switches.
+ARP network device discovery (own LAN),discovery,should,yes,yes,"Passive list from captures, plus the active Network scan (own subnet only). Devices page merges both and shows MAC and open ports."
+Select a discovered device and monitor its traffic,discovery,should,yes,yes,"Watch button on Devices shows only that address on Capture. It is a display filter on this computer's own capture. No interception, so it sees only traffic to or from this PC and traffic the network shares."
+Custom packet filter editor (protocol/direction/port/length/hex/title ID),filtering,must,yes,yes,"Protocol, direction (source/destination/either), port, address (exact or prefix), size range, and hex bytes in the first 32 payload bytes. Not built: matching deeper than 32 bytes."
+Enable/disable individual filters,filtering,must,yes,yes,Chips on Capture and checkboxes on Filters. Several on = a packet shows if it matches any; none on = everything. Tested with real clicks.
 "Starter filters (DNS, web, NTP, voice and video)",filtering,must,yes,yes,"Five generic filters written fresh (web, DNS, ping, local network, large packets). No NTP or voice set."
 Global capture-level filter (protocol/length/port/hex),filtering,should,yes,no,Not built. Filters change the view only; capture always records everything on the adapter.
-Export captures to CSV/JSON/TXT,export,should,yes,partial,"CSV, JSON and TXT built and tested; formula-safe CSV. Save dialog not seen in the real window."
-Copy row/cell/table to clipboard,export,should,yes,no,Not built. Never scoped.
+Export captures to CSV/JSON/TXT,export,should,yes,yes,"CSV, JSON, TXT and PCAP. Verified: files save straight to Downloads with no dialog, and the app now says so."
+Copy row/cell/table to clipboard,export,should,yes,yes,"Copy button per row, double-click a cell, Copy table (tab-separated, with header). Verified with real clicks and the Windows clipboard."
 Traffic Control: drop/lag/throttle/reorder/duplicate rules on own device traffic,traffic-control,must,yes,skip,Dropped by decision 2026-11-15. No traffic control of any kind in the app.
 Per-rule probability and burst scheduling,traffic-control,should,yes,skip,"Dropped with traffic control, 2026-11-15."
 Live traffic-control stats + emergency stop,traffic-control,must,yes,skip,"Dropped with traffic control, 2026-11-15."
@@ -39,11 +39,11 @@ Proprietary Geo IP database and DDoS Protection Lookup of arbitrary IPs,discover
 Cloud filters / community filter library,filtering,skip,yes,skip,"the original's user network and data, not a buildable feature"
 "Xbox Toolkit (party-chat crashing, session IP grabber, friend list, reading Xbox messages)",integrations,skip,yes,skip,acts on other people's sessions; needs OAuth scopes not grantable for this use
 Packet Tester sending arbitrary crafted packets to third-party IPs,testing,skip,yes,skip,only the own-device version is kept
-Filter import/export as files,filtering,must,no,partial,Built (JSON file with validation). The file picker was not exercised in the real window.
+Filter import/export as files,filtering,must,no,yes,"JSON files, version 2 (older version 1 files still open). Export saves to Downloads. Import starts filters switched off. The native file picker opens from the app."
 "All data local, no account",platform,must,no,yes,"Settings, filters and labels in the app data folder. No sign-in, no outbound calls."
 "Update check (only outbound call, can be turned off)",platform,must,yes,yes,Built and tested against a local stand-in server. Off switch sends no request. Notice only. Cannot work for the public until update.json is published at a public address.
-Signed installer and portable zip,platform,must,yes,partial,"Portable zip and NSIS installer built; portable exe smoke-tested, installer not run. Not code-signed (needs a paid certificate)."
-pcap import/export,export,should,no,no,Not built.
+Signed installer and portable zip,platform,must,yes,yes,"Installer and exe are self-signed by decision (2026-11-15). Silent install to a temp folder, launch and uninstall were run and left nothing behind. Windows shows an untrusted-publisher warning on any PC that does not trust the certificate."
+pcap import/export,export,should,no,yes,"Classic .pcap (Ethernet), 20,000 packets kept for export, first 5,000 shown on import, first 32 MB read. pcapng is refused with a how-to-convert message. Round trip tested."
 Usage and crash reporting,platform,skip,no,skip,Moved to Out 2026-11-15: it conflicts with the local-only rule.
 macOS and Linux builds,platform,skip,no,skip,Out by decision 2026-11-15.
 Open-source the code,platform,could,no,no,Maybe-later: after v1 is stable for 3 months.
