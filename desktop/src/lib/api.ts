@@ -64,7 +64,7 @@ export interface Poll {
 
 export const api = {
   listAdapters: () => invoke<Adapter[]>("list_adapters"),
-  startCapture: (adapter: string) => invoke<void>("start_capture", { adapter }),
+  startCapture: (adapter: string, filter: string) => invoke<void>("start_capture", { adapter, filter }),
   pollCapture: () => invoke<Poll>("poll_capture"),
   stopCapture: () => invoke<void>("stop_capture"),
   getSettings: () => invoke<Settings>("get_settings"),

@@ -132,7 +132,7 @@ pub fn list_adapters() -> Result<Vec<Adapter>, String> {
 }
 
 #[tauri::command]
-pub fn start_capture(state: State<CaptureState>, adapter: String) -> Result<(), String> {
+pub fn start_capture(state: State<CaptureState>, adapter: String, filter: Option<String>) -> Result<(), String> {
     let mut slot = state.slot.lock().map_err(|_| "capture state is locked")?;
     if slot.is_some() {
         return Err("A capture is already running.".into());
@@ -140,9 +140,16 @@ pub fn start_capture(state: State<CaptureState>, adapter: String) -> Result<(), 
 
     require_npcap()?;
     // Open here, not in the thread, so permission and driver errors reach the UI at once.
-    let cap = Capture::from_device(adapter.as_str())
+    let mut cap = Capture::from_device(adapter.as_str())
         .and_then(|c| c.promisc(true).snaplen(2048).immediate_mode(true).timeout(200).open())
         .map_err(explain)?;
+    // A capture filter makes the driver drop everything else before this app ever sees it.
+    if let Some(f) = filter.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
+        if f.len() > 300 || !f.chars().all(|c| c.is_ascii_alphanumeric() || " .:()".contains(c)) {
+            return Err("That capture filter is not valid.".into());
+        }
+        cap.filter(f, true).map_err(|_| "That capture filter was refused by the network driver. Check the address and port.".to_string())?;
+    }
 
     let stop = Arc::new(AtomicBool::new(false));
     let shared = Arc::new(Shared::default());

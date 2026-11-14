@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type Adapter, type Country, type PacketRow } from "@/lib/api";
-import { matchesAny, type Filter } from "@/lib/filters";
+import { PROTOCOLS, matchesAny, type Filter, type Proto } from "@/lib/filters";
+import { NO_CAPTURE_FILTER, captureProblems, fromStoredCapture, toBpf, type CaptureFilter } from "@/lib/capturefilter";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Modal } from "@/components/ui/Modal";
@@ -47,6 +48,8 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<PacketRow[]>([]);
   const [total, setTotal] = useState(0);
+  const [cf, setCf] = useState<CaptureFilter>(NO_CAPTURE_FILTER);
+  const [cfOpen, setCfOpen] = useState(false);
   const [fromFile, setFromFile] = useState<string | null>(null);
   const [replayRow, setReplayRow] = useState<PacketRow | null>(null);
   const [replayBusy, setReplayBusy] = useState(false);
@@ -56,6 +59,8 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
   const asked = useRef(new Set<string>());
   const tableEnd = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const cfProblems = captureProblems(cf);
+  const bpf = toBpf(cf);
   const anyOn = filters.some((f) => f.enabled);
   const shown = useMemo(() => rows.filter((r) => matchesAny(filters, r)), [rows, filters]);
 
@@ -91,6 +96,17 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => {
+    api
+      .getStore("capture-filter")
+      .then((v) => {
+        const f = fromStoredCapture(v);
+        setCf(f);
+        setCfOpen(toBpf(f) !== "");
+      })
+      .catch(() => {});
   }, []);
 
   // The app side collects packets; this asks for them a few times a second while capturing.
@@ -144,10 +160,16 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
   }, [shown]);
 
   const start = useCallback(async () => {
+    if (Object.keys(captureProblems(cf)).length > 0) {
+      setCfOpen(true);
+      setError("Fix the capture filter first. The boxes marked in red need a different value.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      await api.startCapture(adapter);
+      await api.startCapture(adapter, toBpf(cf));
+      api.saveStore("capture-filter", cf).catch(() => {});
       setRows([]);
       setTotal(0);
       setFromFile(null);
@@ -160,7 +182,7 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
     } finally {
       setBusy(false);
     }
-  }, [adapter]);
+  }, [adapter, cf]);
 
   const stop = useCallback(async () => {
     setBusy(true);
@@ -261,6 +283,65 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
           {anyOn && ` · ${shown.length.toLocaleString()} match`}
           {!fromFile && total > MAX_ROWS && ` (keeping last ${MAX_ROWS.toLocaleString()})`}
         </p>
+      </Card>
+
+      <Card className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            aria-expanded={cfOpen}
+            onClick={() => setCfOpen((o) => !o)}
+            className="rounded-md text-sm font-medium text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            {cfOpen ? "▾" : "▸"} Capture filter
+          </button>
+          <span className="text-sm text-muted">
+            {bpf === "" ? "Recording everything on the adapter." : `Recording only: ${bpf}. Other packets are never saved.`}
+          </span>
+          {bpf !== "" && !running && (
+            <Button size="sm" variant="ghost" onClick={() => setCf(NO_CAPTURE_FILTER)}>Clear</Button>
+          )}
+        </div>
+        {cfOpen && (
+          <div className="grid gap-3 sm:grid-cols-4">
+            <label className="flex flex-col gap-1.5 text-sm">
+              <span className="font-medium text-text">Protocol</span>
+              <select
+                value={cf.protocol}
+                disabled={running}
+                onChange={(e) => setCf({ ...cf, protocol: e.target.value as Proto })}
+                className="h-10 rounded-md border border-border-input bg-surface px-3 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+              >
+                {PROTOCOLS.map((p) => (
+                  <option key={p} value={p}>{p === "any" ? "Any protocol" : p}</option>
+                ))}
+              </select>
+            </label>
+            {([
+              ["Port", "port", "Either side. Empty = any."],
+              ["Device address", "address", "One full address, such as 192.168.0.20."],
+              ["Smallest packet (bytes)", "minBytes", "Empty = any size."],
+            ] as const).map(([label, key, hint]) => (
+              <label key={key} className="flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-text">{label}</span>
+                <input
+                  value={cf[key]}
+                  disabled={running}
+                  inputMode={key === "address" ? "text" : "numeric"}
+                  aria-invalid={cfProblems[key] ? true : undefined}
+                  onChange={(e) => setCf({ ...cf, [key]: e.target.value })}
+                  className={`h-10 rounded-md border bg-surface px-3 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50
+                    ${cfProblems[key] ? "border-danger" : "border-border-input"}`}
+                />
+                <span className={`text-xs ${cfProblems[key] ? "text-danger" : "text-muted"}`}>{cfProblems[key] ?? hint}</span>
+              </label>
+            ))}
+            <p className="text-xs text-muted sm:col-span-4">
+              Unlike the filters below, a capture filter decides what gets recorded. Packets it rejects cannot be shown, exported or
+              replayed later. Changes apply the next time you press Start capture.
+            </p>
+          </div>
+        )}
       </Card>
 
       <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filters">

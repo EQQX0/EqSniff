@@ -18,6 +18,10 @@ const FAQ: { q: string; a: string }[] = [
     a: "Capture shows what crosses the selected adapter. On a normal switched network that is your computer's traffic plus broadcasts. Seeing other devices' private traffic would need special equipment, and this app does not try to do it.",
   },
   {
+    q: "What is the Capture filter, and how is it different from Filters?",
+    a: "The Capture filter (on the Capture page) decides what gets recorded. The network driver drops everything else, so those packets cannot be shown, exported or replayed later. It takes a protocol, a port, one device address and a smallest packet size, and applies the next time you press Start capture. The Filters page only changes which recorded packets the table shows, and you can change it any time.",
+  },
+  {
     q: "How do filters work?",
     a: "A filter picks which packets the table shows. A packet must match every box that is filled in: protocol, port, address, packet size, and bytes in the payload (hex). Direction says whether the port and address boxes check the sender, the receiver or either. Switch filters on and off with the chips above the table or the checkboxes on the Filters page. With several on, a packet shows if it matches any of them; with none on, everything shows. Filters change the view only; the capture keeps running underneath. Export and import filters as files from the Filters page.",
   },
