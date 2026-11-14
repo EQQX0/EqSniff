@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type LimitStatus, type PacketRow, type UpdateInfo } from "@/lib/api";
+import { api, type PacketRow, type UpdateInfo } from "@/lib/api";
 import { isLocalAddress } from "@/lib/export";
 import { DevicesView, type Seen } from "@/views/DevicesView";
-import { TrafficView } from "@/views/TrafficView";
+import { ScanView } from "@/views/ScanView";
 import { HelpView } from "@/views/HelpView";
 import { fromStored, type Filter } from "@/lib/filters";
 import { FiltersView } from "@/views/FiltersView";
@@ -13,7 +13,7 @@ const NAV = [
   { id: "capture", label: "Capture" },
   { id: "filters", label: "Filters" },
   { id: "devices", label: "Devices" },
-  { id: "traffic", label: "Traffic control" },
+  { id: "scan", label: "Network scan" },
   { id: "help", label: "Help" },
   { id: "settings", label: "Settings" },
 ] as const;
@@ -26,7 +26,6 @@ export default function App() {
   const [activeId, setActiveId] = useState("");
 
   const [seen, setSeen] = useState<Record<string, Seen>>({});
-  const [limit, setLimit] = useState<LimitStatus>({ active: false, kbps: null });
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
 
   // One check at start-up. If the user turned checking off, this makes no request.
@@ -50,22 +49,6 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    api.trafficStatus().then(setLimit).catch(() => {});
-  }, []);
-
-  // Emergency stop for the speed limit: Ctrl+Shift+X from anywhere in the app.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "x") {
-        e.preventDefault();
-        api.trafficStop().then(setLimit).catch(() => {});
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  useEffect(() => {
     api.getFilters().then((raw) => setFilters(fromStored(raw))).catch(() => {});
   }, []);
 
@@ -86,18 +69,6 @@ export default function App() {
             className="rounded-md border border-border px-3 py-1 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             Open Settings
-          </button>
-        </div>
-      )}
-      {limit.active && (
-        <div role="alert" className="flex items-center justify-between gap-3 bg-danger px-4 py-2 text-sm font-medium text-on-accent">
-          <span>Speed limit is on: {limit.kbps?.toLocaleString()} kbps outgoing.</span>
-          <button
-            type="button"
-            onClick={() => api.trafficStop().then(setLimit).catch(() => {})}
-            className="rounded-md border border-on-accent px-3 py-1 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-accent"
-          >
-            Stop now (Ctrl+Shift+X)
           </button>
         </div>
       )}
@@ -139,8 +110,8 @@ export default function App() {
         <div className={view === "devices" ? "" : "hidden"}>
           <DevicesView seen={Object.values(seen)} />
         </div>
-        <div className={view === "traffic" ? "" : "hidden"}>
-          <TrafficView status={limit} onStatus={setLimit} />
+        <div className={view === "scan" ? "" : "hidden"}>
+          <ScanView />
         </div>
         <div className={view === "help" ? "" : "hidden"}>
           <HelpView />

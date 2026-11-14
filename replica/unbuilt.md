@@ -14,7 +14,7 @@ Updated 2026-11-15, after the second round (GeoIP, update check, installer, repo
 | Export | CSV (formula-safe), JSON, TXT of the shown packets | content checked in a script; no security-policy block |
 | Replay | One saved packet, once, only between two private addresses, with a confirmation dialog | 10 of 12 refused (internet address); 2 local packets sent |
 | Devices | Local devices seen in a capture, with names you give them | showed this PC and the router; label saved |
-| Traffic control | Outgoing speed cap for this computer, emergency stop (Ctrl+Shift+X, red bar, removed on exit) | error path only (see risks) |
+| Network scan | Finds devices on this computer's own subnet (max 256 addresses) and checks 22 common ports with ordinary TCP connections; MACs from the ARP table; consent box; cancel button | tested on own PC and router only |
 | Update check | One small version file, off switch, "Check now", notice bar | tested against a local stand-in server: off = 0 requests; newer, older, same, 404 and garbage files all handled; only generic headers sent |
 | Help | Nine-question offline FAQ | rendered |
 | Settings | Update-check switch and result, data folder, credits | saved and reloaded |
@@ -25,10 +25,10 @@ Updated 2026-11-15, after the second round (GeoIP, update check, installer, repo
 
 | Feature | Why it is missing | What it would take |
 | --- | --- | --- |
-| Traffic control: drop, lag, reorder, duplicate; live stats; per-rule probability | Needs the WinDivert kernel driver. I downloaded the official 2.2.2 release and Windows Defender blocked it as "potentially unwanted software". I did not add an exclusion or turn Defender off, because that is a security setting for you to change. The block also shows what your users would see: antivirus flags this driver, so shipping it means false-positive warnings and, usually, a signing and reputation effort. I removed the blocked download. The speed cap (Windows QoS) stays. | You decide to accept the antivirus problem, add a Defender exclusion for a work folder yourself, and tell me. Then it is about a day of work plus testing as administrator. |
+| Traffic control: drop, lag, reorder, duplicate, throttle; live stats; per-rule probability | **Dropped by decision, 2026-11-15.** The speed cap that existed was removed, and the WinDivert driver route was never installed (Windows Defender flagged the download). Not planned. |
 | Code signing | Needs a paid certificate. Unsigned files trigger SmartScreen warnings. | A certificate (about 100 to 400 USD a year) and its password stored outside the repo. |
 | Update check working end to end | The check is built and tested. It cannot work for the public yet: the repository is private, so the app's anonymous request gets 404. | Make the repository public, or host `update.json` at a public address and change `DEFAULT_URL` in `update.rs`. |
-| Active LAN scan and "select a device and watch it" | Active scans probe every device on the network. Watching another device's traffic needs interception (ARP spoofing or a mirror port). Both are out by the safety rule. | Nothing planned. Passive Devices and address filters cover the safe part. |
+| Selecting another device and watching its traffic | Needs interception (ARP spoofing or a mirror port). Out by the safety rule. The network scan lists devices and open ports only. |
 | Global capture-level filter | Never scoped. The view filter covers the use. | Small. |
 | Per-filter on/off, direction and hex matching | Time. The editor handles protocol, port, address prefix and size. | Small to medium. |
 | Copy to clipboard | Never scoped. | Small. |
@@ -50,7 +50,7 @@ Updated 2026-11-15, after the second round (GeoIP, update check, installer, repo
 
 - **Usage and crash reporting moved to Out.** It conflicts with "saves locally". Say so if you want an opt-in version.
 - **Replay is stricter than first planned.** Both ends must be private addresses, after a test showed a packet from an internet address could be sent to my own PC.
-- **Traffic control stays a speed cap.** The driver route was blocked by Defender (see above).
+- **Traffic control is dropped.** No speed cap, no driver, no admin rights needed.
 - **GeoIP source: DB-IP Lite country** (free, no key, CC BY 4.0, needs the credit shown in Settings). It is 8.5 MB inside the app. Refresh it monthly by replacing `country.mmdb`.
 - **Update check is a notice only.** It never downloads or installs anything.
 - **Repository contents:** the reference screenshots of the original app, the zip, the installer and local tool settings are not in the repo.
@@ -70,7 +70,7 @@ Updated 2026-11-15, after the second round (GeoIP, update check, installer, repo
 
 ## Known risks still open
 
-- Traffic control success path never ran: the test session was not an administrator, and I did not change system settings myself. Test it once as administrator.
+- Network scan was tested only against this PC and the router. A larger network, IPv6 and devices that drop connections silently are untested.
 - The installer was built but not run. Installing it would change your PC. Try it on a spare account or machine.
 - Export and import buttons were not seen opening a real file dialog.
 - Country is a rough guide: addresses of large networks often show the country where the network is registered.

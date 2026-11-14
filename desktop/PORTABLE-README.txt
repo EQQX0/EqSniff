@@ -1,7 +1,7 @@
 Network Toolkit (portable)
 
 What it is
-A Windows app that shows the network traffic on your own computer, lets you filter and export it, and lets you cap your own computer's upload speed for testing. It shows the country at the far end of each connection. Everything stays on your computer. The app has no account and sends none of your data anywhere. Its only connection is an optional update check, which you can turn off in Settings.
+A Windows app that shows the network traffic on your own computer, lets you filter and export it, and scans your own network for devices and open ports. It shows the country at the far end of each connection. Everything stays on your computer. The app has no account and sends none of your data anywhere. Its only connection is an optional update check, which you can turn off in Settings.
 
 What you need
 1. Windows 10 or 11 (64-bit).
@@ -10,15 +10,14 @@ What you need
 
 How to start
 Unzip the folder anywhere and double-click network-toolkit.exe.
-To use Traffic control, right-click the file and choose Run as administrator. Windows requires this to change speed limits.
 
 Where it saves things
 Settings, filters and device names go in:
 %APPDATA%\app.networktoolkit.desktop
 Delete that folder to remove everything the app saved. To uninstall, delete the unzipped folder.
 
-Emergency stop
-Press Ctrl+Shift+X in the app to remove a speed limit at once. Closing the app removes it too.
+Network scan
+The scan checks only the network your computer is connected to, up to 256 addresses. Scan only networks you own or have permission to scan.
 
 Limits of this version
 - The file is not code-signed, so Windows SmartScreen may warn you the first time. Choose More info, then Run anyway, only if you trust where you got the file.

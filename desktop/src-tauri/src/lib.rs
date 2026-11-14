@@ -3,12 +3,13 @@ mod filters;
 mod geo;
 mod update;
 mod settings;
-mod traffic;
+mod scan;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(capture::CaptureState::default())
+        .manage(scan::ScanState::default())
         .invoke_handler(tauri::generate_handler![
             capture::list_adapters,
             capture::start_capture,
@@ -21,18 +22,13 @@ pub fn run() {
             filters::save_store,
             geo::geo_lookup,
             update::check_update,
-            traffic::traffic_status,
-            traffic::traffic_limit,
-            traffic::traffic_stop,
+            scan::scan_start,
+            scan::scan_poll,
+            scan::scan_cancel,
             settings::get_settings,
             settings::set_settings,
             settings::data_folder,
         ])
-        .build(tauri::generate_context!())
-        .expect("error while building the app")
-        .run(|_app, event| {
-            if let tauri::RunEvent::Exit = event {
-                traffic::stop_on_exit();
-            }
-        });
+        .run(tauri::generate_context!())
+        .expect("error while running the app");
 }

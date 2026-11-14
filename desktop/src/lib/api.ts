@@ -36,9 +36,18 @@ export interface UpdateInfo {
   message: string;
 }
 
-export interface LimitStatus {
-  active: boolean;
-  kbps: number | null;
+export interface ScanHost {
+  ip: string;
+  mac: string | null;
+  ports: { port: number; service: string }[];
+}
+
+export interface ScanPoll {
+  running: boolean;
+  scanned: number;
+  total: number;
+  hosts: ScanHost[];
+  error: string | null;
 }
 
 export interface Poll {
@@ -59,9 +68,9 @@ export const api = {
   replayPacket: (id: number) => invoke<string>("replay_packet", { id }),
   getStore: (name: string) => invoke<unknown>("get_store", { name }),
   saveStore: (name: string, value: unknown) => invoke<void>("save_store", { name, value }),
-  trafficStatus: () => invoke<LimitStatus>("traffic_status"),
-  trafficLimit: (kbps: number) => invoke<LimitStatus>("traffic_limit", { kbps }),
-  trafficStop: () => invoke<LimitStatus>("traffic_stop"),
+  scanStart: (target: string) => invoke<string>("scan_start", { target }),
+  scanPoll: () => invoke<ScanPoll>("scan_poll"),
+  scanCancel: () => invoke<void>("scan_cancel"),
   geoLookup: (ips: string[]) => invoke<Record<string, Country>>("geo_lookup", { ips }),
   checkUpdate: () => invoke<UpdateInfo>("check_update"),
   dataFolder: () => invoke<string>("data_folder"),

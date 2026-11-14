@@ -1,6 +1,6 @@
 # EqSniff
 
-A Windows desktop app that shows the network traffic on your own computer. You can filter and export it, replay a packet between devices on your own network, and slow down your own connection to test how apps behave on a bad link. Everything stays on your computer. There is no account.
+A Windows desktop app that shows the network traffic on your own computer. You can filter and export it, replay a packet between devices on your own network, and scan your own network for devices and open ports.
 
 Built with Tauri 2 (Rust) and a React + TypeScript window. Capture uses Npcap.
 
@@ -28,7 +28,7 @@ npm run tauri dev
 
 ## Running
 
-Install Npcap first. Run the app as administrator to use traffic control. Press Ctrl+Shift+X to stop any limit at once.
+Install Npcap first. The network scan works without it, but capture needs it.
 
 ## Update check
 

@@ -76,3 +76,5 @@ t-libs`). Npcap must be installed to run.
 - **Steps 4 to 7, finished 2026-11-15:** replay, export, devices and labels, speed-cap traffic control with emergency stop, offline help, portable zip. Bug pass done. Full status, reasons and open risks: `replica/unbuilt.md`.
 
 - **Round two, 2026-11-15:** offline country lookup (DB-IP Lite), update check with a tested off switch, NSIS installer, private repo EQQX0/EqSniff. The WinDivert driver download was blocked by Windows Defender and removed; traffic control stays a speed cap. Details and open risks: `replica/unbuilt.md`.
+
+- **Round three, 2026-11-15:** Traffic control dropped (code, screen, help text, emergency-stop key removed). Added the Network scan: own subnet only, 256-address cap, 22 ports, consent box. Tested against this PC and the router. Router MAC missing at first because Windows lists it as `static` in the ARP table; fixed.

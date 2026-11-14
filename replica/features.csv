@@ -9,13 +9,13 @@ Enable/disable individual filters,filtering,must,yes,partial,One filter is chose
 Global capture-level filter (protocol/length/port/hex),filtering,should,yes,no,Not built. Filters change the view only; capture always records everything on the adapter.
 Export captures to CSV/JSON/TXT,export,should,yes,partial,"CSV, JSON and TXT built and tested; formula-safe CSV. Save dialog not seen in the real window."
 Copy row/cell/table to clipboard,export,should,yes,no,Not built. Never scoped.
-Traffic Control: drop/lag/throttle/reorder/duplicate rules on own device traffic,traffic-control,must,yes,partial,"Only an outgoing speed cap (Windows QoS, IPv4). The driver route (WinDivert) was blocked by Windows Defender as potentially unwanted software, so drop, lag, reorder and duplicate are not built."
-Per-rule probability and burst scheduling,traffic-control,should,yes,no,Needs the driver-based engine.
-Live traffic-control stats + emergency stop,traffic-control,must,yes,partial,"Emergency stop built (Ctrl+Shift+X, red bar, removal on exit). No live stats."
+Traffic Control: drop/lag/throttle/reorder/duplicate rules on own device traffic,traffic-control,must,yes,skip,Dropped by decision 2026-11-15. No traffic control of any kind in the app.
+Per-rule probability and burst scheduling,traffic-control,should,yes,skip,"Dropped with traffic control, 2026-11-15."
+Live traffic-control stats + emergency stop,traffic-control,must,yes,skip,"Dropped with traffic control, 2026-11-15."
 Packet Tester: craft/send packets to a device you own,testing,skip,yes,skip,Out by decision 2026-11-15.
 Replay a previously captured packet,testing,must,yes,yes,"Local-to-local packets only, with confirmation. Both ends must be private addresses. Tested: internet-bound packets refused, two local packets sent."
 Packet Inspector: raw hex/ASCII view of a packet,testing,skip,yes,skip,Out by decision 2026-11-15.
-Built-in basic network scan (nmap-style) of own LAN,discovery,could,yes,no,Not built. Active scanning contacts every device; kept out.
+Built-in basic network scan (nmap-style) of own LAN,discovery,could,yes,yes,"Built. Own subnet only (max 256 addresses), 22 common TCP ports, consent box, cancel. MACs from the ARP table. Tested on this PC and the router only."
 Account + login,account,skip,yes,skip,Out. App has no accounts.
 Two-factor authentication,account,skip,yes,skip,Out. App has no accounts.
 Persistent sessions between launches,account,skip,yes,skip,Out. App has no accounts.

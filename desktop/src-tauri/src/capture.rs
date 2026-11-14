@@ -77,7 +77,7 @@ pub struct Poll {
 
 /// The local address Windows would use to reach the internet. A UDP "connect" only asks the
 /// routing table; it sends nothing.
-fn default_route_ip() -> Option<std::net::IpAddr> {
+pub(crate) fn default_route_ip() -> Option<std::net::IpAddr> {
     let sock = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
     sock.connect("192.0.2.1:9").ok()?; // reserved documentation address, never contacted
     Some(sock.local_addr().ok()?.ip())
@@ -85,7 +85,7 @@ fn default_route_ip() -> Option<std::net::IpAddr> {
 
 /// Makes sure Npcap's library can be found, and says so in plain words if it cannot.
 /// Must run before any pcap call, because the library is loaded on first use.
-fn require_npcap() -> Result<(), String> {
+pub(crate) fn require_npcap() -> Result<(), String> {
     #[cfg(windows)]
     {
         extern "system" {

@@ -26,8 +26,8 @@ const FAQ: { q: string; a: string }[] = [
     a: "It sends one saved packet again, once, from the adapter it was captured on. It only works for packets between two devices on your own network (neither end can be an internet address), and it asks you to confirm first. The app keeps the most recent 2,000 packets. Packets larger than the saved size cannot be replayed.",
   },
   {
-    q: "What does Traffic control do?",
-    a: "It caps how fast this computer sends data, using a Windows speed policy, so you can test your own apps on a slow link. It cannot affect other devices. Press Ctrl+Shift+X or Stop limiting to remove it at once.",
+    q: "What does the Network scan do?",
+    a: "It finds the devices on your own network and checks 22 common ports on each, using ordinary connections like a browser makes. It scans only the network this computer is on, up to 256 addresses, and asks you to confirm you own or manage the network. Devices that block every connection may show up only by their MAC address, or not at all. Scan only networks you are allowed to scan.",
   },
   {
     q: "What does the Country column show?",
