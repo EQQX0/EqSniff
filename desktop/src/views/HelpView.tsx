@@ -1,0 +1,57 @@
+import { Card } from "@/components/ui/Card";
+
+const FAQ: { q: string; a: string }[] = [
+  {
+    q: "Does this app send my data anywhere?",
+    a: "No. Captures, filters and device names stay in a folder on this computer (see Settings). The only thing the app may ever contact is an update server, and you can turn that off in Settings.",
+  },
+  {
+    q: "The capture will not start. What do I check?",
+    a: "Install Npcap (npcap.com), then restart the app. If Windows blocks access to the adapter, run the app as administrator or reinstall Npcap with the option that lets non-administrators capture.",
+  },
+  {
+    q: "Which adapter should I pick?",
+    a: "The one marked (connected). That is the adapter your computer uses to reach the internet. Wi-Fi and Ethernet are separate adapters.",
+  },
+  {
+    q: "Why do I see only my own computer's traffic?",
+    a: "Capture shows what crosses the selected adapter. On a normal switched network that is your computer's traffic plus broadcasts. Seeing other devices' private traffic would need special equipment, and this app does not try to do it.",
+  },
+  {
+    q: "How do filters work?",
+    a: "A filter picks which packets the table shows. A packet must match every box that is filled in. Filters change the view only; the capture keeps running underneath. Export and import filters as files from the Filters page.",
+  },
+  {
+    q: "What does Replay do?",
+    a: "It sends one saved packet again, once, from the adapter it was captured on. It only works for packets between two devices on your own network (neither end can be an internet address), and it asks you to confirm first. The app keeps the most recent 2,000 packets. Packets larger than the saved size cannot be replayed.",
+  },
+  {
+    q: "What does Traffic control do?",
+    a: "It caps how fast this computer sends data, using a Windows speed policy, so you can test your own apps on a slow link. It cannot affect other devices. Press Ctrl+Shift+X or Stop limiting to remove it at once.",
+  },
+  {
+    q: "Where are my files?",
+    a: "Settings shows the data folder. Deleting that folder removes everything the app saved.",
+  },
+];
+
+export function HelpView() {
+  return (
+    <div className="flex max-w-2xl flex-col gap-4">
+      <div>
+        <h1 className="text-xl font-bold text-text">Help</h1>
+        <p className="mt-1 text-sm text-muted">Everything here works offline.</p>
+      </div>
+      <Card className="divide-y divide-border p-0">
+        {FAQ.map((item) => (
+          <details key={item.q} className="group px-4 py-3">
+            <summary className="cursor-pointer text-sm font-medium text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+              {item.q}
+            </summary>
+            <p className="mt-2 text-sm text-muted">{item.a}</p>
+          </details>
+        ))}
+      </Card>
+    </div>
+  );
+}

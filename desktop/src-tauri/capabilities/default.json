@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Window permissions. The app makes no network requests from the UI.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

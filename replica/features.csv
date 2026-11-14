@@ -1,0 +1,49 @@
+feature,area,priority,original,clone,notes
+One-click network interface detection and capture start/stop,capture,must,yes,yes,Core. Verified on the wired adapter; defaults to the connected one. Wi-Fi and VPN adapters not tested.
+Live traffic table (IP/port/protocol/bytes/timestamp),capture,must,yes,yes,"Core. Last 1,000 rows shown. Non-IP frames (ARP) not shown. Large tables may get slow on very busy networks."
+ARP network device discovery (own LAN),discovery,should,yes,partial,"Passive only: lists local devices seen in a capture. No active ARP scan, on purpose."
+Select a discovered device and monitor its traffic,discovery,should,yes,no,"Not built. Use a filter on the device's address instead. Watching another device's traffic needs interception, which is out."
+Custom packet filter editor (protocol/direction/port/length/hex/title ID),filtering,must,yes,partial,"Protocol, port, address prefix, minimum size. No direction, length range, or hex matching."
+Enable/disable individual filters,filtering,must,yes,partial,One filter is chosen at a time in the Capture page; there are no per-filter on/off switches.
+"Starter filters (DNS, web, NTP, voice and video)",filtering,must,yes,yes,"Five generic filters written fresh (web, DNS, ping, local network, large packets). No NTP or voice set."
+Global capture-level filter (protocol/length/port/hex),filtering,should,yes,no,Not built. Filters change the view only; capture always records everything on the adapter.
+Export captures to CSV/JSON/TXT,export,should,yes,partial,"CSV, JSON and TXT built and tested; formula-safe CSV. Save dialog not seen in the real window."
+Copy row/cell/table to clipboard,export,should,yes,no,Not built. Never scoped.
+Traffic Control: drop/lag/throttle/reorder/duplicate rules on own device traffic,traffic-control,must,yes,partial,"Only an outgoing speed cap (Windows QoS, IPv4). No drop, lag, reorder or duplicate: those need a kernel driver (WinDivert). Success path needs administrator; only the non-admin error path was tested."
+Per-rule probability and burst scheduling,traffic-control,should,yes,no,Needs the driver-based engine.
+Live traffic-control stats + emergency stop,traffic-control,must,yes,partial,"Emergency stop built (Ctrl+Shift+X, red bar, removal on exit). No live stats."
+Packet Tester: craft/send packets to a device you own,testing,skip,yes,skip,Out by decision 2026-11-15.
+Replay a previously captured packet,testing,must,yes,yes,"Local-to-local packets only, with confirmation. Both ends must be private addresses. Tested: internet-bound packets refused, two local packets sent."
+Packet Inspector: raw hex/ASCII view of a packet,testing,skip,yes,skip,Out by decision 2026-11-15.
+Built-in basic network scan (nmap-style) of own LAN,discovery,could,yes,no,Not built. Active scanning contacts every device; kept out.
+Account + login,account,skip,yes,skip,Out. App has no accounts.
+Two-factor authentication,account,skip,yes,skip,Out. App has no accounts.
+Persistent sessions between launches,account,skip,yes,skip,Out. App has no accounts.
+Themes (dark/ultra dark/light) + accent color picker,ux,skip,yes,skip,Out by decision 2026-11-15. Ships dark only.
+Multi-language UI,ux,skip,yes,skip,Out by decision 2026-11-15. English only.
+Offline help and FAQ,support,must,yes,yes,"Eight questions, bundled, works offline."
+Discord Rich Presence,integrations,skip,yes,skip,Out by decision 2026-11-15.
+One-time purchase + optional add-on pricing model,billing,skip,yes,skip,Out. The app is free.
+License check / device activation limit,billing,skip,yes,skip,Out. The app is free.
+Offline GeoIP lookup (bundled database),discovery,must,yes,no,Not built. No legally bundled database available and none downloaded without your permission.
+PSN account link + auto-filter switching by detected game,integrations,could,yes,no,Maybe-later: only if optional accounts return.
+"Xbox account link (gamertag display only, no messages/party actions)",integrations,could,yes,no,Maybe-later: only if optional accounts return.
+Device labels (local),account,should,yes,yes,"Names for local devices, saved on this computer."
+"Device/license seat management (active device, monthly switch limit, password-gated reset)",billing,skip,yes,skip,Out. The app is free.
+Billing history and per-product invoices,billing,skip,yes,skip,Out. The app is free.
+PS4 Username AI (decrypt PSN usernames from traffic to find a stranger's IP),username-ai,skip,yes,skip,identifies people you are not authorized to monitor; see recon.md Out of scope
+"Xbox Gamertag AI / PC Username AI (same, for Xbox/PC)",username-ai,skip,yes,skip,same reason
+Username/Gamertag to IP lookup and reverse lookup,username-ai,skip,yes,skip,same reason
+Traffic Control targeting another player's IP (lag switch on a stranger),traffic-control,skip,yes,skip,disrupts someone else's connection without authorization
+Proprietary Geo IP database and DDoS Protection Lookup of arbitrary IPs,discovery,skip,yes,skip,used to profile other players; vendor's own data besides
+Cloud filters / community filter library,filtering,skip,yes,skip,"the original's user network and data, not a buildable feature"
+"Xbox Toolkit (party-chat crashing, session IP grabber, friend list, reading Xbox messages)",integrations,skip,yes,skip,acts on other people's sessions; needs OAuth scopes not grantable for this use
+Packet Tester sending arbitrary crafted packets to third-party IPs,testing,skip,yes,skip,only the own-device version is kept
+Filter import/export as files,filtering,must,no,partial,Built (JSON file with validation). The file picker was not exercised in the real window.
+"All data local, no account",platform,must,no,yes,"Settings, filters and labels in the app data folder. No sign-in, no outbound calls."
+"Update check (only outbound call, can be turned off)",platform,must,yes,partial,Off switch built and saved. The check itself is not built: there is no update server.
+Signed installer and portable zip,platform,must,yes,partial,"Portable zip built and smoke-tested. No installer, no code signing."
+pcap import/export,export,should,no,no,Not built.
+Usage and crash reporting,platform,skip,no,skip,Moved to Out 2026-11-15: it conflicts with the local-only rule.
+macOS and Linux builds,platform,skip,no,skip,Out by decision 2026-11-15.
+Open-source the code,platform,could,no,no,Maybe-later: after v1 is stable for 3 months.

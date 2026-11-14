@@ -1,0 +1,36 @@
+# EqSniff
+
+A Windows desktop app that shows the network traffic on your own computer. You can filter and export it, replay a packet between devices on your own network, and slow down your own connection to test how apps behave on a bad link. Everything stays on your computer. There is no account.
+
+Built with Tauri 2 (Rust) and a React + TypeScript window. Capture uses Npcap.
+
+## Folders
+
+| Folder | What is in it |
+| --- | --- |
+| `desktop/` | The app. `src/` is the window, `src-tauri/` is the Rust side. |
+| `replica/` | Scope, architecture, feature matrix, build log, and `unbuilt.md` (what is missing and why). |
+| `_archive/web-dashboard/` | An earlier web version with accounts and billing. Kept for reference. Not used. |
+
+## Build
+
+You need Rust (MSVC toolchain), Node 20+, and Npcap installed. Building also needs Npcap's import library, `wpcap.lib`, from the Npcap SDK, or one generated from the installed `wpcap.dll`.
+
+```powershell
+cd desktop
+npm install
+$env:CARGO_TARGET_DIR = 'C:/nt-target'      # short path: Windows limits paths to 260 characters
+$env:LIBPCAP_LIBDIR   = 'C:\nt-libs'        # folder that holds wpcap.lib
+npm run tauri dev
+```
+
+`npm run tauri build` makes the installer.
+
+## Running
+
+Install Npcap first. Run the app as administrator to use traffic control. Press Ctrl+Shift+X to stop any limit at once.
+
+## Data sources and licences
+
+- Country lookup uses the DB-IP Lite country database (CC BY 4.0). See `desktop/src-tauri/resources/DB-IP-LICENSE.txt`.
+- Packet effects use the WinDivert driver (LGPL v3). See `desktop/src-tauri/vendor/windivert/`.
