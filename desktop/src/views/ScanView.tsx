@@ -9,7 +9,6 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 
 export function ScanView({ onHosts }: { onHosts?: (hosts: ScanHost[]) => void }) {
   const [target, setTarget] = useState("");
-  const [owns, setOwns] = useState(false);
   const [network, setNetwork] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [poll, setPoll] = useState<ScanPoll | null>(null);
@@ -76,23 +75,13 @@ export function ScanView({ onHosts }: { onHosts?: (hosts: ScanHost[]) => void })
           disabled={running}
           onChange={(e) => setTarget(e.target.value)}
         />
-        <label className="flex items-start gap-2 text-sm text-text">
-          <input
-            type="checkbox"
-            checked={owns}
-            disabled={running}
-            onChange={(e) => setOwns(e.target.checked)}
-            className="mt-0.5 h-4 w-4 accent-[var(--color-accent)]"
-          />
-          <span>I own or manage this network, or I have permission to scan it.</span>
-        </label>
         <div className="flex flex-wrap gap-2">
           {running ? (
             <Button variant="danger" onClick={() => api.scanCancel()}>
               Stop scan
             </Button>
           ) : (
-            <Button onClick={start} disabled={!owns}>
+            <Button onClick={start}>
               Start scan
             </Button>
           )}
