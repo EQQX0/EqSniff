@@ -32,6 +32,13 @@ pub(crate) fn manage_state(b: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     manage_state(tauri::Builder::default())
+        .setup(|app| {
+            use tauri::Manager;
+            if let Ok(dir) = app.path().app_data_dir() {
+                ipinfo::init(dir.join("ipdb"), true);
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             capture::list_adapters,
             capture::start_capture,

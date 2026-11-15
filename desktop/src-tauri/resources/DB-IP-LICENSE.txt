@@ -8,3 +8,6 @@ Attribution required: "IP Geolocation by DB-IP" (https://db-ip.com).
 The app shows this credit in Settings. If you redistribute the app, keep the credit and this file.
 To refresh the data, download the new monthly edition of the free country database from db-ip.com,
 unpack it, and replace country.mmdb.
+
+asn.mmdb is the "IP to ASN Lite" database from DB-IP (https://db-ip.com), edition 2026-11, under the same license.
+The city database is downloaded by the app on first start from download.db-ip.com ("IP to City Lite", same license).

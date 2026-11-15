@@ -117,10 +117,11 @@ Branch `main`, origin https://github.com/EQQX0/EqSniff (private). Work through a
 Release steps used for 0.2.3: `npm run tauri build` (env `CARGO_TARGET_DIR=C:/nt-target`, `LIBPCAP_LIBDIR=C:
 t-libs`), copy the NSIS installer to `EqNetwork-setup.exe` in the linked `updates-site` folder, write `update.json` with the SHA-256, `vercel deploy --prod --yes`. The user's rule: saying "commit" means do this whole release.
 
-## Release 0.2.9 (published)
+## Release 0.2.13 (published; includes the 0.2.9 to 0.2.12 work below)
 
 - Capture shows only the IP list. City and ISP load by themselves (ip-api.com batch); the Server port box, lookup button and Minecraft log import were removed from the window. An address needs 5+ packets each way and 20+ seconds of talking to count as active.
 - New `eqnet.exe` command line (`desktop/cli`, `src-tauri/src/cli.rs`, cargo feature `cli`). Guide for AIs: `docs/AI-GUIDE.md`. Build it with the command in that guide; it is not part of the installer.
 - Note: the earlier lib.rs revert dropped `ipinfo::ip_details`; it is registered again.
 - Capture list: right-click menu (copy, label, show or hide an ISP, hide an IP, delete row, clear all). A label keeps its last 3 addresses.
 - Filters: 3-step window (`src/components/FilterWizard.tsx`); several IP or CIDR entries, countries, ISPs, hex patterns, port lists and ranges. Country and ISP need the lookup data (`Lookup` in `src/lib/filters.ts`). The capture-time filter is unchanged.
+- ISP, city and VPN flag no longer use ip-api.com. `src-tauri/src/ipinfo.rs` reads the bundled DB-IP ASN database (`resources/asn.mmdb`) and a city database downloaded once into the data folder `ipdb\city.mmdb` (background thread at start, refreshed after 40 days). VPN flag is a name-based guess.

@@ -33,7 +33,7 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ("get_store", "{name: labels|capture-filter|ip-storage|ip-storage-deleted|vpn-deleted|cloud-session}"),
     ("save_store", "{name, value}"),
     ("geo_lookup", "{ips:[string]}"),
-    ("ip_details", "{ips:[string]} (sends the public addresses to ip-api.com)"),
+    ("ip_details", "{ips:[string]} (local database, nothing is sent)"),
     ("check_update", "{}"),
     ("install_update", "{}"),
     ("scan_start", "{target: '' for your own network}"),
@@ -229,7 +229,7 @@ struct Seen {
 /// Runs a capture for `seconds` and lists the addresses that really talked to this computer.
 fn capture_ips(app: &AppHandle, o: &Opts) -> Res {
     let seconds: u64 = o.num("seconds", 30);
-    let min: u64 = o.num("min", 5);
+    let min: u64 = o.num("min", 3);
     let want_port: Option<u16> = o.get("port").and_then(|p| p.parse().ok());
     let adapter = match o.get("adapter") {
         Some(a) => a.to_string(),
@@ -290,7 +290,7 @@ fn capture_ips(app: &AppHandle, o: &Opts) -> Res {
     let labels = ip_labels(app);
     let mut rows: Vec<(String, Seen)> = book
         .into_iter()
-        .filter(|(a, s)| !is_local(a) && (o.flag("all") || (s.inbound >= min && s.outbound >= min && s.last - s.first >= 20.0)) && want_port.map_or(true, |p| s.ports.contains(&p)))
+        .filter(|(a, s)| !is_local(a) && (o.flag("all") || (s.inbound >= min && s.outbound >= min)) && want_port.map_or(true, |p| s.ports.contains(&p)))
         .collect();
     rows.sort_by(|a, b| b.1.packets.cmp(&a.1.packets));
     let addrs: Vec<String> = rows.iter().map(|r| r.0.clone()).collect();
@@ -413,10 +413,10 @@ USAGE: eqnet <command> [arguments] [--json]
 Capture and IPs
   capture [--seconds 30] [--adapter NAME] [--port 9305] [--min 5] [--all] [--lookup]
                           Capture, then list the public addresses that talked both ways.
-                          --lookup adds city, ISP and VPN flag (sends those addresses to ip-api.com).
+                          --lookup adds city, ISP and VPN flag (from local databases).
   adapters                List capture adapters.
   ips                     List IP Storage.     ips add <ip> [label]   ips label <ip> <label>   ips remove <ip>
-  lookup <ip...>          Country (offline) for each address; add --details for city/ISP/VPN (online).
+  lookup <ip...>          Country (offline) for each address; add --details for city/ISP/VPN (local).
   minecraft-log <file...> Label addresses with player names from a server log (latest.log).
 
 Network and devices
@@ -755,6 +755,9 @@ pub fn main(args: Vec<String>) -> i32 {
         }
     };
     let handle = app.handle().clone();
+    if let Ok(dir) = handle.path().app_data_dir() {
+        ipinfo::init(dir.join("ipdb"), false);
+    }
     let opts = Opts::parse(&args[1..]);
     match run_command(&handle, &cmd, &opts) {
         Ok(Some(v)) => {

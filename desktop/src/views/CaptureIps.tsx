@@ -47,10 +47,7 @@ export function absorb(book: IpBook, rows: PacketRow[], farOf: (r: PacketRow) =>
 }
 
 /** An address counts as an active connection once it has sent and received at least this many packets. */
-export const ACTIVE_EACH_WAY = 5;
-
-/** ...and been talking for at least this many seconds. A scanner that pings the port and gets answered is gone in a moment; a player stays. */
-export const ACTIVE_SPAN = 20;
+export const ACTIVE_EACH_WAY = 3;
 
 /** An address is online while its last packet is newer than this many seconds. */
 export const ONLINE_WITHIN = 15;
@@ -61,7 +58,7 @@ export function listBook(book: IpBook, onlyFiltered: boolean, serverPort: number
   // Only real connections from the internet: not local addresses, and not scanners that never really talk back.
   all = all.filter((i) => !isLocalAddress(i.address));
   if (serverPort !== null) all = all.filter((i) => i.ports.has(serverPort));
-  all = all.filter((i) => i.inbound >= ACTIVE_EACH_WAY && i.outbound >= ACTIVE_EACH_WAY && i.last - i.first >= ACTIVE_SPAN);
+  all = all.filter((i) => i.inbound >= ACTIVE_EACH_WAY && i.outbound >= ACTIVE_EACH_WAY);
   return (onlyFiltered ? all.filter((i) => i.passed > 0) : all).sort((x, y) => y.packets - x.packets);
 }
 
@@ -159,7 +156,7 @@ export function IpList({ items, names, geo, hidden, onSave, onClear, onDelete, n
           <p className="p-6 text-sm text-muted">{items.length === 0 ? "No addresses yet. Start a capture or open a file." : "Nothing matches that search."}</p>
         ) : (
           <table className="w-full min-w-[64rem] table-fixed text-left text-xs">
-            <thead className="sticky top-0 bg-[linear-gradient(180deg,#4a1621,#33101a)] text-text">
+            <thead className="sticky top-0 z-10 bg-[linear-gradient(180deg,#4a1621,#33101a)] text-text">
               <tr>
                 <th className="w-[15%] px-3 py-2 font-semibold">Label</th>
                 <th className="w-[12%] px-3 py-2 font-semibold">IP address</th>

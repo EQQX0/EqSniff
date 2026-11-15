@@ -214,29 +214,42 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
     }
   }
 
-  /** Reads Minecraft logs and saves each player's name as the label of the address they joined from. */
-  /** */
-  async function lookUp(list: string[]) {
-    const todo = list.filter((a) => !details[a] && !lookupBusy.current.has(a));
-    if (todo.length === 0) return;
-    // Addresses stay marked after a failure so a dead connection is not retried every second.
-    todo.forEach((a) => lookupBusy.current.add(a));
-    try {
-      const got = await api.ipDetails(todo);
-      setDetails((d) => ({ ...d, ...Object.fromEntries(got.map((g) => [g.address, g])) }));
-    } catch {
-      /* the City and ISP columns stay empty */
-    }
-  }
+  // City and ISP are always shown. They come from databases on this computer, so a batch of new addresses is looked up
+  // within a fraction of a second. The timer is kept in a ref: one that restarted on every packet update would never fire.
+  const lookupTimer = useRef<number | null>(null);
+  const lookupLast = useRef(0);
+  const lookupRunning = useRef(false);
+  const ipsNow = useRef<string[]>([]);
+  const detailsNow = useRef(details);
+  ipsNow.current = [...allIps, ...filteredIps].map((i) => i.address);
+  detailsNow.current = details;
 
-  // City and ISP are always shown: look up each new address in the list a moment after it appears.
   useEffect(() => {
-    const missing = [...allIps, ...filteredIps].map((i) => i.address).filter((a) => !details[a] && !lookupBusy.current.has(a));
-    if (missing.length === 0) return;
-    const t = window.setTimeout(() => void lookUp([...new Set(missing)].slice(0, 100)), 1500);
-    return () => window.clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allIps, filteredIps, details]);
+    if (lookupTimer.current !== null || lookupRunning.current) return;
+    const pending = () => [...new Set(ipsNow.current)].filter((a) => !detailsNow.current[a] && !lookupBusy.current.has(a));
+    if (pending().length === 0) return;
+    lookupTimer.current = window.setTimeout(async () => {
+      lookupTimer.current = null;
+      const todo = pending().slice(0, 100);
+      if (todo.length === 0) return;
+      lookupLast.current = Date.now();
+      lookupRunning.current = true;
+      todo.forEach((a) => lookupBusy.current.add(a));
+      try {
+        const got = await api.ipDetails(todo);
+        setDetails((d) => ({ ...d, ...Object.fromEntries(got.map((g) => [g.address, g])) }));
+      } catch {
+        // try these addresses again in 30 seconds
+        window.setTimeout(() => {
+          todo.forEach((a) => lookupBusy.current.delete(a));
+          setIpVersion((v) => v + 1);
+        }, 30000);
+      } finally {
+        lookupRunning.current = false;
+        setIpVersion((v) => v + 1); // wakes the effect for addresses that arrived meanwhile
+      }
+    }, Math.max(80, 400 - (Date.now() - lookupLast.current)));
+  });
 
   /** Forgets one address and its packets. It returns if it sends more. */
   function deleteRow(address: string) {

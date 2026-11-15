@@ -18,7 +18,7 @@ Rules that save you time:
 - VPN, hotspot and sharing commands need an administrator terminal. Without one, Windows refuses and the command prints the reason.
 - `capture` needs Npcap. Other commands work without it.
 - The app and `eqnet` can run at the same time, but only one of them should capture on an adapter at once.
-- Never run a capture or a lookup the user did not ask for. `capture --lookup`, `lookup --details` and `ip_details` send public addresses to ip-api.com. Plain `lookup` (country) stays on this computer.
+- City, ISP and the VPN flag come from databases on this computer (ISP is built in; the city database downloads once into `%APPDATA%pp.networktoolkit.desktop\ipdb`). Nothing is sent when you look up an address. Until the city database has downloaded, `city` is empty. The VPN flag is a guess from the network name (data centres, clouds, VPN companies).
 
 ## Everyday jobs
 
@@ -44,7 +44,7 @@ One label keeps at most 3 addresses. Writing a fourth address to the same label 
 
 ## What `capture` reports
 
-`capture` records packets for `--seconds` (default 30), then lists public addresses that talked to this computer in both directions. An address needs at least `--min` packets each way (default 5) and at least 20 seconds between its first and last packet. Add `--all` to drop both rules.
+`capture` records packets for `--seconds` (default 30), then lists public addresses that talked to this computer in both directions. An address needs at least `--min` packets each way (default 3), so new players show within a second or two. Add `--all` to drop the rule.
 
 Each row has: `address`, `label` (from IP Storage), `country`, `protocols` (TCP, UDP), `ports` (service ports below 49152), `inbound`, `outbound`, `bytes`, `online` (a packet in the last 15 seconds of the capture), `secondsSeen`. `--lookup` adds `city`, `region`, `isp` and `vpn` (true for a known VPN, proxy or data centre). `--port 9305` keeps addresses that used that port at either end.
 
@@ -75,5 +75,5 @@ Account sign-in, cloud sync and the shared library run in the window's TypeScrip
 - `desktop/src-tauri/src/cli.rs`: the command line (parsing, short commands, `call`).
 - `desktop/cli/`: the tiny crate that builds `eqnet.exe`. It is separate from the app so it does not carry the app's administrator manifest.
 - `desktop/src-tauri/src/lib.rs`: registers the commands for the window; the `cli` cargo feature turns on the headless mode.
-- `desktop/src/views/CaptureView.tsx`, `CaptureIps.tsx`: the same IP list logic in the window (`listBook`, `ACTIVE_EACH_WAY`, `ACTIVE_SPAN`, `ONLINE_WITHIN`). Keep the numbers in `cli.rs` in step.
+- `desktop/src/views/CaptureView.tsx`, `CaptureIps.tsx`: the same IP list logic in the window (`listBook`, `ACTIVE_EACH_WAY`, `ONLINE_WITHIN`). Keep the numbers in `cli.rs` in step.
 - `HANDOFF.md`: current status. `README.md`: project map.
