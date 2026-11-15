@@ -104,5 +104,13 @@ Branch `main`, origin https://github.com/EQQX0/EqSniff (private). Work through a
 - Removed the built-in starter filters and the "Use alone" button; the filter list starts empty.
 - Checked: `npm test`, `npm run build`, `cargo test` pass; signed-out requests read nothing. Not run: a real sign-in, tunnel upload/download round trip, or a release build.
 
+### Account redesign (in the working tree, NOT yet released; next release is 0.2.4)
+- Sync is always on while signed in; no switches, no passphrase. Tunnels are stored readable in the user's private account (`sync_items`). `vpnseal.rs` and the aes-gcm/pbkdf2 deps were removed; `vpn_sync_list/read/write` replace seal/open.
+- Accounts: username (unique, case-insensitive, changeable) + email + password. Migrations `0003_profiles.sql`, `0004_shared_items.sql` (applied). Edge function `supabase/functions/account/index.ts` (deployed, verify_jwt off) handles `signup`, `login` (username to email lookup with the service role), `rename`.
+- Create account asks username, email, password, confirm. Sign in uses username + password. Reset password sends a Supabase recovery email that lands on `https://updates.eqqx2.com/reset` (`reset.html` in the updates-site folder, deployed with the feed). MANUAL STEP for the owner: Supabase dashboard, Authentication, URL Configuration: add `https://updates.eqqx2.com/reset` to Redirect URLs. Built-in email is rate limited; new accounts must confirm email.
+- Sharing: `shared_items` (readable by every signed-in account, writable by the owner). `components/SharedLibrary.tsx` shares tunnels and filters; others press "Add to mine". A shared tunnel contains its private key. IP addresses are shareable one at a time (kind `ip`, migration `0005_shared_ips.sql`, applied) because the user asked; the UI warns that address and label become visible to every account. `lib/backup.ts` + `components/BackupCard.tsx`: export/import everything as one JSON (works signed out; import never overwrites, filters come in switched off).
+
+- Capture: tabs All Traffic (ignores filters) and Filtered Traffic (after filters), each with a count, plus an "N IPs" button that swaps the table for an IP list (`views/CaptureIps.tsx`) with editable labels saved in IP Storage. In All Traffic the list marks addresses the filters hide.
+
 Release steps used for 0.2.3: `npm run tauri build` (env `CARGO_TARGET_DIR=C:/nt-target`, `LIBPCAP_LIBDIR=C:
 t-libs`), copy the NSIS installer to `EqNetwork-setup.exe` in the linked `updates-site` folder, write `update.json` with the SHA-256, `vercel deploy --prod --yes`. The user's rule: saying "commit" means do this whole release.

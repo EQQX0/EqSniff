@@ -3,10 +3,10 @@ import { IP_DELETED, IP_STORE, announceChange, isEntryArray, loadDeleted, newEnt
 import { mergeSync, type RemoteEntry } from "@/lib/ipmerge";
 
 /**
- * Optional account for syncing IP Storage, filters and VPN tunnels between computers. Off until the user signs in and turns
- * each part on. Everything stays private to the account (the database rules show a row only to its owner).
- * Tunnels are locked on this computer with a sync passphrase before upload, so the server never holds a readable private key.
- * The password and the passphrase are never saved. The key below is the project's public (publishable) key.
+ * Optional account that keeps IP Storage, filters and VPN tunnels the same on every computer you sign in on.
+ * Once signed in, sync is always on. Everything is private to the account (the database rules show a row only to its owner)
+ * except what the user chooses to share with every account: tunnels and filters, never IP Storage.
+ * The password is never saved. The key below is the project's public (publishable) key.
  */
 export const CLOUD_URL = "https://bswzptrmeeobbnthjioz.supabase.co";
 const CLOUD_KEY = "sb_publishable_efMWSpsdDD8crieaCVSlow_PGXONxdi";
@@ -16,29 +16,18 @@ export const FILTERS_SYNCED = "filters-synced";
 
 export interface CloudSession {
   email: string;
+  username: string;
+  userId: string;
   accessToken: string;
   refreshToken: string;
   /** Milliseconds since 1970 when the access token stops working. */
   expiresAt: number;
-  /** Keep IP Storage in step. */
-  enabled: boolean;
-  /** Keep the filter list in step. */
-  filters: boolean;
-  /** Keep VPN tunnels in step (needs the sync passphrase). */
-  tunnels: boolean;
   /** Fingerprint of the filter list as of the last sync, to tell which side changed. */
   filtersHash: string | null;
   lastSync: number | null;
 }
 
 export class CloudError extends Error {}
-
-// The passphrase lives in memory only. After the app restarts it has to be entered again before tunnels sync.
-let passphrase: string | null = null;
-export const hasPassphrase = () => passphrase !== null;
-export function setPassphrase(p: string | null) {
-  passphrase = p;
-}
 
 async function call(path: string, init: RequestInit & { token?: string } = {}): Promise<Response> {
   const { token, headers, ...rest } = init;
@@ -79,12 +68,11 @@ export async function loadSession(): Promise<CloudSession | null> {
   if (!v || typeof v !== "object" || typeof v.refreshToken !== "string" || typeof v.email !== "string") return null;
   return {
     email: v.email,
+    username: v.username ?? "",
+    userId: v.userId ?? "",
     accessToken: v.accessToken ?? "",
     refreshToken: v.refreshToken,
     expiresAt: v.expiresAt ?? 0,
-    enabled: !!v.enabled,
-    filters: !!v.filters,
-    tunnels: !!v.tunnels,
     filtersHash: v.filtersHash ?? null,
     lastSync: v.lastSync ?? null,
   };
@@ -98,56 +86,76 @@ interface TokenReply {
   access_token?: string;
   refresh_token?: string;
   expires_in?: number;
-  user?: { email?: string };
+  username?: string;
+  user?: { id?: string; email?: string };
+  error?: string;
+  confirmEmail?: boolean;
 }
 
-function toSession(r: TokenReply, email: string, keep?: Partial<CloudSession>): CloudSession {
+function toSession(r: TokenReply, fallback: { email?: string; username?: string }, keep?: Partial<CloudSession>): CloudSession {
   return {
-    email: r.user?.email ?? email,
+    email: r.user?.email ?? keep?.email ?? fallback.email ?? "",
+    username: r.username ?? keep?.username ?? fallback.username ?? "",
+    userId: r.user?.id ?? keep?.userId ?? "",
     accessToken: r.access_token ?? "",
     refreshToken: r.refresh_token ?? "",
     expiresAt: Date.now() + (r.expires_in ?? 3600) * 1000,
-    enabled: keep?.enabled ?? false,
-    filters: keep?.filters ?? false,
-    tunnels: keep?.tunnels ?? false,
     filtersHash: keep?.filtersHash ?? null,
     lastSync: keep?.lastSync ?? null,
   };
 }
 
+/** Sign-up and username sign-in go through the project's account function, which keeps emails private. */
+async function account(action: "signup" | "login" | "rename", body: Record<string, string>, token?: string): Promise<TokenReply> {
+  const res = await call("/functions/v1/account", {
+    method: "POST",
+    body: JSON.stringify({ action, ...body }),
+    headers: token ? { "x-user-token": token } : undefined,
+  });
+  const out = (await res.json().catch(() => ({}))) as TokenReply;
+  if (!res.ok || out.error) throw new CloudError(out.error || `The sync server answered with status ${res.status}.`);
+  return out;
+}
+
 export type SignUpResult = { session: CloudSession } | { confirmEmail: true };
 
-export async function signUp(email: string, password: string): Promise<SignUpResult> {
-  const res = await ok(await call("/auth/v1/signup", { method: "POST", body: JSON.stringify({ email, password }) }));
-  const j = (await res.json()) as TokenReply;
-  if (!j.access_token) return { confirmEmail: true }; // the project asks new accounts to confirm their email first
-  const s = toSession(j, email);
+export async function signUp(username: string, email: string, password: string): Promise<SignUpResult> {
+  const out = await account("signup", { username, email, password });
+  if (!out.access_token) return { confirmEmail: true }; // the project asks new accounts to confirm their email first
+  const s = toSession(out, { email, username });
   await saveSession(s);
   return { session: s };
 }
 
-export async function signIn(email: string, password: string): Promise<CloudSession> {
-  const res = await ok(await call("/auth/v1/token?grant_type=password", { method: "POST", body: JSON.stringify({ email, password }) }));
-  const s = toSession((await res.json()) as TokenReply, email);
+export async function signIn(username: string, password: string): Promise<CloudSession> {
+  const s = toSession(await account("login", { username, password }), { username });
   await saveSession(s);
   return s;
+}
+
+/** Sends a password-reset email. The link opens a small page on the update site where the new password is typed. */
+export async function resetPassword(email: string): Promise<void> {
+  await ok(
+    await call(`/auth/v1/recover?redirect_to=${encodeURIComponent("https://updates.eqqx2.com/reset")}`, {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    })
+  );
+}
+
+/** Changes the username. Usernames are unique, ignoring capital letters. */
+export async function renameUser(username: string): Promise<CloudSession> {
+  const { token, session } = await freshToken();
+  const out = await account("rename", { username }, token);
+  const next = { ...session, username: out.username ?? username };
+  await saveSession(next);
+  return next;
 }
 
 export async function signOut(): Promise<void> {
   const s = await loadSession();
   if (s?.accessToken) await call("/auth/v1/logout", { method: "POST", token: s.accessToken }).catch(() => {});
-  passphrase = null;
   await saveSession(null);
-}
-
-export type Parts = Pick<CloudSession, "enabled" | "filters" | "tunnels">;
-
-export async function setParts(patch: Partial<Parts>): Promise<CloudSession | null> {
-  const s = await loadSession();
-  if (!s) return null;
-  const next = { ...s, ...patch };
-  await saveSession(next);
-  return next;
 }
 
 /** A working access token, refreshed when it is about to expire. Signs out if the account no longer accepts the refresh. */
@@ -163,7 +171,7 @@ async function freshToken(): Promise<{ token: string; session: CloudSession }> {
     if (res.status === 400 || res.status === 401) await saveSession(null);
     return fail(res);
   }
-  const next = toSession((await res.json()) as TokenReply, s.email, s);
+  const next = toSession((await res.json()) as TokenReply, { email: s.email }, s);
   await saveSession(next);
   return { token: next.accessToken, session: next };
 }
@@ -280,12 +288,8 @@ export async function fingerprintOf(text: string): Promise<string> {
   return [...d.slice(0, 16)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function syncTunnels(token: string, pass: string, report: SyncReport) {
+async function syncTunnels(token: string, report: SyncReport) {
   const rows = await listItems(token, "tunnel");
-
-  // Refuse early if this passphrase is not the one the account's tunnels were locked with.
-  const sample = rows.find((r) => !r.deleted && r.body);
-  if (sample) await api.vpnSyncCheck(sample.body, pass).catch(() => Promise.reject(new CloudError("Wrong sync passphrase for this account's tunnels.")));
 
   const here = await api.vpnSyncList();
   const gone = rows.filter((r) => r.deleted);
@@ -305,7 +309,7 @@ async function syncTunnels(token: string, pass: string, report: SyncReport) {
   const result = mergeSync(local, deleted, remote, newEntryId);
 
   const up: { name: string; fingerprint: string; body: string }[] = [];
-  for (const p of result.push) up.push({ name: p.address, fingerprint: p.label, body: await api.vpnSyncSeal(p.address, pass) });
+  for (const p of result.push) up.push({ name: p.address, fingerprint: p.label, body: await api.vpnSyncRead(p.address) });
   await putItems(token, "tunnel", up);
   for (const name of result.remove) await dropItem(token, "tunnel", name);
 
@@ -317,7 +321,7 @@ async function syncTunnels(token: string, pass: string, report: SyncReport) {
     const row = rows.find((r) => r.name === e.address && !r.deleted);
     if (!row) continue;
     try {
-      await api.vpnSyncOpen(e.address, row.body, pass);
+      await api.vpnSyncWrite(e.address, row.body);
       downloaded++;
     } catch (err) {
       report.notes.push(`${e.address}: ${String(err)}`);
@@ -387,12 +391,9 @@ async function doSync(): Promise<SyncReport> {
   const report: SyncReport = { added: 0, sent: 0, removed: 0, notes: [] };
   let filtersHash = session.filtersHash;
 
-  if (session.enabled) await syncIps(token, report);
-  if (session.filters) filtersHash = await syncFilters(token, session, report);
-  if (session.tunnels) {
-    if (passphrase) await syncTunnels(token, passphrase, report);
-    else report.notes.push("Tunnels were not synced: enter the sync passphrase in Settings first.");
-  }
+  await syncIps(token, report);
+  filtersHash = await syncFilters(token, session, report);
+  await syncTunnels(token, report);
 
   const latest = (await loadSession()) ?? session;
   await saveSession({ ...latest, filtersHash, lastSync: Date.now() });
@@ -407,14 +408,14 @@ export function startAutoSync(onResult?: (r: SyncReport | CloudError) => void): 
   let timer: ReturnType<typeof setTimeout> | undefined;
   const run = async () => {
     try {
-      const s = await loadSession();
-      if (!s || !(s.enabled || s.filters || s.tunnels)) return;
+      if (!(await loadSession())) return;
       onResult?.(await syncNow());
     } catch (e) {
       onResult?.(e instanceof CloudError ? e : new CloudError(String(e)));
     }
   };
   const first = setTimeout(run, 1500);
+  const every = setInterval(run, 5 * 60_000);
   const off = onEdited(() => {
     clearTimeout(timer);
     timer = setTimeout(run, 3000);
@@ -422,6 +423,56 @@ export function startAutoSync(onResult?: (r: SyncReport | CloudError) => void): 
   return () => {
     clearTimeout(first);
     clearTimeout(timer);
+    clearInterval(every);
     off();
   };
+}
+
+// ---- shared library: tunnels and filters shared with every signed-in account ----
+
+export interface SharedItem {
+  id: string;
+  ownerId: string;
+  ownerName: string;
+  kind: "tunnel" | "filter" | "ip";
+  name: string;
+  body: string;
+  updatedAt: number;
+}
+
+export async function listShared(): Promise<SharedItem[]> {
+  const { token } = await freshToken();
+  const res = await ok(await call("/rest/v1/shared_items?select=id,owner_id,owner_name,kind,name,body,updated_at&order=updated_at.desc&limit=500", { token }));
+  return ((await res.json()) as { id: string; owner_id: string; owner_name: string; kind: "tunnel" | "filter" | "ip"; name: string; body: string; updated_at: string }[]).map((r) => ({
+    id: r.id,
+    ownerId: r.owner_id,
+    ownerName: r.owner_name,
+    kind: r.kind,
+    name: r.name,
+    body: r.body,
+    updatedAt: Date.parse(r.updated_at) || 0,
+  }));
+}
+
+/** Makes one tunnel or filter visible to every signed-in account. They get a read-only copy to add to their own list. */
+export async function shareItem(kind: "tunnel" | "filter" | "ip", name: string, body: string): Promise<void> {
+  const { token, session } = await freshToken();
+  await ok(
+    await call("/rest/v1/shared_items?on_conflict=owner_id,kind,name", {
+      method: "POST",
+      token,
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({ kind, name, body, owner_name: session.username }),
+    })
+  );
+}
+
+export async function unshareItem(kind: "tunnel" | "filter" | "ip", name: string): Promise<void> {
+  const { token, session } = await freshToken();
+  await ok(
+    await call(`/rest/v1/shared_items?owner_id=eq.${session.userId}&kind=eq.${kind}&name=eq.${encodeURIComponent(name)}`, {
+      method: "DELETE",
+      token,
+    })
+  );
 }

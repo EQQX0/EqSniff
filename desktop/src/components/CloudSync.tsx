@@ -2,23 +2,29 @@ import { FormEvent, useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
-import { Switch } from "@/components/ui/Switch";
-import { CloudError, hasPassphrase, loadSession, setParts, setPassphrase, signIn, signOut, signUp, syncNow, type CloudSession, type Parts } from "@/lib/cloud";
+import { CloudError, loadSession, renameUser, resetPassword, signIn, signOut, signUp, syncNow, type CloudSession } from "@/lib/cloud";
+import { SharedLibrary } from "@/components/SharedLibrary";
+import { BackupCard } from "@/components/BackupCard";
 
-const PASS_MIN = 8;
 const when = (t: number | null) => (t ? new Date(t).toLocaleString() : "not yet");
+const USERNAME = /^[A-Za-z0-9_.-]{3,24}$/;
+const USERNAME_HINT = "3 to 24 letters, numbers, dots, dashes or underscores. Usernames are unique.";
 
-/** Settings card: sign in to an optional account and keep IP Storage in step between computers. */
+type Mode = "signin" | "create" | "reset";
+
+/** Settings card: an optional account that keeps IP Storage, filters and VPN tunnels the same on every computer. */
 export function CloudSync() {
   const [session, setSession] = useState<CloudSession | null>(null);
   const [ready, setReady] = useState(false);
+  const [mode, setMode] = useState<Mode>("signin");
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState<"in" | "up" | "sync" | null>(null);
+  const [confirm, setConfirm] = useState("");
+  const [newName, setNewName] = useState("");
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [pass, setPass] = useState("");
-  const [unlocked, setUnlocked] = useState(hasPassphrase());
 
   useEffect(() => {
     loadSession()
@@ -28,172 +34,187 @@ export function CloudSync() {
   }, []);
 
   const fail = (e: unknown) => setError(e instanceof CloudError ? e.message : String(e));
-  const valid = email.includes("@") && password.length >= 6;
+  const go = (m: Mode) => {
+    setMode(m);
+    setError(null);
+    setNote(null);
+    setPassword("");
+    setConfirm("");
+  };
 
-  async function submit(e: FormEvent, mode: "in" | "up") {
-    e.preventDefault();
-    if (!valid) {
-      setError("Enter your email and a password of at least 6 characters.");
-      return;
-    }
-    setBusy(mode);
+  async function run(task: () => Promise<void>) {
+    setBusy(true);
     setError(null);
     setNote(null);
     try {
-      if (mode === "in") {
-        setSession(await signIn(email.trim(), password));
-      } else {
-        const r = await signUp(email.trim(), password);
-        if ("session" in r) setSession(r.session);
-        else setNote("Account created. Open the email we sent you, confirm the address, then come back and sign in.");
-      }
-      setPassword("");
+      await task();
     } catch (err) {
       fail(err);
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   }
 
-  async function toggle(part: keyof Parts, on: boolean) {
-    setError(null);
-    try {
-      setSession(await setParts({ [part]: on }));
-      if (on && (part !== "tunnels" || hasPassphrase())) await runSync();
-    } catch (err) {
-      fail(err);
-    }
-  }
-
-  async function unlock(e: FormEvent) {
+  const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (pass.length < PASS_MIN) {
-      setError(`The sync passphrase needs at least ${PASS_MIN} characters.`);
-      return;
-    }
-    setPassphrase(pass);
-    setPass("");
-    setUnlocked(true);
-    await runSync();
-  }
+    void run(async () => {
+      if (mode === "signin") {
+        if (!username.trim() || !password) throw new CloudError("Enter your username and password.");
+        setSession(await signIn(username.trim(), password));
+        setPassword("");
+      } else if (mode === "create") {
+        if (!USERNAME.test(username.trim())) throw new CloudError(`Username: ${USERNAME_HINT}`);
+        if (!email.includes("@")) throw new CloudError("Enter a valid email address.");
+        if (password.length < 8) throw new CloudError("The password needs at least 8 characters.");
+        if (password !== confirm) throw new CloudError("The two passwords do not match.");
+        const r = await signUp(username.trim(), email.trim(), password);
+        setPassword("");
+        setConfirm("");
+        if ("session" in r) setSession(r.session);
+        else {
+          setNote("Account created. Open the email we sent you and confirm the address, then sign in with your username.");
+          setMode("signin");
+        }
+      } else {
+        if (!email.includes("@")) throw new CloudError("Enter the email address of your account.");
+        await resetPassword(email.trim());
+        setNote("If that email has an account, a reset link is on its way. Open it, choose a new password, then sign in here.");
+        setMode("signin");
+      }
+    });
+  };
 
-  async function runSync() {
-    setBusy("sync");
-    setError(null);
-    try {
+  const syncAgain = () =>
+    run(async () => {
       const r = await syncNow();
       setNote([`Synced. ${r.added} added here, ${r.sent} sent, ${r.removed} removed from the account.`, ...r.notes].join(" "));
       setSession(await loadSession());
-    } catch (err) {
-      fail(err);
-      setSession(await loadSession());
-    } finally {
-      setBusy(null);
-    }
-  }
+    });
 
-  async function leave() {
-    setError(null);
-    setNote(null);
-    try {
+  const rename = (e: FormEvent) => {
+    e.preventDefault();
+    void run(async () => {
+      if (!USERNAME.test(newName.trim())) throw new CloudError(`Username: ${USERNAME_HINT}`);
+      setSession(await renameUser(newName.trim()));
+      setNewName("");
+      setNote("Username changed.");
+    });
+  };
+
+  const leave = () =>
+    run(async () => {
       await signOut();
-      setUnlocked(false);
       setSession(null);
-    } catch (err) {
-      fail(err);
-    }
-  }
+    });
 
   return (
-    <Card className="space-y-4">
-      <div>
-        <h2 className="text-sm font-semibold text-text">Account sync (optional)</h2>
-        <p className="mt-1 text-xs text-muted">
-          Keep IP Storage, filters and VPN tunnels the same on every computer you sign in on. Everything is private to your
-          account: no other user can see it. Only the parts you switch on are sent, and nothing at all while you are signed out. Skip
-          this and the app never connects for it. Do not save anything secret in a label.
-        </p>
-      </div>
-
-      {error && (
-        <p role="alert" className="rounded-md border border-danger px-3 py-2 text-xs text-danger">
-          {error}
-        </p>
-      )}
-      {note && (
-        <p role="status" className="rounded-md border border-border bg-black/25 px-3 py-2 text-xs text-text">
-          {note}
-        </p>
-      )}
-
-      {!ready ? null : session ? (
-        <div className="space-y-3">
-          <p className="text-xs text-muted">
-            Signed in as <span className="font-semibold text-text">{session.email}</span>
+    <>
+      <Card className="space-y-4">
+        <div>
+          <h2 className="text-sm font-semibold text-text">Account sync (optional)</h2>
+          <p className="mt-1 text-xs text-muted">
+            Sign in and IP Storage, filters and VPN tunnels stay the same on every computer you use. It is always on while you
+            are signed in, and nothing is sent while you are signed out. Everything is private to your account unless you
+            share a tunnel, filter or IP address below. Skip this and the app never connects for it. A VPN tunnel contains its private key,
+            so only sign in on computers you trust.
           </p>
-          <p className="text-xs text-muted">Last sync: {when(session.lastSync)}</p>
-          <ul className="space-y-3">
-            {(
-              [
-                ["enabled", "IP Storage", "Saved addresses and their labels."],
-                ["filters", "Filters", "Your filter list, including which are on."],
-                ["tunnels", "VPN tunnels", "Locked on this computer with your sync passphrase before upload, so the server cannot read the keys."],
-              ] as [keyof Parts, string, string][]
-            ).map(([part, title, text]) => (
-              <li key={part} className="flex items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-sm font-medium text-text">{title}</h3>
-                  <p className="mt-0.5 text-xs text-muted">{text}</p>
-                </div>
-                <Switch label={`Sync ${title}`} checked={session[part]} onChange={(on) => toggle(part, on)} />
-              </li>
-            ))}
-          </ul>
-          {session.tunnels && !unlocked && (
-            <form className="space-y-2 rounded-md border border-border bg-black/25 p-3" onSubmit={unlock}>
-              <Input
-                label="Sync passphrase"
-                type="password"
-                autoComplete="off"
-                value={pass}
-                onChange={(e) => setPass(e.target.value)}
-                hint="Use the same passphrase on every computer. It is kept only while the app is open, and if you forget it the synced tunnels cannot be recovered."
-              />
-              <Button type="submit" size="sm">
-                Unlock tunnel sync
+        </div>
+
+        {error && (
+          <p role="alert" className="rounded-md border border-danger px-3 py-2 text-xs text-danger">
+            {error}
+          </p>
+        )}
+        {note && (
+          <p role="status" className="rounded-md border border-border bg-black/25 px-3 py-2 text-xs text-text">
+            {note}
+          </p>
+        )}
+
+        {!ready ? null : session ? (
+          <div className="space-y-4">
+            <p className="text-xs text-muted">
+              Signed in as <span className="font-semibold text-text">{session.username || session.email}</span>
+              {session.username && <span> · {session.email}</span>}
+            </p>
+            <p className="text-xs text-muted">Last sync: {when(session.lastSync)}</p>
+            <form className="flex flex-wrap items-end gap-3" onSubmit={rename}>
+              <div className="min-w-[12rem] flex-1">
+                <Input
+                  label="Change username"
+                  value={newName}
+                  maxLength={24}
+                  placeholder={session.username}
+                  autoComplete="off"
+                  onChange={(e) => setNewName(e.target.value)}
+                  hint={USERNAME_HINT}
+                />
+              </div>
+              <Button type="submit" size="sm" variant="secondary" loading={busy} disabled={!newName.trim()}>
+                Save username
               </Button>
             </form>
-          )}
-          <div className="flex flex-wrap gap-3">
-            <Button size="sm" variant="secondary" onClick={runSync} loading={busy === "sync"} disabled={!(session.enabled || session.filters || session.tunnels)}>
-              Sync now
-            </Button>
-            <Button size="sm" variant="secondary" onClick={leave}>
-              Sign out
-            </Button>
+            <div className="flex flex-wrap gap-3">
+              <Button size="sm" variant="secondary" onClick={syncAgain} loading={busy}>
+                Sync now
+              </Button>
+              <Button size="sm" variant="secondary" onClick={leave}>
+                Sign out
+              </Button>
+            </div>
           </div>
-        </div>
-      ) : (
-        <form className="space-y-3" onSubmit={(e) => submit(e, "in")}>
-          <Input label="Email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <Input
-            label="Password"
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            hint="At least 6 characters. The app does not save it."
-          />
-          <div className="flex flex-wrap gap-3">
-            <Button type="submit" size="sm" loading={busy === "in"}>
-              Sign in
-            </Button>
-            <Button type="button" size="sm" variant="secondary" loading={busy === "up"} onClick={(e) => submit(e, "up")}>
-              Create account
-            </Button>
-          </div>
-        </form>
-      )}
-    </Card>
+        ) : (
+          <form className="space-y-3" onSubmit={submit}>
+            {mode !== "reset" && (
+              <Input
+                label="Username"
+                autoComplete="username"
+                value={username}
+                maxLength={24}
+                onChange={(e) => setUsername(e.target.value)}
+                hint={mode === "create" ? USERNAME_HINT : undefined}
+              />
+            )}
+            {mode !== "signin" && (
+              <Input label="Email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} hint={mode === "reset" ? "We send a reset link to this address." : "Used only to confirm the account and reset the password."} />
+            )}
+            {mode !== "reset" && (
+              <Input
+                label="Password"
+                type="password"
+                autoComplete={mode === "create" ? "new-password" : "current-password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                hint={mode === "create" ? "At least 8 characters. The app does not save it." : undefined}
+              />
+            )}
+            {mode === "create" && (
+              <Input label="Confirm password" type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+            )}
+            <div className="flex flex-wrap items-center gap-3">
+              <Button type="submit" size="sm" loading={busy}>
+                {mode === "signin" ? "Sign in" : mode === "create" ? "Create account" : "Send reset email"}
+              </Button>
+              {mode === "signin" ? (
+                <>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => go("create")}>
+                    Create account
+                  </Button>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => go("reset")}>
+                    Forgot password?
+                  </Button>
+                </>
+              ) : (
+                <Button type="button" size="sm" variant="ghost" onClick={() => go("signin")}>
+                  Back to sign in
+                </Button>
+              )}
+            </div>
+          </form>
+        )}
+      </Card>
+      {session && <SharedLibrary session={session} />}
+      <BackupCard />
+    </>
   );
 }

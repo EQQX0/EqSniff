@@ -164,9 +164,8 @@ export const api = {
     }
   },
   vpnSyncList: () => invoke<{ name: string; hash: string; modified: number }[]>("vpn_sync_list"),
-  vpnSyncSeal: (name: string, passphrase: string) => invoke<string>("vpn_sync_seal", { name, passphrase }),
-  vpnSyncCheck: (sealed: string, passphrase: string) => invoke<void>("vpn_sync_check", { sealed, passphrase }),
-  vpnSyncOpen: (name: string, sealed: string, passphrase: string) => invoke<void>("vpn_sync_open", { name, sealed, passphrase }),
+  vpnSyncRead: (name: string) => invoke<string>("vpn_sync_read", { name }),
+  vpnSyncWrite: (name: string, text: string) => invoke<void>("vpn_sync_write", { name, text }),
   vpnRead: (name: string) => invoke<string>("vpn_read", { name }),
   vpnUpdate: (name: string, text: string) => invoke<void>("vpn_update", { name, text }),
   vpnLog: (name: string) => invoke<string>("vpn_log", { name }),

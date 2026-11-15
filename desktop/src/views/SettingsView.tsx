@@ -55,7 +55,7 @@ export function SettingsView({ update, onUpdate }: Props) {
     <div className="max-w-xl space-y-6">
       <div>
         <h1 className="text-xl font-bold text-text">Settings</h1>
-        <p className="mt-1 text-sm text-muted">Everything is saved on this computer unless you turn on sync below.</p>
+        <p className="mt-1 text-sm text-muted">Everything is saved on this computer unless you sign in to an account below.</p>
       </div>
 
       {error && (

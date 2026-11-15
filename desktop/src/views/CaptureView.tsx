@@ -19,6 +19,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { NetworkIcon } from "@/components/ui/icons";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { NAME_MAX, loadEntries, onChange as onIpStoreChange, setName } from "@/lib/ipstore";
+import { IpList, summarize } from "@/views/CaptureIps";
 import "flag-icons/css/flag-icons.min.css";
 
 type ColumnId = "name" | "srcIp" | "srcPort" | "dstIp" | "dstPort" | "country" | "protocol" | "bytes" | "time";
@@ -51,7 +52,7 @@ function loadColumns(): ColumnId[] {
 }
 
 /** Flag drawn from files shipped inside the app, so it also works offline and on Windows, which has no flag emoji. */
-function Flag({ code }: { code: string }) {
+export function Flag({ code }: { code: string }) {
   if (!/^[A-Za-z]{2}$/.test(code)) return <span className="inline-block h-3.5 w-5 rounded-sm bg-white/10" aria-hidden="true" />;
   return <span className={`fi fi-${code.toLowerCase()} inline-block h-3.5 w-5 rounded-sm bg-cover shadow-[0_0_0_1px_rgba(255,255,255,.18)]`} aria-hidden="true" />;
 }
@@ -100,6 +101,8 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
   const [geo, setGeo] = useState<Record<string, Country>>({});
   const [cols, setCols] = useState<ColumnId[]>(loadColumns);
   const [colsOpen, setColsOpen] = useState(false);
+  const [tab, setTab] = useState<"all" | "filtered">("filtered");
+  const [ipsOpen, setIpsOpen] = useState(false);
   const colsBox = useRef<HTMLDivElement>(null);
   const show = (id: ColumnId) => cols.includes(id);
   const visibleWidth = COLUMNS.filter((c) => cols.includes(c.id)).reduce((n, c) => n + COL_WIDTH[c.id], 0) || 1;
@@ -118,8 +121,13 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
     [geo]
   );
 
+  /** What is left after the filters. The All Traffic tab ignores them, so hidden addresses still show up there. */
+  const filteredRows = useMemo(() => rows.filter((r) => matchesAny(filters, r)), [rows, filters]);
+  const allIps = useMemo(() => summarize(rows, farOf), [rows]);
+  const filteredIps = useMemo(() => summarize(filteredRows, farOf), [filteredRows]);
+
   const shown = useMemo(() => {
-    const kept = rows.filter((r) => matchesAny(filters, r));
+    const kept = tab === "all" ? rows : filteredRows;
     if (!sort) return kept;
     const far = (r: PacketRow) => (isLocalAddress(r.src) ? r.dst : r.src);
     const value = (r: PacketRow): string | number => {
@@ -144,7 +152,7 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
       if (x === y) return a.id - b.id;
       return (x < y ? -1 : 1) * sign;
     });
-  }, [rows, filters, sort, names, geo]);
+  }, [rows, filteredRows, tab, sort, names, geo]);
 
   function clickHeader(key: ColumnId) {
     setSort((s) => (s?.key !== key ? { key, dir: "asc" } : s.dir === "asc" ? { key, dir: "desc" } : null));
@@ -506,6 +514,53 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
         </p>
       )}
 
+      <div className="flex flex-wrap items-center gap-2">
+        <div role="tablist" aria-label="Traffic view" className="flex items-center gap-2">
+          {([
+            ["all", "All Traffic", rows.length],
+            ["filtered", "Filtered Traffic", filteredRows.length],
+          ] as const).map(([id, text, n]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={tab === id}
+              onClick={() => setTab(id)}
+              className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft ${
+                tab === id ? "border-accent bg-accent text-white" : "border-border bg-white/[0.04] text-muted hover:bg-white/[0.08]"
+              }`}
+            >
+              {text}
+              <span className="rounded-md bg-black/30 px-1.5 py-0.5 text-xs">{n.toLocaleString()}</span>
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          aria-pressed={ipsOpen}
+          onClick={() => setIpsOpen((o) => !o)}
+          title={tab === "all" ? "Every address seen, including the ones your filters hide" : "Only the addresses left after your filters"}
+          className={`ml-2 inline-flex items-center gap-2 rounded-pill border px-3 py-1.5 text-sm transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft ${
+            ipsOpen ? "border-accent text-text" : "border-border text-muted hover:bg-white/[0.06]"
+          }`}
+        >
+          <NetworkIcon className="h-4 w-4" />
+          {(tab === "all" ? allIps : filteredIps).length.toLocaleString()} IPs
+        </button>
+        {ipsOpen && <span className="text-xs text-muted">Click a label to edit it. Labels are saved in IP Storage.</span>}
+      </div>
+
+      {ipsOpen ? (
+        <Card className="flex min-h-0 flex-1 flex-col overflow-hidden !p-0">
+          <IpList
+            items={tab === "all" ? allIps : filteredIps}
+            names={names}
+            geo={geo}
+            hidden={tab === "all" ? new Set(allIps.map((i) => i.address).filter((a) => !filteredIps.some((f) => f.address === a))) : undefined}
+            onSave={saveName}
+          />
+        </Card>
+      ) : (
       <Card className="flex min-h-0 flex-1 flex-col overflow-hidden !p-0">
         <div className="flex min-h-0 flex-1 flex-col overflow-x-auto">
           <div className="flex h-full min-w-[64rem] flex-col">
@@ -646,6 +701,7 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
           </div>
         </div>
       </Card>
+      )}
 
     </div>
   );
