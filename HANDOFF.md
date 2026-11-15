@@ -89,3 +89,9 @@ Branch `main`, origin https://github.com/EQQX0/EqSniff (private). Work through a
 - Capture table: sticky heading bar above the list, sortable headings, Label column saved in IP Storage (`lib/ipstore.ts`, stored in the entry's `note` field), flags via bundled `flag-icons`, time without milliseconds, Copy/Replay row buttons removed (the `replay_packet` command still exists).
 - In-app update: "Update now" downloads the installer from the feed host, checks the SHA-256 in `update.json`, starts it. Feed and installer are at https://updates.eqqx2.com (`update.json`, `EqNetwork-setup.exe`), deployed from the Vercel project `eqsniff-updates`.
 - Live-tested: capture only from the chosen adapter, Show/Hide filters, sorting, labels. NOT live-tested: Hotspot start/stop and sharing (unit tests only). Live test scripts drive the window and can steal focus; do not run them while the user is gaming.
+
+## Optional IP Storage sync (not released yet)
+- Supabase project `eqnetwork` (ref bswzptrmeeobbnthjioz, eu-central-1). Table `ip_entries` with row-level rules from `desktop/supabase/migrations/0001_ip_storage.sql` (applied).
+- App side: `src/lib/cloud.ts` (email+password auth, merge sync, background sync after edits), `src/lib/ipmerge.ts` (pure two-way merge, newest label wins, deletions tracked in store `ip-storage-deleted`), `src/components/CloudSync.tsx` (Settings card). All IP Storage writes go through `saveEntries` in `ipstore.ts`.
+- Only the public publishable key is in the app. Session (email + tokens, never the password) is in store `cloud-session`. CSP `connect-src` allows the project URL only.
+- Tests: `npm test` (includes `tests/ipmerge.test.mjs`). Checked live: signed-out requests read nothing and cannot write. Not yet done: a real sign-up/sign-in round trip in the app, and a release build. New accounts must confirm their email (project default).

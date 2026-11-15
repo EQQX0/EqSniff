@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type PacketRow, type ScanHost, type UpdateInfo } from "@/lib/api";
+import { startAutoSync } from "@/lib/cloud";
 import { isLocalAddress } from "@/lib/export";
 import { DevicesView, type Seen } from "@/views/DevicesView";
 import { IpStorageView } from "@/views/IpStorageView";
@@ -41,6 +42,9 @@ export default function App() {
   useEffect(() => {
     api.checkUpdate().then(setUpdate).catch(() => {});
   }, []);
+
+  // Optional IP Storage sync. Does nothing unless the user signed in and turned it on.
+  useEffect(() => startAutoSync(), []);
 
   const onSeen = useCallback((rows: PacketRow[]) => {
     setSeen((prev) => {

@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { BookmarkIcon } from "@/components/ui/icons";
 
-import { IP_STORE, announceChange, isEntryArray, newEntryId, onChange, type IpEntry } from "@/lib/ipstore";
+import { IP_STORE, isEntryArray, newEntryId, onChange, saveEntries, type IpEntry } from "@/lib/ipstore";
 
 export type { IpEntry };
 
@@ -34,8 +34,7 @@ export function IpStorageView() {
   async function persist(next: IpEntry[]) {
     setEntries(next);
     try {
-      await api.saveStore(IP_STORE, next);
-      announceChange();
+      await saveEntries(next);
       setError(null);
     } catch (e) {
       setError(String(e));

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { CloudSync } from "@/components/CloudSync";
 import { UpdateNow } from "@/components/UpdateNow";
 import { api, type Settings, type UpdateInfo } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
@@ -54,7 +55,7 @@ export function SettingsView({ update, onUpdate }: Props) {
     <div className="max-w-xl space-y-6">
       <div>
         <h1 className="text-xl font-bold text-text">Settings</h1>
-        <p className="mt-1 text-sm text-muted">Everything is saved on this computer.</p>
+        <p className="mt-1 text-sm text-muted">Everything is saved on this computer unless you turn on sync below.</p>
       </div>
 
       {error && (
@@ -68,8 +69,8 @@ export function SettingsView({ update, onUpdate }: Props) {
           <div>
             <h2 className="text-sm font-semibold text-text">Check for updates</h2>
             <p className="mt-1 text-xs text-muted">
-              The only time this app uses the internet. It downloads one small version file and sends nothing about you. The
-              installer is downloaded only when you press Update now. Turn it off and the app never connects.
+              The app’s only automatic use of the internet. It downloads one small version file and sends nothing about you. The
+              installer is downloaded only when you press Update now. Turn it off and this check never connects.
             </p>
           </div>
           {settings && <Switch label="Check for updates" checked={settings.updateCheck} onChange={toggleUpdates} />}
@@ -97,6 +98,8 @@ export function SettingsView({ update, onUpdate }: Props) {
           </div>
         )}
       </Card>
+
+      <CloudSync />
 
       <Card className="space-y-2">
         <h2 className="text-sm font-semibold text-text">Where your data lives</h2>
