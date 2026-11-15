@@ -40,6 +40,7 @@ export interface VpnTunnel {
   mtu: number | null;
   listenPort: number | null;
   fullTunnel: boolean;
+  killswitch: boolean;
   peers: VpnPeer[];
 }
 
@@ -109,6 +110,10 @@ export const api = {
   vpnSet: (name: string, on: boolean) => invoke<void>("vpn_set", { name, on }),
   vpnJob: () => invoke<{ running: boolean; error: string | null }>("vpn_job"),
   vpnDelete: (name: string) => invoke<void>("vpn_delete", { name }),
+  vpnRead: (name: string) => invoke<string>("vpn_read", { name }),
+  vpnUpdate: (name: string, text: string) => invoke<void>("vpn_update", { name, text }),
+  vpnLog: (name: string) => invoke<string>("vpn_log", { name }),
+  vpnSetOption: (name: string, killswitch: boolean) => invoke<void>("vpn_set_option", { name, killswitch }),
   geoLookup: (ips: string[]) => invoke<Record<string, Country>>("geo_lookup", { ips }),
   checkUpdate: () => invoke<UpdateInfo>("check_update"),
   dataFolder: () => invoke<string>("data_folder"),

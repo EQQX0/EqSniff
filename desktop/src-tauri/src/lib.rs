@@ -8,6 +8,7 @@ mod scan;
 mod vpn;
 mod vpnconf;
 pub mod vpnengine;
+pub mod killswitch;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -37,6 +38,10 @@ pub fn run() {
             vpn::vpn_set,
             vpn::vpn_job,
             vpn::vpn_delete,
+            vpn::vpn_update,
+            vpn::vpn_read,
+            vpn::vpn_log,
+            vpn::vpn_set_option,
             settings::get_settings,
             settings::set_settings,
             settings::data_folder,

@@ -38,6 +38,7 @@ pub struct Tunnel {
     pub mtu: Option<u16>,
     pub listen_port: Option<u16>,
     pub full_tunnel: bool,
+    pub killswitch: bool,
     pub peers: Vec<PeerView>,
 }
 
@@ -112,6 +113,7 @@ fn view(dir: &std::path::Path, name: &str, c: &Config) -> Tunnel {
         dns: c.dns.clone(),
         mtu: c.mtu,
         listen_port: c.listen_port,
+        killswitch: vpnengine::read_options(dir, name).killswitch,
         full_tunnel: c.peers.iter().any(|p| p.allowed_ips.iter().any(|a| a == "0.0.0.0/0" || a == "::/0")),
         peers: c
             .peers
@@ -167,9 +169,7 @@ pub fn vpn_import(app: AppHandle, name: String, text: String) -> Result<(), Stri
         return Err(format!("A tunnel named {name} already exists. Delete it first or choose another name."));
     }
     let cfg = vpnconf::parse(&text)?;
-    let tmp = path.with_extension("conf.tmp");
-    fs::write(&tmp, vpnconf::render(&cfg)).map_err(|e| e.to_string())?;
-    fs::rename(&tmp, &path).map_err(|e| e.to_string())
+    save_conf(&path, &cfg)
 }
 
 /// Starts the engine in a second copy of this program with administrator rights. Windows shows its own prompt.
@@ -269,8 +269,69 @@ pub fn vpn_delete(app: AppHandle, name: String) -> Result<(), String> {
     if is_running(&dir, &name) {
         return Err("Turn the tunnel off before deleting it.".into());
     }
-    for ext in ["state", "stop", "log"] {
+    for ext in ["state", "stop", "log", "options"] {
         let _ = fs::remove_file(dir.join(format!("{name}.{ext}")));
     }
     fs::remove_file(&path).map_err(|e| e.to_string())
+}
+
+/// Writes the checked config to `path` through a temporary file.
+fn save_conf(path: &std::path::Path, cfg: &Config) -> Result<(), String> {
+    let tmp = path.with_extension("conf.tmp");
+    fs::write(&tmp, vpnconf::render(cfg)).map_err(|e| e.to_string())?;
+    fs::rename(&tmp, path).map_err(|e| e.to_string())
+}
+
+/// The saved config for the edit box. The private key is replaced by a placeholder and never leaves this process.
+#[tauri::command]
+pub fn vpn_read(app: AppHandle, name: String) -> Result<String, String> {
+    let path = file(&app, &name)?;
+    let text = fs::read_to_string(&path).map_err(|_| "That tunnel no longer exists.".to_string())?;
+    Ok(vpnengine::render_for_edit(&vpnconf::parse(&text)?))
+}
+
+/// Replaces the saved config of a tunnel that is off. If the private key is still the placeholder, the stored key stays.
+#[tauri::command]
+pub fn vpn_update(app: AppHandle, name: String, text: String) -> Result<(), String> {
+    let path = file(&app, &name)?;
+    let dir = folder(&app)?;
+    if is_running(&dir, &name) {
+        return Err("Turn the tunnel off before editing it.".into());
+    }
+    if text.len() > vpnconf::MAX_CONF_BYTES {
+        return Err("That text is too large to be a WireGuard tunnel.".into());
+    }
+    let old = fs::read_to_string(&path).map_err(|_| "That tunnel no longer exists.".to_string())?;
+    let stored = vpnconf::parse(&old)?.private_key;
+    let cfg = vpnconf::parse(&vpnengine::fill_placeholder(&text, &stored))?;
+    save_conf(&path, &cfg)
+}
+
+/// The last lines of the engine's log for this tunnel. The engine never writes keys to it.
+#[tauri::command]
+pub fn vpn_log(app: AppHandle, name: String) -> Result<String, String> {
+    file(&app, &name)?;
+    let dir = folder(&app)?;
+    use std::io::{Read, Seek, SeekFrom};
+    let Ok(mut f) = fs::File::open(vpnengine::log_path(&dir, &name)) else { return Ok(String::new()) };
+    let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+    let take = len.min(64 * 1024);
+    f.seek(SeekFrom::Start(len - take)).map_err(|e| e.to_string())?;
+    let mut buf = Vec::new();
+    f.take(take).read_to_end(&mut buf).map_err(|e| e.to_string())?;
+    Ok(vpnengine::tail_lines(&String::from_utf8_lossy(&buf), 200))
+}
+
+/// Saves per-tunnel options. They live in their own file, so a .conf can never switch them on or off.
+#[tauri::command]
+pub fn vpn_set_option(app: AppHandle, name: String, killswitch: bool) -> Result<(), String> {
+    let path = file(&app, &name)?;
+    let dir = folder(&app)?;
+    if !path.exists() {
+        return Err("That tunnel no longer exists.".into());
+    }
+    if is_running(&dir, &name) {
+        return Err("Turn the tunnel off before changing this setting.".into());
+    }
+    fs::write(vpnengine::options_path(&dir, &name), vpnengine::render_options(vpnengine::Options { killswitch })).map_err(|e| e.to_string())
 }

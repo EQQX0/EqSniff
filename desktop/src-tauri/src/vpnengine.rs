@@ -46,8 +46,69 @@ pub fn state_path(dir: &Path, name: &str) -> PathBuf {
 pub fn stop_path(dir: &Path, name: &str) -> PathBuf {
     dir.join(format!("{name}.stop"))
 }
-fn log_path(dir: &Path, name: &str) -> PathBuf {
+pub fn log_path(dir: &Path, name: &str) -> PathBuf {
     dir.join(format!("{name}.log"))
+}
+pub fn options_path(dir: &Path, name: &str) -> PathBuf {
+    dir.join(format!("{name}.options"))
+}
+
+// ---------- per-tunnel options (kept apart from the .conf, so an imported file can never set them) ----------
+
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub struct Options {
+    pub killswitch: bool,
+}
+
+/// Reads the options file text. Anything unreadable means the defaults (kill switch off).
+pub fn parse_options(text: &str) -> Options {
+    let v: serde_json::Value = serde_json::from_str(text).unwrap_or(serde_json::Value::Null);
+    Options { killswitch: v.get("killswitch").and_then(|x| x.as_bool()).unwrap_or(false) }
+}
+
+pub fn render_options(o: Options) -> String {
+    format!("{{\"killswitch\":{}}}\n", o.killswitch)
+}
+
+pub fn read_options(dir: &Path, name: &str) -> Options {
+    fs::read_to_string(options_path(dir, name)).map(|t| parse_options(&t)).unwrap_or_default()
+}
+
+// ---------- editing and log helpers ----------
+
+/// What the edit box shows in place of the private key.
+pub const KEY_PLACEHOLDER: &str = "<unchanged>";
+
+/// Puts the stored private key back in place of the placeholder (on the PrivateKey line only).
+pub fn fill_placeholder(text: &str, stored_key: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 44);
+    for (i, line) in text.lines().enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
+        match line.split_once('=') {
+            Some((k, v)) if k.trim().eq_ignore_ascii_case("privatekey") && v.trim() == KEY_PLACEHOLDER => {
+                out.push_str(k);
+                out.push_str("= ");
+                out.push_str(stored_key);
+            }
+            _ => out.push_str(line),
+        }
+    }
+    out
+}
+
+/// The rendered file with the private key hidden, for the edit box.
+pub fn render_for_edit(c: &Config) -> String {
+    let mut c = c.clone();
+    c.private_key = KEY_PLACEHOLDER.to_string();
+    vpnconf::render(&c)
+}
+
+/// The last `n` lines of `text`.
+pub fn tail_lines(text: &str, n: usize) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    lines[lines.len().saturating_sub(n)..].join("\n")
 }
 
 struct Log(Mutex<fs::File>);
@@ -69,10 +130,17 @@ struct Net {
 }
 
 fn parse_net(s: &str) -> Option<Net> {
-    let (a, l) = s.split_once('/')?;
+    let (a, l) = match s.split_once('/') {
+        Some((a, l)) => (a, Some(l)),
+        None => (s, None),
+    };
     let ip: IpAddr = a.parse().ok()?;
-    let len: u8 = l.parse().ok()?;
     let max = if ip.is_ipv4() { 32 } else { 128 };
+    // No prefix means a single address.
+    let len: u8 = match l {
+        Some(l) => l.parse().ok()?,
+        None => max,
+    };
     (len <= max).then_some(Net { ip, len })
 }
 
@@ -112,6 +180,11 @@ fn without(net: Net, hole: IpAddr) -> Vec<Net> {
         base = go;
     }
     out
+}
+
+/// For tests: a network or address as (address, prefix length). A missing prefix means a single address.
+pub fn net_parts(s: &str) -> Option<(String, u8)> {
+    parse_net(s).map(|n| (n.ip.to_string(), n.len))
 }
 
 /// For tests: the ranges that cover `net` except the address `hole`, as text.
@@ -205,11 +278,15 @@ fn mask_v4(len: u8) -> String {
     Ipv4Addr::from(m).to_string()
 }
 
-fn configure(name: &str, cfg: &Config, endpoints: &[IpAddr], log: &Log) -> Result<(), String> {
+/// Every netsh call names the adapter by its index, never by name: a tunnel called "Ethernet" would otherwise
+/// match the real Ethernet adapter, because Windows renames the new one to "Ethernet 2".
+fn configure(ifc: u32, cfg: &Config, endpoints: &[IpAddr], log: &Log) -> Result<(), String> {
+    let ix = ifc.to_string();
+    let ix = ix.as_str();
     let mut ready = false;
     for _ in 0..20 {
-        if netsh(&["interface", "ipv4", "show", "interface", &format!("name={name}")]).is_ok()
-            || netsh(&["interface", "ipv6", "show", "interface", &format!("name={name}")]).is_ok()
+        if netsh(&["interface", "ipv4", "show", "interface", &format!("interface={ix}")]).is_ok()
+            || netsh(&["interface", "ipv6", "show", "interface", &format!("interface={ix}")]).is_ok()
         {
             ready = true;
             break;
@@ -220,18 +297,29 @@ fn configure(name: &str, cfg: &Config, endpoints: &[IpAddr], log: &Log) -> Resul
         return Err("Windows did not show the new adapter in time.".into());
     }
     let mtu = cfg.mtu.unwrap_or(1420).to_string();
+    let mut first_v4 = true;
     for a in &cfg.addresses {
         let n = parse_net(a).ok_or("Bad address in the tunnel file.")?;
         match n.ip {
-            IpAddr::V4(v) => netsh(&["interface", "ipv4", "set", "address", &format!("name={name}"), "source=static", &format!("address={v}"), &format!("mask={}", mask_v4(n.len))])?,
-            IpAddr::V6(v) => netsh(&["interface", "ipv6", "add", "address", &format!("interface={name}"), &format!("address={v}/{}", n.len)])?,
+            IpAddr::V4(v) => {
+                let (verb, extra) = if first_v4 { ("set", "source=static") } else { ("add", "") };
+                first_v4 = false;
+                let mut args = vec!["interface".to_string(), "ipv4".into(), verb.into(), "address".into(), format!("interface={ix}")];
+                if !extra.is_empty() {
+                    args.push(extra.into());
+                }
+                args.extend([format!("address={v}"), format!("mask={}", mask_v4(n.len)), "store=active".into()]);
+                let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+                netsh(&refs)?
+            }
+            IpAddr::V6(v) => netsh(&["interface", "ipv6", "add", "address", &format!("interface={ix}"), &format!("address={v}/{}", n.len), "store=active"])?,
         }
     }
     for fam in ["ipv4", "ipv6"] {
-        if let Err(e) = netsh(&["interface", fam, "set", "subinterface", &format!("interface={name}"), &format!("mtu={mtu}"), "store=active"]) {
+        if let Err(e) = netsh(&["interface", fam, "set", "subinterface", &format!("interface={ix}"), &format!("mtu={mtu}"), "store=active"]) {
             log.line(&format!("note: {e}"));
         }
-        let _ = netsh(&["interface", fam, "set", "interface", &format!("interface={name}"), "metric=1"]);
+        let _ = netsh(&["interface", fam, "set", "interface", &format!("interface={ix}"), "metric=1"]);
     }
     for p in &cfg.peers {
         for a in &p.allowed_ips {
@@ -246,7 +334,7 @@ fn configure(name: &str, cfg: &Config, endpoints: &[IpAddr], log: &Log) -> Resul
             let fam = if n.ip.is_ipv4() { "ipv4" } else { "ipv6" };
             let hop = if n.ip.is_ipv4() { "0.0.0.0" } else { "::" };
             for pre in prefixes {
-                netsh(&["interface", fam, "add", "route", &format!("prefix={pre}"), &format!("interface={name}"), &format!("nexthop={hop}"), "metric=0", "store=active"])?;
+                netsh(&["interface", fam, "add", "route", &format!("prefix={pre}"), &format!("interface={ix}"), &format!("nexthop={hop}"), "metric=0", "store=active"])?;
             }
         }
     }
@@ -256,9 +344,9 @@ fn configure(name: &str, cfg: &Config, endpoints: &[IpAddr], log: &Log) -> Resul
         let k = if ip.is_ipv4() { 0 } else { 1 };
         let fam = if k == 0 { "ipv4" } else { "ipv6" };
         let r = if first[k] {
-            netsh(&["interface", fam, "set", "dnsservers", &format!("name={name}"), "source=static", &format!("address={ip}"), "validate=no"])
+            netsh(&["interface", fam, "set", "dnsservers", &format!("name={ix}"), "source=static", &format!("address={ip}"), "validate=no"])
         } else {
-            netsh(&["interface", fam, "add", "dnsservers", &format!("name={name}"), &format!("address={ip}"), "validate=no"])
+            netsh(&["interface", fam, "add", "dnsservers", &format!("name={ix}"), &format!("address={ip}"), "validate=no"])
         };
         first[k] = false;
         if let Err(e) = r {
@@ -292,7 +380,9 @@ fn run_tunnel(dir: &Path, name: &str, log: &Log) -> Result<(), String> {
             .map_err(|_| format!("Could not look up the server address {ep}."))?
             .min_by_key(|a| a.is_ipv6())
             .ok_or("The server address did not resolve.")?;
-        let bind: SocketAddr = if addr.is_ipv4() { ([0, 0, 0, 0], cfg.listen_port.unwrap_or(0)).into() } else { ([0u16; 8], cfg.listen_port.unwrap_or(0)).into() };
+        // One port cannot serve two sockets, so only the first peer uses ListenPort.
+        let lp = if i == 0 { cfg.listen_port.unwrap_or(0) } else { 0 };
+        let bind: SocketAddr = if addr.is_ipv4() { ([0, 0, 0, 0], lp).into() } else { ([0u16; 8], lp).into() };
         let sock = UdpSocket::bind(bind).map_err(|e| format!("Could not open a network socket: {e}"))?;
         if let Some(ix) = best_interface(addr) {
             pin_to_interface(&sock, addr.is_ipv6(), ix);
@@ -310,6 +400,7 @@ fn run_tunnel(dir: &Path, name: &str, log: &Log) -> Result<(), String> {
         log.line(&format!("peer {} resolved", i + 1));
     }
 
+    let mut answered_any = false;
     // Say hello now, before any routes change, so a dead server or a wrong key shows up as a clear message.
     for (i, p) in peers.iter().enumerate() {
         let mut buf = vec![0u8; 2048];
@@ -332,7 +423,12 @@ fn run_tunnel(dir: &Path, name: &str, log: &Log) -> Result<(), String> {
                 }
             }
         }
+        answered_any |= answered;
         log.line(&format!("peer {}: server {}", i + 1, if answered { "answered the handshake" } else { "did not answer within 5 seconds" }));
+    }
+
+    if !answered_any {
+        return Err("The server did not answer the handshake. Check the server address and keys.".into());
     }
 
     // 2. The adapter.
@@ -346,8 +442,21 @@ fn run_tunnel(dir: &Path, name: &str, log: &Log) -> Result<(), String> {
 
     // 3. Address, routes and DNS.
     let eps: Vec<IpAddr> = peers.iter().filter_map(|p| p.sock.peer_addr().ok().map(|a| a.ip())).collect();
-    configure(name, &cfg, &eps, log)?;
+    let ifc = adapter.get_adapter_index().map_err(|e| format!("Could not read the adapter index: {e}"))?;
+    configure(ifc, &cfg, &eps, log)?;
     log.line("network configured");
+
+    // Kill switch (only when the user turned it on for this tunnel). Filters die with this process.
+    let _killswitch = if read_options(dir, name).killswitch {
+        let luid = unsafe { adapter.get_luid().Value };
+        let ends: Vec<SocketAddr> = peers.iter().filter_map(|p| p.sock.peer_addr().ok()).collect();
+        let ks = crate::killswitch::KillSwitch::enable(luid, &ends)?;
+        log.line("kill switch on: traffic outside the tunnel is blocked");
+        Some(ks)
+    } else {
+        None
+    };
+    let kill_on = _killswitch.is_some();
 
     // 4. The packet loops.
     let stop = Arc::new(AtomicBool::new(false));
@@ -458,14 +567,21 @@ fn run_tunnel(dir: &Path, name: &str, log: &Log) -> Result<(), String> {
     let stop_file = stop_path(dir, name);
     let started = Instant::now();
     let mut last_report = Instant::now();
+    let mut warned_dead = false;
     loop {
         if stop_file.exists() {
             log.line("stop requested");
             break;
         }
         if dead.load(Ordering::Relaxed) && started.elapsed() > Duration::from_secs(2) {
-            log.line("adapter closed unexpectedly");
-            break;
+            if !kill_on {
+                log.line("adapter closed unexpectedly");
+                break;
+            }
+            if !warned_dead {
+                warned_dead = true;
+                log.line("adapter closed unexpectedly; the kill switch keeps traffic blocked until you press Deactivate");
+            }
         }
         thread::sleep(Duration::from_millis(250));
         if last_report.elapsed() > Duration::from_secs(5) {
@@ -484,14 +600,36 @@ fn run_tunnel(dir: &Path, name: &str, log: &Log) -> Result<(), String> {
     Ok(())
 }
 
+/// True when the folder, or any folder above it, is a junction or symbolic link. The elevated copy refuses such a
+/// folder, because a link could point its log, state and stop files at somewhere the user should not reach.
+pub fn has_reparse_point(path: &Path) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    const REPARSE: u32 = 0x400;
+    let mut cur = Some(path);
+    while let Some(p) = cur {
+        if !p.as_os_str().is_empty() {
+            match fs::symlink_metadata(p) {
+                Ok(m) if m.file_attributes() & REPARSE != 0 => return true,
+                Ok(_) => {}
+                Err(_) => return true,
+            }
+        }
+        cur = p.parent();
+    }
+    false
+}
+
 /// Entry point of the elevated copy. Returns the process exit code.
 pub fn run(dir: &str, name: &str) -> i32 {
     let dir = PathBuf::from(dir);
-    if !vpnconf::valid_name(name) || !dir.is_dir() {
+    if !vpnconf::valid_name(name) || !dir.is_dir() || has_reparse_point(&dir) {
         return 2;
     }
     let _ = fs::remove_file(stop_path(&dir, name));
-    let Ok(file) = fs::File::create(log_path(&dir, name)) else { return 2 };
+    let Ok(file) = fs::File::create(log_path(&dir, name)) else {
+        let _ = fs::write(state_path(&dir, name), "error The tunnel log file could not be created.");
+        return 2;
+    };
     let log = Log(Mutex::new(file));
     let _ = fs::write(state_path(&dir, name), format!("starting {}", std::process::id()));
     let result = run_tunnel(&dir, name, &log);
@@ -507,4 +645,9 @@ pub fn run(dir: &str, name: &str) -> i32 {
             1
         }
     }
+}
+
+/// For tests: the checked config for a text.
+pub fn parse_for_tests(text: &str) -> Result<Config, String> {
+    vpnconf::parse(text)
 }

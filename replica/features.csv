@@ -52,7 +52,7 @@ ISP filter (hide or dim hosting providers),filters,could,yes,no,Seen in OctoSnif
 Add a device by IP by hand,devices,could,yes,no,Seen.
 Process filters (beta),filters,could,yes,no,Not opened.
 Windows hotspot and connection sharing,tools,could,yes,no,"Seen. SSID, password, public and private adapter."
-WireGuard-style VPN tunnel manager,vpn,should,no,partial,"Built: tunnel list, import .conf (checked and rewritten, command settings refused), details with public key, activate/deactivate with a built-in WireGuard engine (Wintun + boringtun) and the Windows admin prompt, delete. Tested live with a real server: traffic and public IP changed, clean stop. Not built: kill switch, edit tunnel, make new keys, log tab."
+WireGuard-style VPN tunnel manager,vpn,should,no,partial,"Built: tunnel list, import .conf (checked and rewritten, command settings refused), details with public key, activate/deactivate with a built-in WireGuard engine (Wintun + boringtun) and the Windows admin prompt, delete. Tested live with a real server: traffic and public IP changed, clean stop. Also built: edit tunnel (key hidden), log tab, optional kill switch (Windows Filtering Platform, dynamic session). Not built: make new keys. Kill switch not yet tested live."
 Built-in VPN with vendor servers (OctoVPN),vpn,could,yes,skip,Needs the vendor's servers and accounts.
 Auto-remove inactive IPs,settings,could,yes,no,Seen.
 Max packets and capture buffer settings,settings,could,yes,partial,"EqSniff keeps 20,000 frames, fixed."

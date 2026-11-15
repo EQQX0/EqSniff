@@ -35,20 +35,24 @@ npm run tauri dev
 
 ```powershell
 cd desktop
-npm test                          # 35 filter checks
+npm test                          # 45 filter checks
 cd src-tauri
-cargo test --tests                # 5 pcap, 6 VPN parser and 3 VPN engine tests
+cargo test --tests                # 5 pcap, 6 VPN parser, 3 VPN engine and 7 VPN extras tests
 ```
 
 Rust tests live in `desktop/src-tauri/tests/` and do not link Tauri. Tests that did crashed on the author's PC, so keep new ones there.
 
 ## VPN page
 
-The app has its own WireGuard engine (`src-tauri/src/vpnengine.rs`): `boringtun` for the protocol and Wintun (`vendor/wintun/wintun.dll`, signed by the WireGuard project) for the virtual adapter. Activate starts a second, elevated copy of the exe (`--vpn-run`); Windows shows its admin prompt each time. Tunnel files, `.state`, `.stop` and `.log` live in the app data folder under `vpn/`. There is no kill switch yet.
+The app has its own WireGuard engine (`src-tauri/src/vpnengine.rs`): `boringtun` for the protocol and Wintun (`vendor/wintun/wintun.dll`, signed by the WireGuard project) for the virtual adapter. Activate starts a second, elevated copy of the exe (`--vpn-run`); Windows shows its admin prompt each time. Tunnel files, `.state`, `.stop`, `.log` and `.options` live in the app data folder under `vpn/`.
+
+- **Edit**: the Edit button opens the saved settings in a box. The private key shows as `<unchanged>` and is never sent to the window; saving checks the text with the same parser as import. Only for a tunnel that is off.
+- **Log**: the Log tab shows the last 200 lines of `<name>.log` and refreshes every 3 seconds while the tunnel is active. The engine never writes keys to it.
+- **Kill switch** (off by default, one checkbox per tunnel, stored in `<name>.options`, never read from a `.conf`). `src-tauri/src/killswitch.rs` adds Windows Filtering Platform filters in a dynamic session, so Windows removes them when the elevated engine process exits for any reason. They block all connections except: loopback, the tunnel adapter, UDP to the VPN server, DHCP, and the local network (10/8, 172.16/12, 192.168/16, 169.254/16, fe80::/10, fc00::/7, multicast, broadcast). The engine keeps running until you press Deactivate, so if the tunnel drops, traffic is blocked and not leaked. If the engine process itself is killed, the filters go with it and traffic returns to normal.
 
 ## Build notes
 
-`vendor/windows_x86_64_msvc` is an empty stand-in for the crate of the same name. Without it, `pcap` links a Windows import library that sends `WaitOnAddress` to `vertdll.dll` and crashes async code. Its README has the details. Check with `dumpbin /imports` after dependency changes.
+`vendor/windows_x86_64_msvc` is a stand-in crate with no code, replacing the crate of the same name. Without it, `pcap` links a Windows import library that sends `WaitOnAddress` to `vertdll.dll` and crashes async code. Its README has the details. Check with `dumpbin /imports` after dependency changes.
 
 ## Running
 

@@ -1,6 +1,6 @@
 //! Reads and checks WireGuard tunnel files (.conf). The file is parsed, every value is validated, and a clean
-//! copy is written back out, so nothing the parser did not understand ever reaches the WireGuard service.
-//! Settings that run commands (PreUp, PostUp, PreDown, PostDown) are refused: the service runs as SYSTEM.
+//! copy is written back out, so nothing the parser did not understand ever reaches the engine.
+//! Settings that run commands (PreUp, PostUp, PreDown, PostDown) are refused: the engine runs with administrator rights.
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 

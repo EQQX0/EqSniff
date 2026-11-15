@@ -28,7 +28,7 @@ Everything asked for is built, tested and committed. The built-in VPN engine pas
 - Full-subnet scan verified: 254 of 254 addresses in 41 s.
 
 ## Decisions and why
-- Built the VPN into the app (user's choice) with userspace WireGuard plus the signed Wintun driver, so no driver of our own is needed. No kill switch yet: if the app dies the adapter vanishes and traffic returns to the normal route.
+- Built the VPN into the app (user's choice) with userspace WireGuard plus the signed Wintun driver, so no driver of our own is needed. Kill switch is optional per tunnel: WFP filters in a dynamic session live as long as the elevated engine process. Without it, if the app dies the adapter vanishes and traffic returns to the normal route.
 - Server traffic is kept out of the tunnel by splitting the default route around the server address (up to 32 routes). A first try with `IP_UNICAST_IF` did not stop a loop (900k packets in 5 s), so the split route is the fix and a loop guard also drops packets aimed at the server.
 - The engine says hello to the server before changing any route, so a dead server or wrong key gives a clear message.
 - The elevated copy reads the `.conf` from a folder the user can write, and re-checks it with the same parser. Anyone who can already run code as the user could swap the file between the prompt and the read.
@@ -40,7 +40,7 @@ Everything asked for is built, tested and committed. The built-in VPN engine pas
 ## Unfinished (kept on purpose)
 - DNS for `updates.eqqx2.com`: the user must set a Cloudflare CNAME `updates` -> `cname.vercel-dns.com` (DNS only). Now it is a proxied record pointing at another site. Then switch `DEFAULT_URL` in `desktop/src-tauri/src/update.rs` and rebuild.
 - OctoSniff screens not seen: Tools submenu, Process Filters, Hotkeys, Appearance, Account, Link Account, Start Sniff dropdown, FAQ, tutorial chapters 2 to 4. Needs the user's screenshots.
-- VPN: no kill switch, no edit tunnel, no new keys, no log tab (the log file exists), IPv6 MTU note in the log is harmless. DNS may still leak through other adapters (Windows multi-homed lookup).
+- VPN: kill switch, edit tunnel and log tab are built but the kill switch has not been tested live (needs an elevated run). No new keys. IPv6 MTU note in the log is harmless. DNS may still leak through other adapters (Windows multi-homed lookup).
 - Installer is self-signed (`release/EqSniff-selfsigned.cer` must be imported by hand). The installer was not run end to end after the engine change.
 - Candidate OctoSniff features not built: ISP filters, device categories, manual device add, hotspot page, auto-remove inactive IPs, buffer settings, in-app changelog, tutorial.
 

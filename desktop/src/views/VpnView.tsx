@@ -25,6 +25,14 @@ export function VpnView() {
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
+  const [tab, setTab] = useState<"details" | "log">("details");
+  const [log, setLog] = useState("");
+  const [logError, setLogError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [editError, setEditError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const editBox = useRef<HTMLTextAreaElement>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -43,6 +51,54 @@ export function VpnView() {
   }, [refresh]);
 
   const tunnel: VpnTunnel | undefined = status?.tunnels.find((t) => t.name === selected);
+
+  const loadLog = useCallback(async () => {
+    if (!selected) return;
+    try {
+      setLog(await api.vpnLog(selected));
+      setLogError(null);
+    } catch (e) {
+      setLogError(String(e));
+    }
+  }, [selected]);
+
+  const showLog = tab === "log";
+  const isActive = tunnel?.active ?? false;
+  useEffect(() => {
+    if (!showLog) return;
+    loadLog();
+    if (!isActive) return;
+    const id = setInterval(loadLog, 3000);
+    return () => clearInterval(id);
+  }, [showLog, isActive, loadLog]);
+
+  async function openEdit(name: string) {
+    setEditError(null);
+    try {
+      setDraft(await api.vpnRead(name));
+      setEditing(true);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function saveEdit(name: string) {
+    setSaving(true);
+    setEditError(null);
+    try {
+      await api.vpnUpdate(name, draft);
+      setEditing(false);
+      await refresh();
+    } catch (e) {
+      setEditError(String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  useEffect(() => {
+    if (editing) editBox.current?.focus();
+  }, [editing]);
 
   async function run(job: () => Promise<unknown>) {
     setBusy(true);
@@ -121,6 +177,7 @@ export function VpnView() {
                   onClick={() => {
                     setSelected(t.name);
                     setConfirmDelete(false);
+                    setEditing(false);
                   }}
                   aria-current={t.name === selected ? "true" : undefined}
                   className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent
@@ -167,7 +224,50 @@ export function VpnView() {
         <section aria-label="Tunnel details" className="min-h-0 overflow-auto rounded-lg border border-border bg-surface p-5">
           {!tunnel && <p className="text-sm text-muted">Pick a tunnel on the left, or add one.</p>}
           {tunnel && (
-            <div className="space-y-5">
+            <div role="tablist" aria-label="Tunnel sections" className="mb-4 flex gap-2">
+              {(["details", "log"] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  role="tab"
+                  id={`vpn-tab-${t}`}
+                  aria-selected={tab === t}
+                  aria-controls={`vpn-panel-${t}`}
+                  onClick={() => setTab(t)}
+                  className={`rounded-md px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent
+                    ${tab === t ? "bg-bg font-semibold text-text" : "text-muted hover:bg-bg hover:text-text"}`}
+                >
+                  {t === "details" ? "Details" : "Log"}
+                </button>
+              ))}
+            </div>
+          )}
+          {tunnel && tab === "log" && (
+            <div role="tabpanel" id="vpn-panel-log" aria-labelledby="vpn-tab-log" className="space-y-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <Button size="sm" variant="secondary" onClick={loadLog}>
+                  Refresh
+                </Button>
+                <p className="text-xs text-muted">
+                  {tunnel.active ? "Updates every 3 seconds while the tunnel is active." : "Shows the last run of this tunnel."}
+                </p>
+              </div>
+              {logError && (
+                <p role="alert" className="text-sm text-danger">
+                  {logError}
+                </p>
+              )}
+              <pre
+                tabIndex={0}
+                aria-label={`Log for ${tunnel.name}`}
+                className="max-h-96 overflow-auto whitespace-pre-wrap break-all rounded-md border border-border bg-bg p-3 text-xs text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                {log || "No log yet. It appears after the first time you activate this tunnel."}
+              </pre>
+            </div>
+          )}
+          {tunnel && tab === "details" && (
+            <div role="tabpanel" id="vpn-panel-details" aria-labelledby="vpn-tab-details" className="space-y-5">
               <div>
                 <h2 className="mb-2 text-sm font-semibold text-text">Interface: {tunnel.name}</h2>
                 <dl>
@@ -191,6 +291,32 @@ export function VpnView() {
                   >
                     {tunnel.active ? "Deactivate" : "Activate"}
                   </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="ml-2"
+                    disabled={busy || tunnel.active}
+                    onClick={() => openEdit(tunnel.name)}
+                  >
+                    Edit
+                  </Button>
+                  <label className="mt-3 flex items-start gap-2 text-sm text-text">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-4 w-4 shrink-0 accent-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                      checked={tunnel.killswitch}
+                      disabled={busy || tunnel.active}
+                      onChange={(e) => run(() => api.vpnSetOption(tunnel.name, e.target.checked))}
+                    />
+                    <span>
+                      Block traffic outside the VPN (kill switch)
+                      <span className="block text-xs text-muted">
+                        While the tunnel is active, everything that does not use it is blocked, except the VPN server and your
+                        local network. If the tunnel drops, traffic stays blocked until you press Deactivate. Change this
+                        while the tunnel is off.
+                      </span>
+                    </span>
+                  </label>
                   {tunnel.fullTunnel && !tunnel.active && (
                     <p className="mt-2 text-xs text-muted">
                       This tunnel sends all of your internet traffic through the VPN while it is active.
@@ -218,6 +344,50 @@ export function VpnView() {
           )}
         </section>
       </div>
+
+      {editing && tunnel && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="vpn-edit-title"
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setEditing(false);
+            }}
+            className="flex max-h-full w-full max-w-xl flex-col gap-3 overflow-auto rounded-lg border border-border bg-surface p-5"
+          >
+            <h2 id="vpn-edit-title" className="text-sm font-semibold text-text">
+              Edit tunnel: {tunnel.name}
+            </h2>
+            <label htmlFor="vpn-edit-text" className="text-xs text-muted">
+              WireGuard settings. The private key is hidden. Leave the line PrivateKey = &lt;unchanged&gt; to keep it.
+            </label>
+            <textarea
+              id="vpn-edit-text"
+              ref={editBox}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              spellCheck={false}
+              rows={16}
+              disabled={tunnel.active || saving}
+              className="min-h-[12rem] w-full rounded-md border border-border bg-bg p-3 font-mono text-xs text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            />
+            {editError && (
+              <p role="alert" className="text-sm text-danger">
+                {editError}
+              </p>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button size="sm" variant="ghost" onClick={() => setEditing(false)} disabled={saving}>
+                Cancel
+              </Button>
+              <Button size="sm" variant="primary" loading={saving} disabled={tunnel.active} onClick={() => saveEdit(tunnel.name)}>
+                Save
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
