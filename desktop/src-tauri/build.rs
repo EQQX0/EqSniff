@@ -8,5 +8,12 @@ fn main() {
         // The pcap crate's old windows-sys import library sends WaitOnAddress to vertdll.dll and crashes
         // tokio and Tauri async commands. vendor/windows_x86_64_msvc replaces it; see its README.md.
     }
-    tauri_build::build()
+    // The release app always runs as administrator, so VPN, the kill switch and the hotspot do not ask Windows for
+    // permission each time. Debug and test builds stay unelevated so `cargo test` can run them.
+    if std::env::var("PROFILE").as_deref() == Ok("release") {
+        let windows = tauri_build::WindowsAttributes::new().app_manifest(include_str!("windows-app.manifest"));
+        tauri_build::try_build(tauri_build::Attributes::new().windows_attributes(windows)).expect("failed to run tauri-build");
+    } else {
+        tauri_build::build();
+    }
 }

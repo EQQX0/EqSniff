@@ -321,15 +321,16 @@ function Mgr{
 
 const STATUS_SCRIPT: &str = r#"
 $wifi=(WifiCount) -gt 0
-$state='unavailable';$clients=0;$note=''
+$state='unavailable';$clients=0;$note='';$wssid='';$wpass=''
 if($wifi){
   try{
     $m=Mgr
     $state=([string]$m.TetheringOperationalState).ToLower()
     $clients=[int]$m.ClientCount
+    try{$c=$m.GetCurrentAccessPointConfiguration();$wssid=[string]$c.Ssid;$wpass=[string]$c.Passphrase}catch{}
   }catch{$state='off';$note=$_.Exception.Message}
 }
-@{wifi=$wifi;state=$state;clients=$clients;note=$note}|ConvertTo-Json -Compress
+@{wifi=$wifi;state=$state;clients=$clients;note=$note;ssid=$wssid;pass=$wpass}|ConvertTo-Json -Compress
 "#;
 
 const START_SCRIPT: &str = r#"
@@ -397,9 +398,20 @@ pub struct HotspotStatus {
 // Runs on the async thread pool: it spawns a process, which must never block the UI thread.
 #[tauri::command(async)]
 pub fn hotspot_status(app: AppHandle) -> Result<HotspotStatus, String> {
-    let saved = read_saved(&data_dir(&app)?);
+    let dir = data_dir(&app)?;
+    let mut saved = read_saved(&dir);
     let out = run_ps(&format!("{WINRT}{STATUS_SCRIPT}"), &[])?;
     let v: Value = serde_json::from_str(out.trim()).map_err(|_| "Windows gave an answer this app could not read.".to_string())?;
+    // Nothing saved here yet: take the name and password already set in Windows (Settings, Mobile hotspot).
+    if saved.ssid.is_empty() || saved.password.is_empty() {
+        let ws = v.get("ssid").and_then(Value::as_str).unwrap_or("");
+        let wp = v.get("pass").and_then(Value::as_str).unwrap_or("");
+        if validate_ssid(ws).is_ok() && validate_password(wp).is_ok() {
+            saved.ssid = ws.to_string();
+            saved.password = wp.to_string();
+            let _ = write_json(&dir.join("hotspot.json"), &saved);
+        }
+    }
     let wifi = v.get("wifi").and_then(Value::as_bool).unwrap_or(false);
     let note = v.get("note").and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_string);
     Ok(HotspotStatus {

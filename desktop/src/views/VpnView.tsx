@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type VpnStatus, type VpnTunnel } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
-import { Checkbox } from "@/components/ui/Checkbox";
+import { Switch } from "@/components/ui/Switch";
 import { Badge } from "@/components/ui/Badge";
 
 const NAME_OK = /^[A-Za-z0-9_=+.-]{1,32}$/;
@@ -301,12 +301,12 @@ export function VpnView() {
                   >
                     Edit
                   </Button>
-                  <label className="mt-3 flex items-start gap-2 text-sm text-text">
-                    <Checkbox
-                      className="mt-0.5"
+                  <label className="mt-3 flex items-start gap-3 text-sm text-text">
+                    <Switch
+                      label="Block traffic outside the VPN (kill switch)"
                       checked={tunnel.killswitch}
                       disabled={busy || tunnel.active}
-                      onChange={(e) => run(() => api.vpnSetOption(tunnel.name, e.target.checked))}
+                      onChange={(on) => run(() => api.vpnSetOption(tunnel.name, on))}
                     />
                     <span>
                       Block traffic outside the VPN (kill switch)

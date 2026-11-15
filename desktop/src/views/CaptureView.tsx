@@ -17,7 +17,7 @@ import {
 } from "@/lib/export";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { NetworkIcon } from "@/components/ui/icons";
-import { Checkbox } from "@/components/ui/Checkbox";
+import { Switch } from "@/components/ui/Switch";
 import { NAME_MAX, loadEntries, newEntryId, onChange as onIpStoreChange, saveEntries, setName } from "@/lib/ipstore";
 import { labelFor, parseMinecraftLog } from "@/lib/mclog";
 import { ACTIVE_EACH_WAY, IpList, absorb, listBook, type IpBook } from "@/views/CaptureIps";
@@ -119,9 +119,6 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
       /* remembering the port is a convenience only */
     }
   };
-  const [publicOnly, setPublicOnly] = useState(true);
-  const [activeOnly, setActiveOnly] = useState(true);
-  const [dropIdle, setDropIdle] = useState(true);
   const [clockNow, setClockNow] = useState(() => Date.now() / 1000);
   const ipBook = useRef<IpBook>(new Map());
   useEffect(() => {
@@ -153,7 +150,6 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
   /** What is left after the filters. The All Traffic tab ignores them, so hidden addresses still show up there. */
   const filteredRows = useMemo(() => {
     const kept = rows.filter((r) => matchesAny(filters, r));
-    if (!dropIdle) return kept;
     // Drop packets from addresses that are not holding a real conversation: local ones, and ones that only probe or ping.
     const book = ipBook.current;
     return kept.filter((r) => {
@@ -162,10 +158,10 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
       const e = book.get(far);
       return !!e && e.inbound >= ACTIVE_EACH_WAY && e.outbound >= ACTIVE_EACH_WAY;
     });
-  }, [rows, filters, dropIdle, ipVersion]);
+  }, [rows, filters, ipVersion]);
   const portNum = serverPort ? Number(serverPort) : null;
-  const allIps = useMemo(() => listBook(ipBook.current, false, portNum, publicOnly, activeOnly), [ipVersion, portNum, publicOnly, activeOnly]);
-  const filteredIps = useMemo(() => listBook(ipBook.current, true, portNum, publicOnly, activeOnly), [ipVersion, portNum, publicOnly, activeOnly]);
+  const allIps = useMemo(() => listBook(ipBook.current, false, portNum), [ipVersion, portNum]);
+  const filteredIps = useMemo(() => listBook(ipBook.current, true, portNum), [ipVersion, portNum]);
 
   const shown = useMemo(() => {
     const kept = tab === "all" ? rows : filteredRows;
@@ -227,6 +223,15 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
   }
 
   /** Reads Minecraft logs and saves each player's name as the label of the address they joined from. */
+  /** Forgets the addresses and packets seen so far. Labels saved in IP Storage stay. */
+  function clearCaptured() {
+    ipBook.current = new Map();
+    setIpVersion((v) => v + 1);
+    setRows([]);
+    setTotal(0);
+    setNotice("Cleared the captured addresses and packets. Saved labels were kept.");
+  }
+
   async function importMinecraftLogs(files: File[]) {
     if (files.length === 0) return;
     setError(null);
@@ -585,7 +590,7 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
                 {COLUMNS.map((c) => (
                   <li key={c.id}>
                     <label className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-sm text-text transition-colors duration-fast hover:bg-white/[0.07]">
-                      <Checkbox checked={show(c.id)} onChange={() => toggleColumn(c.id)} />
+                      <Switch label={`Show ${c.label}`} checked={show(c.id)} onChange={() => toggleColumn(c.id)} />
                       {c.label}
                     </label>
                   </li>
@@ -635,13 +640,6 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
           <NetworkIcon className="h-4 w-4" />
           {(tab === "all" ? allIps : filteredIps).length.toLocaleString()} IPs
         </button>
-        <label
-          className="inline-flex cursor-pointer items-center gap-2 text-xs text-muted"
-          title={`On Filtered Traffic, hide packets from addresses that are not really connected: local addresses, and ones that sent or received fewer than ${ACTIVE_EACH_WAY} packets. Cuts out port scanners and bots.`}
-        >
-          <input type="checkbox" checked={dropIdle} onChange={(e) => setDropIdle(e.target.checked)} />
-          Drop idle IPs
-        </label>
         {ipsOpen && <span className="text-xs text-muted">Click a label to edit it. Labels are saved in IP Storage.</span>}
       </div>
 
@@ -655,11 +653,8 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
             onSave={saveName}
             onImportLog={importMinecraftLogs}
             port={serverPort}
-            publicOnly={publicOnly}
-            onPublicOnly={setPublicOnly}
-            activeOnly={activeOnly}
             now={running ? clockNow : allIps.reduce((m, i) => Math.max(m, i.last), 0)}
-            onActiveOnly={setActiveOnly}
+            onClear={clearCaptured}
             onPort={changePort}
           />
         </Card>

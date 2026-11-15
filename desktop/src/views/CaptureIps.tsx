@@ -42,19 +42,19 @@ export function absorb(book: IpBook, rows: PacketRow[], farOf: (r: PacketRow) =>
 }
 
 /** An address counts as an active connection once it has sent and received at least this many packets. */
-export const ACTIVE_EACH_WAY = 20;
+export const ACTIVE_EACH_WAY = 5;
 
 /** An address is online while its last packet is newer than this many seconds. */
 export const ONLINE_WITHIN = 15;
 
 /** The book as a list, newest first. `onlyFiltered` keeps the addresses that had at least one packet through the filters. */
-export function listBook(book: IpBook, onlyFiltered: boolean, serverPort: number | null = null, publicOnly = true, activeOnly = false): IpSummary[] {
+export function listBook(book: IpBook, onlyFiltered: boolean, serverPort: number | null = null): IpSummary[] {
   let all = [...book.values()];
-  if (publicOnly) all = all.filter((i) => !isLocalAddress(i.address));
+  // Only real connections from the internet: not local addresses, and not scanners that never really talk back.
+  all = all.filter((i) => !isLocalAddress(i.address));
   if (serverPort !== null) all = all.filter((i) => i.ports.has(serverPort));
-  if (activeOnly) all = all.filter((i) => i.inbound >= ACTIVE_EACH_WAY && i.outbound >= ACTIVE_EACH_WAY);
-  if (activeOnly) return (onlyFiltered ? all.filter((i) => i.passed > 0) : all).sort((x, y) => y.packets - x.packets);
-  return (onlyFiltered ? all.filter((i) => i.passed > 0) : all).sort((x, y) => y.last - x.last);
+  all = all.filter((i) => i.inbound >= ACTIVE_EACH_WAY && i.outbound >= ACTIVE_EACH_WAY);
+  return (onlyFiltered ? all.filter((i) => i.passed > 0) : all).sort((x, y) => y.packets - x.packets);
 }
 
 interface Props {
@@ -69,16 +69,14 @@ interface Props {
   /** Only addresses that talked to this port on this computer. Empty means all. */
   port: string;
   onPort: (v: string) => void;
-  publicOnly: boolean;
-  onPublicOnly: (v: boolean) => void;
-  activeOnly: boolean;
-  onActiveOnly: (v: boolean) => void;
+  /** Forgets every captured address (saved labels stay). */
+  onClear: () => void;
   /** The moment to judge online against, in seconds: now while capturing, the newest packet in a saved file. */
   now: number;
 }
 
 /** The addresses seen in a capture, each with an editable label saved in IP Storage. */
-export function IpList({ items, names, geo, hidden, onSave, onImportLog, port, onPort, publicOnly, onPublicOnly, activeOnly, onActiveOnly, now }: Props) {
+export function IpList({ items, names, geo, hidden, onSave, onImportLog, port, onPort, onClear, now }: Props) {
   const logInput = useRef<HTMLInputElement>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -118,14 +116,15 @@ export function IpList({ items, names, geo, hidden, onSave, onImportLog, port, o
             className="h-8 w-20 rounded-pill border border-border bg-white/[0.06] px-3 text-xs text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
           />
         </label>
-        <label className="ml-3 inline-flex cursor-pointer items-center gap-2 text-xs text-muted" title="Addresses inside your home or office network (192.168..., 10..., 172.16-31...) cannot be players on the internet">
-          <input type="checkbox" checked={publicOnly} onChange={(e) => onPublicOnly(e.target.checked)} />
-          Hide local addresses
-        </label>
-        <label className="ml-3 inline-flex cursor-pointer items-center gap-2 text-xs text-muted" title={`Keeps addresses that sent you at least ${ACTIVE_EACH_WAY} packets and got at least ${ACTIVE_EACH_WAY} back. Players talk both ways all the time. Scanners and bots that just probe your port do not.`}>
-          <input type="checkbox" checked={activeOnly} onChange={(e) => onActiveOnly(e.target.checked)} />
-          Only active (talking both ways)
-        </label>
+        <button
+          type="button"
+          onClick={onClear}
+          disabled={items.length === 0}
+          title="Forget every captured address and packet so far. Labels saved in IP Storage are kept."
+          className="ml-3 h-8 rounded-pill border border-border px-3 text-xs text-text hover:bg-white/[0.08] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
+        >
+          Clear
+        </button>
         {onImportLog && (
           <>
             <button
