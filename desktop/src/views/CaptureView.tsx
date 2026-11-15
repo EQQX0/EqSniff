@@ -83,10 +83,12 @@ type SortState = { key: ColumnId; dir: "asc" | "desc" } | null;
 interface Props {
   filters: Filter[];
   onToggle: (id: string) => void;
+  /** Adds or switches on a Hide filter for an ISP. */
+  onHideIsp: (isp: string) => Promise<void>;
   onSeen: (rows: PacketRow[]) => void;
 }
 
-export function CaptureView({ filters, onToggle, onSeen }: Props) {
+export function CaptureView({ filters, onToggle, onHideIsp, onSeen }: Props) {
   const [adapters, setAdapters] = useState<Adapter[]>([]);
   const [adapter, setAdapter] = useState("");
   const [running, setRunning] = useState(false);
@@ -110,10 +112,11 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
   const [clockNow, setClockNow] = useState(() => Date.now() / 1000);
   const ipBook = useRef<IpBook>(new Map());
   useEffect(() => {
-    if (!running) return;
+    // A live capture keeps counting after Stop, so players who left turn red. A saved file is judged at its newest packet.
+    if (fromFile) return;
     const t = setInterval(() => setClockNow(Date.now() / 1000), 1000);
     return () => clearInterval(t);
-  }, [running]);
+  }, [fromFile]);
   const [ipVersion, setIpVersion] = useState(0);
   const filtersNow = useRef(filters);
   filtersNow.current = filters;
@@ -398,11 +401,15 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
     setError(null);
     try {
       await api.startCapture(adapter, "");
+      // The packet table starts empty (packet numbers restart with each capture), but the IP list keeps what it
+      // has seen. Only the Clear button, or leaving a saved file, empties it.
       setRows([]);
-      ipBook.current = new Map();
+      if (fromFile) {
+        ipBook.current = new Map();
+        resetGeo();
+      }
       setIpVersion((v) => v + 1);
       setTotal(0);
-      resetGeo();
       setFromFile(null);
       setNotice(null);
       setRunning(true);
@@ -413,7 +420,7 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
     } finally {
       setBusy(false);
     }
-  }, [adapter, resetGeo]);
+  }, [adapter, resetGeo, fromFile]);
 
   const stop = useCallback(async () => {
     setBusy(true);
@@ -647,9 +654,10 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
             geo={geo}
             hidden={tab === "all" ? new Set(allIps.map((i) => i.address).filter((a) => !filteredIps.some((f) => f.address === a))) : undefined}
             onSave={saveName}
-            now={running ? clockNow : allIps.reduce((m, i) => Math.max(m, i.last), 0)}
+            now={fromFile ? allIps.reduce((m, i) => Math.max(m, i.last), 0) : clockNow}
             onClear={clearCaptured}
             onDelete={deleteRow}
+            onHideIsp={(isp) => void onHideIsp(isp).then(() => setNotice(`Added the filter “Hide ISP: ${isp}” and switched it on. Find it on the Filters page. The Filtered IPs tab no longer lists it.`)).catch((e) => setError(String(e)))}
             details={details}
           />
         </Card>

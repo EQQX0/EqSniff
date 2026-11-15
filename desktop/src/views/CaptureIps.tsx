@@ -11,6 +11,8 @@ export interface IpSummary {
   last: number;
   /** When the first packet from this address arrived. */
   first: number;
+  /** When this computer last sent it a real packet (not an ICMP error). A server that is off sends none. */
+  lastOut: number;
   /** Packets that passed the filters when they arrived. */
   passed: number;
   /** Packets sent to this computer by the address, and sent back to it. A player talks both ways, a scanner mostly does not. */
@@ -28,17 +30,22 @@ export type IpBook = Map<string, IpSummary>;
 /** Adds packets to the book. `passes` says whether a packet gets through the filters switched on right now. */
 export function absorb(book: IpBook, rows: PacketRow[], farOf: (r: PacketRow) => string, passes: (r: PacketRow) => boolean, limit = 50000) {
   for (const r of rows) {
+    // ICMP is ping and error traffic. A closed game port makes Windows answer every packet with an ICMP error,
+    // which would look like a server talking back, so it never counts toward a connection.
+    if (r.protocol.startsWith("ICMP")) continue;
     const a = farOf(r);
     let hit = book.get(a);
     if (!hit) {
       if (book.size >= limit) continue;
-      hit = { address: a, packets: 0, bytes: 0, last: r.time, first: r.time, passed: 0, inbound: 0, outbound: 0, ports: new Set(), protocols: new Set() };
+      hit = { address: a, packets: 0, bytes: 0, last: r.time, first: r.time, lastOut: 0, passed: 0, inbound: 0, outbound: 0, ports: new Set(), protocols: new Set() };
       book.set(a, hit);
     }
     hit.packets++;
     hit.bytes += r.length;
-    if (isLocalAddress(r.src)) hit.outbound++;
-    else hit.inbound++;
+    if (isLocalAddress(r.src)) {
+      hit.outbound++;
+      if (r.time > hit.lastOut) hit.lastOut = r.time;
+    } else hit.inbound++;
     if (r.time > hit.last) hit.last = r.time;
     if (passes(r)) hit.passed++;
     hit.protocols.add(r.protocol);
@@ -51,6 +58,9 @@ export const ACTIVE_EACH_WAY = 3;
 
 /** An address is online while its last packet is newer than this many seconds. */
 export const ONLINE_WITHIN = 15;
+
+/** Online means it sent to us and we answered, both within the last ONLINE_WITHIN seconds. */
+export const isOnline = (i: IpSummary, now: number) => now - i.last <= ONLINE_WITHIN && now - i.lastOut <= ONLINE_WITHIN;
 
 /** The book as a list, newest first. `onlyFiltered` keeps the addresses that had at least one packet through the filters. */
 export function listBook(book: IpBook, onlyFiltered: boolean, serverPort: number | null = null): IpSummary[] {
@@ -73,6 +83,8 @@ interface Props {
   onClear: () => void;
   /** Forgets one captured address. It comes back if it sends more packets. */
   onDelete: (address: string) => void;
+  /** Adds (or switches on) a Hide filter for this ISP in the Filters page. */
+  onHideIsp: (isp: string) => void;
   /** The moment to judge online against, in seconds: now while capturing, the newest packet in a saved file. */
   now: number;
   /** City, ISP and VPN flags from the online lookup, keyed by address. */
@@ -80,12 +92,11 @@ interface Props {
 }
 
 /** The addresses seen in a capture, each with an editable label saved in IP Storage. */
-export function IpList({ items, names, geo, hidden, onSave, onClear, onDelete, now, details }: Props) {
+export function IpList({ items, names, geo, hidden, onSave, onClear, onDelete, onHideIsp, now, details }: Props) {
   const [editing, setEditing] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   // Right-click menu and the views it sets up. These only change what this list shows, not the capture.
   const [menu, setMenu] = useState<{ x: number; y: number; address: string } | null>(null);
-  const [hiddenIsps, setHiddenIsps] = useState<Set<string>>(new Set());
   const [hiddenIps, setHiddenIps] = useState<Set<string>>(new Set());
   const [onlyIsp, setOnlyIsp] = useState<string | null>(null);
   useEffect(() => {
@@ -107,15 +118,15 @@ export function IpList({ items, names, geo, hidden, onSave, onClear, onDelete, n
   const copy = (text: string) => void navigator.clipboard?.writeText(text).catch(() => {});
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
-    let base = items.filter((i) => !hiddenIps.has(i.address) && !(ispOf(i.address) && hiddenIsps.has(ispOf(i.address))));
+    let base = items.filter((i) => !hiddenIps.has(i.address));
     if (onlyIsp !== null) base = base.filter((i) => ispOf(i.address) === onlyIsp);
     const list = q ? base.filter((i) => i.address.toLowerCase().includes(q) || (names[i.address] ?? "").toLowerCase().includes(q)) : base;
     // players who are online come first; each group keeps its order
-    const on = (i: IpSummary) => now - i.last <= ONLINE_WITHIN;
+    const on = (i: IpSummary) => isOnline(i, now);
     return [...list.filter(on), ...list.filter((i) => !on(i))];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, names, query, now, hiddenIps, hiddenIsps, onlyIsp, details]);
-  const onlineCount = useMemo(() => items.filter((i) => now - i.last <= ONLINE_WITHIN).length, [items, now]);
+  }, [items, names, query, now, hiddenIps, onlyIsp, details]);
+  const onlineCount = useMemo(() => items.filter((i) => isOnline(i, now)).length, [items, now]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -141,14 +152,11 @@ export function IpList({ items, names, geo, hidden, onSave, onClear, onDelete, n
           Clear
         </button>
       </div>
-      {(hiddenIsps.size > 0 || hiddenIps.size > 0 || onlyIsp !== null) && (
+      {(hiddenIps.size > 0 || onlyIsp !== null) && (
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2 text-xs text-muted">
           {onlyIsp !== null && <button type="button" onClick={() => setOnlyIsp(null)} className="rounded-pill border border-border px-2 py-0.5 hover:bg-white/10">Only ISP: {onlyIsp} ✕</button>}
-          {[...hiddenIsps].map((n) => (
-            <button key={n} type="button" onClick={() => setHiddenIsps((s) => { const x = new Set(s); x.delete(n); return x; })} className="rounded-pill border border-border px-2 py-0.5 hover:bg-white/10">Hiding ISP: {n} ✕</button>
-          ))}
           {hiddenIps.size > 0 && <button type="button" onClick={() => setHiddenIps(new Set())} className="rounded-pill border border-border px-2 py-0.5 hover:bg-white/10">Hiding {hiddenIps.size} address{hiddenIps.size === 1 ? "" : "es"} ✕</button>}
-          <button type="button" onClick={() => { setHiddenIsps(new Set()); setHiddenIps(new Set()); setOnlyIsp(null); }} className="px-2 py-0.5 text-text underline">Show all</button>
+          <button type="button" onClick={() => { setHiddenIps(new Set()); setOnlyIsp(null); }} className="px-2 py-0.5 text-text underline">Show all</button>
         </div>
       )}
       <div className="min-h-0 flex-1 overflow-auto">
@@ -174,7 +182,7 @@ export function IpList({ items, names, geo, hidden, onSave, onClear, onDelete, n
               {shown.map((i) => {
                 const label = names[i.address];
                 const hit = geo[i.address];
-                const online = now - i.last <= ONLINE_WITHIN;
+                const online = isOnline(i, now);
                 return (
                   <tr
                     key={i.address}
@@ -269,7 +277,7 @@ export function IpList({ items, names, geo, hidden, onSave, onClear, onDelete, n
             <button role="menuitem" type="button" className={item} onClick={() => { setEditing(i.address); setMenu(null); }}>{names[i.address] ? "Change label" : "Create IP label"}</button>
             <div className="my-1 border-t border-border" />
             {isp && <button role="menuitem" type="button" className={item} onClick={() => { setOnlyIsp(isp); setMenu(null); }}>Show only ISP: {isp}</button>}
-            {isp && <button role="menuitem" type="button" className={item} onClick={() => { setHiddenIsps((s) => new Set(s).add(isp)); setMenu(null); }}>Hide ISP: {isp}</button>}
+            {isp && <button role="menuitem" type="button" className={item} onClick={() => { onHideIsp(isp); setMenu(null); }}>Hide ISP: {isp}</button>}
             <button role="menuitem" type="button" className={item} onClick={() => { setHiddenIps((s) => new Set(s).add(i.address)); setMenu(null); }}>Hide this IP</button>
             <div className="my-1 border-t border-border" />
             <button role="menuitem" type="button" className={danger} onClick={() => { onDelete(i.address); setMenu(null); }}>Delete row</button>

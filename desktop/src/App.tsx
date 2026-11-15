@@ -113,6 +113,21 @@ export default function App() {
     [saveFilters]
   );
 
+  // Right-click "Hide ISP" in Capture: a Hide filter for that ISP, switched on. Made once, then reused.
+  // The filter box is comma-separated, so "Cloudflare, Inc." is saved as "Cloudflare" (a part of the name is enough).
+  const hideIsp = useCallback(
+    async (isp: string) => {
+      const name = `Hide ISP: ${isp}`;
+      const list = latest.current;
+      const have = list.find((f) => f.name === name);
+      const next = have
+        ? list.map((f) => (f.id === have.id ? { ...f, enabled: true } : f))
+        : [...list, { ...blankFilter(newId()), name: name.slice(0, 80), mode: "hide" as const, isps: isp.split(",")[0].trim().slice(0, 120), enabled: true }];
+      await saveFilters(next);
+    },
+    [saveFilters]
+  );
+
   // Devices from captures, with anything the network scan found added on top.
   const devices = useMemo(() => {
     const merged: Record<string, Seen> = { ...seen };
@@ -167,7 +182,7 @@ export default function App() {
         <div className="mx-auto h-full w-full max-w-[1400px]">
           {/* Every view stays mounted so a running capture keeps its table while Settings is open. */}
           <div className={pane("capture", "h-full")}>
-            <CaptureView filters={filters} onToggle={toggleFilter} onSeen={onSeen} />
+            <CaptureView filters={filters} onToggle={toggleFilter} onHideIsp={hideIsp} onSeen={onSeen} />
           </div>
           <div className={pane("filters")}>
             <FiltersView filters={filters} onChange={saveFilters} />

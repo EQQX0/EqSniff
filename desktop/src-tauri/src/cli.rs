@@ -222,6 +222,7 @@ struct Seen {
     bytes: u64,
     first: f64,
     last: f64,
+    last_out: f64,
     protocols: BTreeSet<String>,
     ports: BTreeSet<u16>,
 }
@@ -249,6 +250,10 @@ fn capture_ips(app: &AppHandle, o: &Opts) -> Res {
     let mut end_time = 0f64;
     let mut take = |rows: Vec<crate::packet::PacketRow>| {
         for r in rows {
+            // ICMP errors from a closed port are not a server talking back.
+            if r.protocol.starts_with("ICMP") {
+                continue;
+            }
             let out = is_local(&r.src);
             let far = if out { &r.dst } else { &r.src };
             let e = book.entry(far.clone()).or_default();
@@ -258,6 +263,7 @@ fn capture_ips(app: &AppHandle, o: &Opts) -> Res {
             e.packets += 1;
             e.bytes += r.length as u64;
             if out {
+                e.last_out = e.last_out.max(r.time);
                 e.outbound += 1;
             } else {
                 e.inbound += 1;
@@ -311,7 +317,7 @@ fn capture_ips(app: &AppHandle, o: &Opts) -> Res {
                 "protocols": s.protocols,
                 "ports": s.ports,
                 "packets": s.packets, "inbound": s.inbound, "outbound": s.outbound, "bytes": s.bytes,
-                "online": end_time - s.last <= 15.0,
+                "online": end_time - s.last <= 15.0 && end_time - s.last_out <= 15.0,
                 "secondsSeen": (s.last - s.first).max(0.0).round(),
             });
             if let Some(d) = details.get(a) {
