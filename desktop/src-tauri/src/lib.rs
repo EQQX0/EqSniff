@@ -5,12 +5,15 @@ mod geo;
 mod update;
 mod settings;
 mod scan;
+mod vpn;
+mod vpnconf;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(capture::CaptureState::default())
         .manage(scan::ScanState::default())
+        .manage(vpn::VpnState::default())
         .invoke_handler(tauri::generate_handler![
             capture::list_adapters,
             capture::start_capture,
@@ -28,6 +31,11 @@ pub fn run() {
             scan::scan_start,
             scan::scan_poll,
             scan::scan_cancel,
+            vpn::vpn_status,
+            vpn::vpn_import,
+            vpn::vpn_set,
+            vpn::vpn_job,
+            vpn::vpn_delete,
             settings::get_settings,
             settings::set_settings,
             settings::data_folder,

@@ -47,3 +47,18 @@ pcap import/export,export,should,no,yes,"Classic .pcap (Ethernet), 20,000 packet
 Usage and crash reporting,platform,skip,no,skip,Moved to Out 2026-11-15: it conflicts with the local-only rule.
 macOS and Linux builds,platform,skip,no,skip,Out by decision 2026-11-15.
 Open-source the code,platform,could,no,no,Maybe-later: after v1 is stable for 3 months.
+ISP filter (hide or dim hosting providers),filters,could,yes,no,Seen in OctoSniff. Needs an ISP lookup per address.
+"Device categories (router, console, PC, phone, IoT)",devices,could,yes,no,Seen. Needs MAC vendor data.
+Add a device by IP by hand,devices,could,yes,no,Seen.
+Process filters (beta),filters,could,yes,no,Not opened.
+Windows hotspot and connection sharing,tools,could,yes,no,"Seen. SSID, password, public and private adapter."
+WireGuard-style VPN tunnel manager,vpn,should,no,partial,"Built: tunnel list, import .conf (checked and rewritten, command settings refused), details with public key, activate/deactivate through WireGuard for Windows with the Windows permission prompt, delete. Tested live except activate/deactivate. Not built: edit tunnel, make new keys, log tab."
+Built-in VPN with vendor servers (OctoVPN),vpn,could,yes,skip,Needs the vendor's servers and accounts.
+Auto-remove inactive IPs,settings,could,yes,no,Seen.
+Max packets and capture buffer settings,settings,could,yes,partial,"EqSniff keeps 20,000 frames, fixed."
+Discord rich presence,settings,could,yes,skip,Not wanted: shares status with a third party.
+Encrypted support log and export bundle,settings,could,yes,no,Seen.
+In-app changelog,settings,could,yes,no,Seen.
+Guided tutorial,help,could,yes,no,"Seen: wired or hotspot paths, chapters."
+Player IP storage with usernames,tools,could,yes,skip,Tracks other people's addresses. Own-address labels exist instead.
+"Community filter library, party chat, traffic control, ARP spoofing",other,could,yes,skip,"Disrupt or identify other people, or need the vendor's cloud."

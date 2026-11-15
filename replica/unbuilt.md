@@ -79,3 +79,5 @@ Updated 2026-11-15, after the second round (GeoIP, update check, installer, repo
 - A damaged `filters.json` shows as an empty list and the next save overwrites it.
 - The Tauri event crash was never explained. If a future feature needs events, test on a second machine first.
 - The Npcap redistribution licence: the installer does not bundle Npcap, on purpose. Bundling needs a paid OEM licence.
+| VPN: edit tunnel, create keys, log tab | The VPN page imports, shows, starts, stops and deletes tunnels. WireGuard's edit and key-making screens are not copied. | Small to medium. |
+| VPN activate/deactivate not tested live | Needs the Windows permission prompt, which only you can answer. | Test on your PC. |

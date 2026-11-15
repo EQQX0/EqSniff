@@ -23,6 +23,31 @@ export interface Settings {
   lastAdapter: string | null;
 }
 
+export interface VpnPeer {
+  publicKey: string;
+  hasPresharedKey: boolean;
+  allowedIps: string[];
+  endpoint: string | null;
+  keepalive: number | null;
+}
+
+export interface VpnTunnel {
+  name: string;
+  active: boolean;
+  publicKey: string | null;
+  addresses: string[];
+  dns: string[];
+  mtu: number | null;
+  listenPort: number | null;
+  fullTunnel: boolean;
+  peers: VpnPeer[];
+}
+
+export interface VpnStatus {
+  installed: boolean;
+  tunnels: VpnTunnel[];
+}
+
 export interface Country {
   code: string;
   name: string;
@@ -79,6 +104,11 @@ export const api = {
   scanStart: (target: string) => invoke<string>("scan_start", { target }),
   scanPoll: () => invoke<ScanPoll>("scan_poll"),
   scanCancel: () => invoke<void>("scan_cancel"),
+  vpnStatus: () => invoke<VpnStatus>("vpn_status"),
+  vpnImport: (name: string, text: string) => invoke<void>("vpn_import", { name, text }),
+  vpnSet: (name: string, on: boolean) => invoke<void>("vpn_set", { name, on }),
+  vpnJob: () => invoke<{ running: boolean; error: string | null }>("vpn_job"),
+  vpnDelete: (name: string) => invoke<void>("vpn_delete", { name }),
   geoLookup: (ips: string[]) => invoke<Record<string, Country>>("geo_lookup", { ips }),
   checkUpdate: () => invoke<UpdateInfo>("check_update"),
   dataFolder: () => invoke<string>("data_folder"),
