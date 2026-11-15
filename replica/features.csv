@@ -51,7 +51,7 @@ ISP filter (hide or dim hosting providers),filters,could,yes,no,Seen in OctoSnif
 "Device categories (router, console, PC, phone, IoT)",devices,could,yes,no,Seen. Needs MAC vendor data.
 Add a device by IP by hand,devices,could,yes,no,Seen.
 Process filters (beta),filters,could,yes,no,Not opened.
-Windows hotspot and connection sharing,tools,could,yes,no,"Seen. SSID, password, public and private adapter."
+Windows hotspot and connection sharing,tools,could,yes,partial,"Built: Hotspot page with Windows Mobile Hotspot (name, password, start/stop), internet sharing between a public and a private adapter (admin prompt, Reset, Disable), connected devices from the ARP table. 6 parser tests pass. Not tested live: hotspot start and sharing on/off."
 WireGuard-style VPN tunnel manager,vpn,should,no,partial,"Built: tunnel list, import .conf (checked and rewritten, command settings refused), details with public key, activate/deactivate with a built-in WireGuard engine (Wintun + boringtun) and the Windows admin prompt, delete. Tested live with a real server: traffic and public IP changed, clean stop. Also built: edit tunnel (key hidden), log tab, optional kill switch (Windows Filtering Platform, dynamic session). Not built: make new keys. Kill switch not yet tested live."
 Built-in VPN with vendor servers (OctoVPN),vpn,could,yes,skip,Needs the vendor's servers and accounts.
 Auto-remove inactive IPs,settings,could,yes,no,Seen.

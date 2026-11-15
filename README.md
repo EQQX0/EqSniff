@@ -37,7 +37,7 @@ npm run tauri dev
 cd desktop
 npm test                          # 45 filter checks
 cd src-tauri
-cargo test --tests                # 5 pcap, 6 VPN parser, 3 VPN engine and 7 VPN extras tests
+cargo test --tests                # 5 pcap, 6 VPN parser, 3 VPN engine, 7 VPN extras and 6 hotspot tests
 ```
 
 Rust tests live in `desktop/src-tauri/tests/` and do not link Tauri. Tests that did crashed on the author's PC, so keep new ones there.
@@ -49,6 +49,14 @@ The app has its own WireGuard engine (`src-tauri/src/vpnengine.rs`): `boringtun`
 - **Edit**: the Edit button opens the saved settings in a box. The private key shows as `<unchanged>` and is never sent to the window; saving checks the text with the same parser as import. Only for a tunnel that is off.
 - **Log**: the Log tab shows the last 200 lines of `<name>.log` and refreshes every 3 seconds while the tunnel is active. The engine never writes keys to it.
 - **Kill switch** (off by default, one checkbox per tunnel, stored in `<name>.options`, never read from a `.conf`). `src-tauri/src/killswitch.rs` adds Windows Filtering Platform filters in a dynamic session, so Windows removes them when the elevated engine process exits for any reason. They block all connections except: loopback, the tunnel adapter, UDP to the VPN server, DHCP, and the local network (10/8, 172.16/12, 192.168/16, 169.254/16, fe80::/10, fc00::/7, multicast, broadcast). The engine keeps running until you press Deactivate, so if the tunnel drops, traffic is blocked and not leaked. If the engine process itself is killed, the filters go with it and traffic returns to normal.
+
+## Hotspot page
+
+`src-tauri/src/hotspot.rs` drives Windows through PowerShell 5.1 (no async, long work on a thread that `hotspot_job` reports on).
+
+- **Hotspot**: Windows Mobile Hotspot through `NetworkOperatorTetheringManager`. Needs a Wi-Fi adapter; without one the page says so and Start is off. Name and password are checked in Rust (name 1 to 32 characters, password 8 to 63 printable ASCII) and stored in `hotspot/hotspot.json` in the app data folder. The password never goes back to the window (only a `hasPassword` flag) and reaches PowerShell through environment variables.
+- **Sharing / Bridge**: Windows internet connection sharing (`HNetCfg.HNetShare`) between a public and a private adapter. Changing it runs an elevated PowerShell (Windows admin prompt) and reads the result from `hotspot/sharing-result.json`. The script travels on the command line, adapter names as base64. The app refuses to apply while sharing is already on; Reset or Disable Sharing turns it off.
+- **Connected devices**: read from `arp -a` for the private subnet only (default 192.168.137.1). Nothing is sent.
 
 ## Build notes
 

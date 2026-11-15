@@ -22,6 +22,12 @@ Everything asked for is built, tested and committed. The built-in VPN engine pas
 - Removed the temporary `dbg.rs` probe.
 - Installer: Tauri's NSIS template has a "Create desktop shortcut" box on its last page. Portable zip now holds `wintun.dll` too.
 
+## Hotspot page (added later)
+- New `desktop/src-tauri/src/hotspot.rs`, `desktop/src/views/HotspotView.tsx`, `tests/hotspot.rs` (6 tests), nav entry, api section, Help entry.
+- Verified: unit tests, tsc, build, no vertdll import, and the read-only PowerShell scripts (adapter list, sharing read, hotspot status) ran and returned sane JSON on this PC. This PC has a Wi-Fi adapter (MediaTek, disconnected).
+- NOT verified live: Start/Stop Hotspot, Share internet, Reset, the elevated result-file round trip. The sharing read returned no connections without admin; it may under-report, so check the ON chip against Windows.
+- Names in the devices table are placeholders ("Unnamed device"); no vendor lookup exists in the repo.
+
 ## Features added or updated
 - VPN page: runs tunnels itself. Windows shows its admin prompt on every Activate; Deactivate needs none.
 - Capture filter: "Payload starts with (hex)", up to 8 bytes, IPv4 TCP and UDP.

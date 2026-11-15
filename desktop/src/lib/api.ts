@@ -49,6 +49,42 @@ export interface VpnStatus {
   tunnels: VpnTunnel[];
 }
 
+export interface HotspotStatus {
+  state: "on" | "off" | "intransition" | "unavailable" | string;
+  clients: number;
+  wifiAvailable: boolean;
+  ssid: string;
+  hasPassword: boolean;
+  message: string | null;
+}
+
+export interface SharingStatus {
+  on: boolean;
+  public: string | null;
+  private: string | null;
+  byApp: boolean;
+}
+
+export interface SharingAdapter {
+  name: string;
+  description: string;
+  connected: boolean;
+  isVirtual: boolean;
+  ipv4: string | null;
+}
+
+export interface HotspotDevice {
+  name: string;
+  ip: string;
+  mac: string;
+}
+
+export interface HotspotJob {
+  running: boolean;
+  kind: string;
+  error: string | null;
+}
+
 export interface Country {
   code: string;
   name: string;
@@ -114,6 +150,17 @@ export const api = {
   vpnUpdate: (name: string, text: string) => invoke<void>("vpn_update", { name, text }),
   vpnLog: (name: string) => invoke<string>("vpn_log", { name }),
   vpnSetOption: (name: string, killswitch: boolean) => invoke<void>("vpn_set_option", { name, killswitch }),
+  hotspotStatus: () => invoke<HotspotStatus>("hotspot_status"),
+  hotspotSave: (ssid: string, password: string | null) => invoke<void>("hotspot_save", { ssid, password }),
+  hotspotStart: () => invoke<void>("hotspot_start"),
+  hotspotStop: () => invoke<void>("hotspot_stop"),
+  hotspotJob: () => invoke<HotspotJob>("hotspot_job"),
+  hotspotDevices: (interfaceIp: string | null) => invoke<HotspotDevice[]>("hotspot_devices", { interfaceIp }),
+  sharingStatus: () => invoke<SharingStatus>("sharing_status"),
+  sharingAdapters: () => invoke<SharingAdapter[]>("sharing_adapters"),
+  sharingApply: (publicName: string, privateName: string) =>
+    invoke<void>("sharing_apply", { public: publicName, private: privateName }),
+  sharingReset: () => invoke<void>("sharing_reset"),
   geoLookup: (ips: string[]) => invoke<Record<string, Country>>("geo_lookup", { ips }),
   checkUpdate: () => invoke<UpdateInfo>("check_update"),
   dataFolder: () => invoke<string>("data_folder"),

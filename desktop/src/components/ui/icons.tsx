@@ -61,3 +61,21 @@ export function FilterIcon(props: SVGProps<SVGSVGElement>) {
     </Base>
   );
 }
+
+export function EyeIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <path d="M2 10s3-5 8-5 8 5 8 5-3 5-8 5-8-5-8-5z" />
+      <circle cx="10" cy="10" r="2.2" />
+    </Base>
+  );
+}
+
+export function EyeOffIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <path d="M2 10s3-5 8-5 8 5 8 5-3 5-8 5-8-5-8-5z" />
+      <path d="M3.5 3.5l13 13" />
+    </Base>
+  );
+}

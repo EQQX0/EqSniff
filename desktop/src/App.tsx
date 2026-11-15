@@ -8,6 +8,7 @@ import { blankFilter, fromStored, newId, type Filter } from "@/lib/filters";
 import { FiltersView } from "@/views/FiltersView";
 import { CaptureView } from "@/views/CaptureView";
 import { VpnView } from "@/views/VpnView";
+import { HotspotView } from "@/views/HotspotView";
 import { SettingsView } from "@/views/SettingsView";
 
 const NAV = [
@@ -16,6 +17,7 @@ const NAV = [
   { id: "devices", label: "Devices" },
   { id: "scan", label: "Network scan" },
   { id: "vpn", label: "VPN" },
+  { id: "hotspot", label: "Hotspot" },
   { id: "help", label: "Help" },
   { id: "settings", label: "Settings" },
 ] as const;
@@ -174,6 +176,9 @@ export default function App() {
         </div>
         <div className={view === "vpn" ? "h-full" : "hidden"}>
           {view === "vpn" && <VpnView />}
+        </div>
+        <div className={view === "hotspot" ? "" : "hidden"}>
+          {view === "hotspot" && <HotspotView />}
         </div>
         <div className={view === "help" ? "" : "hidden"}>
           <HelpView />

@@ -7,6 +7,7 @@ mod settings;
 mod scan;
 mod vpn;
 mod vpnconf;
+pub mod hotspot;
 pub mod vpnengine;
 pub mod killswitch;
 
@@ -16,6 +17,7 @@ pub fn run() {
         .manage(capture::CaptureState::default())
         .manage(scan::ScanState::default())
         .manage(vpn::VpnState::default())
+        .manage(hotspot::HotspotState::default())
         .invoke_handler(tauri::generate_handler![
             capture::list_adapters,
             capture::start_capture,
@@ -42,6 +44,16 @@ pub fn run() {
             vpn::vpn_read,
             vpn::vpn_log,
             vpn::vpn_set_option,
+            hotspot::hotspot_status,
+            hotspot::hotspot_save,
+            hotspot::hotspot_start,
+            hotspot::hotspot_stop,
+            hotspot::hotspot_job,
+            hotspot::hotspot_devices,
+            hotspot::sharing_status,
+            hotspot::sharing_adapters,
+            hotspot::sharing_apply,
+            hotspot::sharing_reset,
             settings::get_settings,
             settings::set_settings,
             settings::data_folder,
