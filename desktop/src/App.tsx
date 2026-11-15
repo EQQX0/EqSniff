@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type PacketRow, type ScanHost, type UpdateInfo } from "@/lib/api";
-import { startAutoSync } from "@/lib/cloud";
+import { FILTERS_SYNCED, startAutoSync } from "@/lib/cloud";
 import { isLocalAddress } from "@/lib/export";
 import { DevicesView, type Seen } from "@/views/DevicesView";
 import { IpStorageView } from "@/views/IpStorageView";
@@ -43,7 +43,21 @@ export default function App() {
     api.checkUpdate().then(setUpdate).catch(() => {});
   }, []);
 
-  // Optional IP Storage sync. Does nothing unless the user signed in and turned it on.
+  // A sync that changed the saved filter list: show the new list.
+  useEffect(() => {
+    const reload = () =>
+      api
+        .getFilters()
+        .then((raw) => {
+          latest.current = fromStored(raw);
+          setFilters(latest.current);
+        })
+        .catch(() => {});
+    window.addEventListener(FILTERS_SYNCED, reload);
+    return () => window.removeEventListener(FILTERS_SYNCED, reload);
+  }, []);
+
+  // Optional account sync. Does nothing unless the user signed in and turned it on.
   useEffect(() => startAutoSync(), []);
 
   const onSeen = useCallback((rows: PacketRow[]) => {
@@ -122,15 +136,6 @@ export default function App() {
     [saveFilters]
   );
 
-  const useAlone = useCallback(
-    (id: string) => {
-      saveFilters(latest.current.map((f) => ({ ...f, enabled: f.id === id })))
-        .then(() => setView("capture"))
-        .catch(() => {});
-    },
-    [saveFilters]
-  );
-
   // A page that was hidden restarts its entrance animation when it is shown again.
   const pane = (id: ViewId, fill = "") => (view === id ? `view-enter page ${fill}` : "hidden");
 
@@ -165,7 +170,7 @@ export default function App() {
             <CaptureView filters={filters} onToggle={toggleFilter} onSeen={onSeen} />
           </div>
           <div className={pane("filters")}>
-            <FiltersView filters={filters} onChange={saveFilters} onUse={useAlone} />
+            <FiltersView filters={filters} onChange={saveFilters} />
           </div>
           <div className={pane("devices")}>
             <DevicesView seen={devices} onWatch={watchDevice} onHosts={setScanHosts} />

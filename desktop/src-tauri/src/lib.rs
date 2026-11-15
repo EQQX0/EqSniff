@@ -13,6 +13,7 @@ mod settings;
 mod scan;
 mod vpn;
 mod vpnconf;
+mod vpnseal;
 pub mod hotspot;
 pub mod vpnengine;
 pub mod killswitch;
@@ -51,6 +52,10 @@ pub fn run() {
             vpn::vpn_read,
             vpn::vpn_log,
             vpn::vpn_set_option,
+            vpn::vpn_sync_list,
+            vpn::vpn_sync_seal,
+            vpn::vpn_sync_check,
+            vpn::vpn_sync_open,
             hotspot::hotspot_status,
             hotspot::hotspot_save,
             hotspot::hotspot_prefs,

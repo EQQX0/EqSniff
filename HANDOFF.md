@@ -95,3 +95,11 @@ Branch `main`, origin https://github.com/EQQX0/EqSniff (private). Work through a
 - App side: `src/lib/cloud.ts` (email+password auth, merge sync, background sync after edits), `src/lib/ipmerge.ts` (pure two-way merge, newest label wins, deletions tracked in store `ip-storage-deleted`), `src/components/CloudSync.tsx` (Settings card). All IP Storage writes go through `saveEntries` in `ipstore.ts`.
 - Only the public publishable key is in the app. Session (email + tokens, never the password) is in store `cloud-session`. CSP `connect-src` allows the project URL only.
 - Tests: `npm test` (includes `tests/ipmerge.test.mjs`). Checked live: signed-out requests read nothing and cannot write. Not yet done: a real sign-up/sign-in round trip in the app, and a release build. New accounts must confirm their email (project default).
+
+### Account sync now covers filters and VPN tunnels (not released, not committed)
+- Migration `0002_sync_items.sql` (applied): `ip_entries.deleted` soft-delete column and a `sync_items` table (kind `tunnel` or `filters`), same own-rows-only rules. Everything is private to the account; there is no sharing between users (the user chose private-only).
+- Tunnels: `src-tauri/src/vpnseal.rs` locks the .conf with a passphrase (PBKDF2-SHA256 300k + AES-256-GCM) before upload; commands `vpn_sync_list/seal/check/open` in `vpn.rs`. The passphrase is kept in memory only. A tunnel deleted on another computer is left alone here and not synced.
+- Filters sync as one list, 3-way by fingerprint; if both sides changed, filters are unioned by id.
+- Store whitelist in `filters.rs` now includes `ip-storage-deleted`, `vpn-deleted`, `cloud-session` (the first commit of sync was missing these, so saving those stores failed).
+- Removed the built-in starter filters and the "Use alone" button; the filter list starts empty.
+- Checked: `npm test`, `npm run build`, `cargo test` pass; signed-out requests read nothing. Not run: a real sign-in, tunnel upload/download round trip, or a release build.

@@ -5,6 +5,8 @@ export interface RemoteEntry {
   address: string;
   label: string;
   updatedAt: number;
+  /** The cloud keeps a deleted row (marked) so every computer learns about the deletion. */
+  deleted?: boolean;
 }
 
 export interface MergeResult {
@@ -24,6 +26,7 @@ const stamp = (e: IpEntry) => e.updatedAt ?? e.createdAt;
  * Two-way merge of the local list and the cloud list, one address at a time.
  * - The newest label wins. A tie keeps the local one.
  * - An address deleted here (see `deleted`, address -> time) is removed from the cloud, unless the cloud copy is newer than the deletion.
+ * - A deletion recorded in the cloud (`deleted`) removes the local copy unless that copy was edited after it.
  * - Nothing is ever deleted without such a record, so a new computer joining an account only adds.
  */
 export function mergeSync(
@@ -45,11 +48,14 @@ export function mergeSync(
     const l = locals.get(address);
     const r = remotes.get(address);
     const t = deleted[address];
-    const lAlive = l && !(t !== undefined && t >= stamp(l));
-    const rAlive = r && !(t !== undefined && t >= r.updatedAt);
+    const rGone = !!r?.deleted;
+    // A deletion made here, or one the cloud recorded, ends a local copy that is not newer than it.
+    const cut = Math.max(t ?? -Infinity, rGone ? r!.updatedAt : -Infinity);
+    const lAlive = l && !(cut !== -Infinity && cut >= stamp(l));
+    const rAlive = r && !rGone && !(t !== undefined && t >= r.updatedAt);
 
-    if (l && !lAlive) changedLocal = true; // deleted here: drop the leftover copy
-    if (r && !rAlive && !lAlive) remove.push(address); // a live local copy overwrites the stale cloud row instead
+    if (l && !lAlive) changedLocal = true; // deleted somewhere else: drop the leftover copy
+    if (r && !rGone && !rAlive && !lAlive) remove.push(address); // a live local copy overwrites the stale cloud row instead
 
     if (lAlive && rAlive) {
       if (l.note === r.label) {

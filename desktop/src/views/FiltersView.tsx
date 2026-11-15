@@ -8,7 +8,6 @@ import { NetworkIcon } from "@/components/ui/icons";
 import {
   DIRECTIONS,
   PROTOCOLS,
-  STARTERS,
   blankFilter,
   describe,
   fromFile,
@@ -26,13 +25,12 @@ interface Props {
   filters: Filter[];
   onChange: (next: Filter[]) => Promise<void>;
   /** Switch on only this filter and go to the capture table. */
-  onUse: (id: string) => void;
 }
 
 const selectClass =
   "h-10 w-full rounded-pill border border-border-input bg-white/[0.06] px-4 text-sm text-text transition-all duration-base ease-brand hover:bg-white/[0.09] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft";
 
-export function FiltersView({ filters, onChange, onUse }: Props) {
+export function FiltersView({ filters, onChange }: Props) {
   const [draft, setDraft] = useState<Filter | null>(null);
   const [showErrors, setShowErrors] = useState(false);
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
@@ -64,13 +62,6 @@ export function FiltersView({ filters, onChange, onUse }: Props) {
 
   const toggle = (f: Filter) =>
     run(() => onChange(filters.map((x) => (x.id === f.id ? { ...x, enabled: !x.enabled } : x))), `${f.name} is now ${f.enabled ? "off" : "on"}.`);
-
-  async function addStarters() {
-    const have = new Set(filters.map((f) => f.name));
-    const fresh = STARTERS.filter((s) => !have.has(s.name)).map((s) => ({ ...s, id: newId() }));
-    if (fresh.length === 0) return setMessage({ kind: "ok", text: "All starter filters are already in your list." });
-    await run(() => onChange([...filters, ...fresh]), `Added ${fresh.length} starter filter${fresh.length === 1 ? "" : "s"}.`);
-  }
 
   function exportFile() {
     download("my-filters.json", toFile(filters), "application/json");
@@ -108,7 +99,6 @@ export function FiltersView({ filters, onChange, onUse }: Props) {
 
       <div className="flex flex-wrap items-center gap-2">
         <Button onClick={() => { setDraft(blankFilter(newId())); setShowErrors(false); }}>New filter</Button>
-        <Button variant="secondary" onClick={addStarters}>Add starter filters</Button>
         <span className="mx-1 hidden h-6 w-px bg-border sm:block" aria-hidden="true" />
         <Button variant="ghost" onClick={() => fileInput.current?.click()}>Import</Button>
         <Button variant="ghost" onClick={exportFile} disabled={filters.length === 0}>Export</Button>
@@ -249,7 +239,7 @@ export function FiltersView({ filters, onChange, onUse }: Props) {
           <EmptyState
             icon={<NetworkIcon className="h-6 w-6" />}
             title="No filters yet"
-            body="Add the starter filters for common cases, or make your own. Filters stay on this computer."
+            body="Press New filter to make your first one. Filters stay on this computer unless you turn on sync in Settings."
           />
         ) : (
           <>
@@ -280,7 +270,6 @@ export function FiltersView({ filters, onChange, onUse }: Props) {
                     <p className="truncate text-xs text-muted">{describe(f)}</p>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
-                    <Button size="sm" variant="secondary" onClick={() => onUse(f.id)} aria-label={`Show only ${f.name} on the capture table`}>Use alone</Button>
                     <Button size="sm" variant="ghost" onClick={() => { setDraft({ ...f }); setShowErrors(false); }} aria-label={`Edit ${f.name}`}>Edit</Button>
                     <Button size="sm" variant="ghost" onClick={() => remove(f)} aria-label={`Delete ${f.name}`}>Delete</Button>
                   </div>

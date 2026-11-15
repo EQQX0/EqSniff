@@ -38,4 +38,11 @@ r = mergeSync([L("a", "back", 10, 300)], { a: 100 }, [R("a", "x", 50)], newId);
 ok(!r.remove.length && get(r, "a").note === "back" && r.push.length === 1, "re-added after delete is kept");
 r = mergeSync([L("a", "x", 10, 10)], {}, [], newId);
 ok(r.push.length === 1, "never deletes without a record");
+// cloud-recorded deletions
+r = mergeSync([L("a", "x", 10, 10)], {}, [{ address: "a", label: "x", updatedAt: 100, deleted: true }], newId);
+ok(r.entries.length === 0 && r.changedLocal && !r.remove.length && !r.push.length, "deleted elsewhere: removed here");
+r = mergeSync([L("a", "edited after", 10, 300)], {}, [{ address: "a", label: "x", updatedAt: 100, deleted: true }], newId);
+ok(get(r, "a").note === "edited after" && r.push.length === 1, "edited here after the deletion: kept and restored");
+r = mergeSync([], {}, [{ address: "a", label: "x", updatedAt: 100, deleted: true }], newId);
+ok(r.entries.length === 0 && !r.changedLocal && !r.remove.length, "deleted row on a new computer adds nothing");
 console.log(`ipmerge: ${n} checks passed`);

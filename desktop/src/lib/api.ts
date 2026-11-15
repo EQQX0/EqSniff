@@ -152,7 +152,21 @@ export const api = {
   vpnImport: (name: string, text: string) => invoke<void>("vpn_import", { name, text }),
   vpnSet: (name: string, on: boolean) => invoke<void>("vpn_set", { name, on }),
   vpnJob: () => invoke<{ running: boolean; error: string | null }>("vpn_job"),
-  vpnDelete: (name: string) => invoke<void>("vpn_delete", { name }),
+  vpnDelete: async (name: string) => {
+    await invoke<void>("vpn_delete", { name });
+    // remember it, so a sync removes the tunnel from the account instead of bringing it back
+    try {
+      const old = await invoke<unknown>("get_store", { name: "vpn-deleted" });
+      const map = old && typeof old === "object" && !Array.isArray(old) ? (old as Record<string, number>) : {};
+      await invoke<void>("save_store", { name: "vpn-deleted", value: { ...map, [name]: Date.now() } });
+    } catch {
+      /* the tunnel is gone either way */
+    }
+  },
+  vpnSyncList: () => invoke<{ name: string; hash: string; modified: number }[]>("vpn_sync_list"),
+  vpnSyncSeal: (name: string, passphrase: string) => invoke<string>("vpn_sync_seal", { name, passphrase }),
+  vpnSyncCheck: (sealed: string, passphrase: string) => invoke<void>("vpn_sync_check", { sealed, passphrase }),
+  vpnSyncOpen: (name: string, sealed: string, passphrase: string) => invoke<void>("vpn_sync_open", { name, sealed, passphrase }),
   vpnRead: (name: string) => invoke<string>("vpn_read", { name }),
   vpnUpdate: (name: string, text: string) => invoke<void>("vpn_update", { name, text }),
   vpnLog: (name: string) => invoke<string>("vpn_log", { name }),

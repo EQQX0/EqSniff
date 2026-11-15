@@ -34,15 +34,6 @@ export const DIRECTIONS: { id: Direction; label: string }[] = [
 
 const base = { enabled: false, mode: "show" as Mode, direction: "any" as Direction, port: "", address: "", minBytes: "", maxBytes: "", hex: "" };
 
-export const STARTERS: Filter[] = [
-  { ...base, id: "starter-web", name: "Secure web traffic (port 443)", protocol: "TCP", port: "443" },
-  { ...base, id: "starter-dns", name: "DNS lookups", protocol: "UDP", port: "53" },
-  { ...base, id: "starter-ping", name: "Ping (ICMP)", protocol: "ICMP" },
-  { ...base, id: "starter-local", name: "Local network only (192.168.)", protocol: "any", address: "192.168." },
-  { ...base, id: "starter-big", name: "Large packets (1000+ bytes)", protocol: "any", minBytes: "1000" },
-  { ...base, id: "starter-get", name: "Web page requests (starts with GET)", protocol: "TCP", hex: "47 45 54 20" },
-];
-
 export function blankFilter(id: string): Filter {
   return { ...base, id, name: "", protocol: "any" };
 }

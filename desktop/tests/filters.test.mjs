@@ -55,7 +55,7 @@ assert.throws(() => f.fromFile("nope"), /not valid JSON/); n++;
 assert.throws(() => f.fromFile(JSON.stringify({ kind: "x" })), /not an EqNetwork/); n++;
 const stored = f.fromStored([{ id: "z", name: "legacy", protocol: "UDP", port: "53", address: "", minBytes: "" }, { bad: 1 }]);
 ok(stored.length === 1 && stored[0].enabled === false && stored[0].id === "z", "stored legacy filters get defaults");
-ok(f.STARTERS.every((s) => Object.keys(f.problems(s)).length === 0), "starters are valid");
+ok(f.STARTERS === undefined, "no built-in filters: the list starts empty");
 
 // Capture-level payload bytes
 const cf = await import("../src/lib/capturefilter.ts");

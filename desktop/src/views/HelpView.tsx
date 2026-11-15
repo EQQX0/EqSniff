@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/Card";
 const FAQ: { q: string; a: string }[] = [
   {
     q: "Does this app send my data anywhere?",
-    a: "No. Captures, filters and device names stay in a folder on this computer (see Settings). The app contacts only two things: an update server (you can turn that off in Settings) and, if you sign in and turn on Sync IP Storage, your sync account, which receives just your saved addresses and labels.",
+    a: "No. Captures, filters and device names stay in a folder on this computer (see Settings). The app contacts only two things: an update server (you can turn that off in Settings) and, if you sign in and turn on account sync, your sync account, which receives only the parts you switch on (IP Storage, filters, VPN tunnels). Tunnels are locked with your sync passphrase first.",
   },
   {
     q: "The capture will not start. What do I check?",
@@ -57,7 +57,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "What is IP Storage for?",
-    a: "A plain address book for your own labels: an address and a label, nothing more. Save a router address, a server, or anything else you want to remember, then search, edit or delete it later. It is not tied to a capture and does not feed into any filter. It stays on this computer unless you sign in under Settings and turn on Sync IP Storage, which keeps the list the same on your other computers.",
+    a: "A plain address book for your own labels: an address and a label, nothing more. Save a router address, a server, or anything else you want to remember, then search, edit or delete it later. It is not tied to a capture and does not feed into any filter. It stays on this computer unless you sign in under Settings and turn on Sync IP Storage, which keeps the list the same on your other computers. Filters and VPN tunnels can be synced the same way, privately to your account.",
   },
   {
     q: "Where are my files?",

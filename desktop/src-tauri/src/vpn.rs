@@ -3,6 +3,7 @@
 
 use crate::vpnconf::{self, Config};
 use crate::vpnengine;
+use crate::vpnseal;
 use serde::Serialize;
 use std::{
     fs,
@@ -336,4 +337,76 @@ pub fn vpn_set_option(app: AppHandle, name: String, killswitch: bool) -> Result<
         return Err("Turn the tunnel off before changing this setting.".into());
     }
     fs::write(vpnengine::options_path(&dir, &name), vpnengine::render_options(vpnengine::Options { killswitch })).map_err(|e| e.to_string())
+}
+
+// ---- sync: tunnels travel to the user's account only as sealed text (see vpnseal.rs) ----
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncTunnel {
+    pub name: String,
+    /// Fingerprint of the saved file, to tell whether two computers hold the same tunnel.
+    pub hash: String,
+    /// When the file last changed, in milliseconds since 1970.
+    pub modified: u64,
+}
+
+/// Every saved tunnel with its fingerprint and last change time. No keys leave this process.
+#[tauri::command]
+pub fn vpn_sync_list(app: AppHandle) -> Result<Vec<SyncTunnel>, String> {
+    let dir = folder(&app)?;
+    let mut out = Vec::new();
+    for entry in fs::read_dir(&dir).map_err(|e| e.to_string())?.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("conf") {
+            continue;
+        }
+        let Some(name) = path.file_stem().and_then(|n| n.to_str()).map(str::to_string) else { continue };
+        if !vpnconf::valid_name(&name) {
+            continue;
+        }
+        let Ok(text) = fs::read_to_string(&path) else { continue };
+        let modified = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        out.push(SyncTunnel { name, hash: vpnseal::fingerprint(&text), modified });
+    }
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(out)
+}
+
+/// The tunnel file, locked with the sync passphrase. The window only ever receives the sealed text.
+#[tauri::command]
+pub fn vpn_sync_seal(app: AppHandle, name: String, passphrase: String) -> Result<String, String> {
+    let path = file(&app, &name)?;
+    let text = fs::read_to_string(&path).map_err(|_| "That tunnel no longer exists.".to_string())?;
+    vpnseal::seal(&text, &passphrase)
+}
+
+/// Checks that sealed text opens with this passphrase, without saving anything.
+#[tauri::command]
+pub fn vpn_sync_check(sealed: String, passphrase: String) -> Result<(), String> {
+    vpnseal::open(&sealed, &passphrase).map(|_| ())
+}
+
+/// Opens sealed text and saves it as the tunnel `name`, replacing an older copy. Refuses while that tunnel is on.
+#[tauri::command]
+pub fn vpn_sync_open(app: AppHandle, name: String, sealed: String, passphrase: String) -> Result<(), String> {
+    let path = file(&app, &name)?;
+    let dir = folder(&app)?;
+    if is_running(&dir, &name) {
+        return Err(format!("{name} is on. Turn it off, then sync again."));
+    }
+    let text = vpnseal::open(&sealed, &passphrase)?;
+    if text.len() > vpnconf::MAX_CONF_BYTES {
+        return Err("That synced tunnel is too large.".into());
+    }
+    vpnconf::parse(&text)?; // refuse anything that is not a valid tunnel
+    let tmp = path.with_extension("conf.tmp");
+    fs::write(&tmp, &text).map_err(|e| e.to_string())?; // written as received, so both computers get the same fingerprint
+    fs::rename(&tmp, &path).map_err(|e| e.to_string())
 }
