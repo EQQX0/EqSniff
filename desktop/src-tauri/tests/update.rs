@@ -56,3 +56,22 @@ fn only_https_overrides_are_used() {
     assert_eq!(choose_url(Some("".into()), D), D);
     assert_eq!(choose_url(Some(" HTTPS://mirror.test/u.json ".into()), D), "HTTPS://mirror.test/u.json");
 }
+
+#[test]
+fn installer_must_come_from_the_feed_host() {
+    let feed = "https://updates.eqqx2.com/update.json";
+    assert!(same_host(feed, "https://updates.eqqx2.com/NetworkToolkit-setup.exe"));
+    assert!(same_host(feed, "https://UPDATES.eqqx2.com:443/x.exe"));
+    assert!(!same_host(feed, "https://evil.example/x.exe"));
+    assert!(!same_host(feed, "https://updates.eqqx2.com.evil.example/x.exe"));
+    assert!(!same_host(feed, "https://user@updates.eqqx2.com/x.exe"));
+    assert!(!same_host(feed, "http://updates.eqqx2.com/x.exe"));
+}
+
+#[test]
+fn sha256_must_be_64_hex_digits() {
+    let good = "A".repeat(64);
+    assert_eq!(clean_sha256(&good), Some("a".repeat(64)));
+    assert!(clean_sha256("abc").is_none());
+    assert!(clean_sha256(&"g".repeat(64)).is_none());
+}

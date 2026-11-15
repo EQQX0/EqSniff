@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { UpdateNow } from "@/components/UpdateNow";
 import { api, type Settings, type UpdateInfo } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -67,8 +68,8 @@ export function SettingsView({ update, onUpdate }: Props) {
           <div>
             <h2 className="text-sm font-semibold text-text">Check for updates</h2>
             <p className="mt-1 text-xs text-muted">
-              The only time this app uses the internet. It downloads one small version file and sends nothing about you. Turn
-              it off and the app never connects.
+              The only time this app uses the internet. It downloads one small version file and sends nothing about you. The
+              installer is downloaded only when you press Update now. Turn it off and the app never connects.
             </p>
           </div>
           {settings && <Switch label="Check for updates" checked={settings.updateCheck} onChange={toggleUpdates} />}
@@ -85,7 +86,14 @@ export function SettingsView({ update, onUpdate }: Props) {
         {update?.status === "available" && (
           <div className="rounded-md border border-border bg-black/25 px-3 py-2 text-xs text-text">
             {update.notes && <p>{update.notes}</p>}
-            {update.url && <p className="mt-1 break-all">Download: {update.url}</p>}
+            {update.canInstall ? (
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <p>The app downloads the installer from {new URL(update.url ?? "https://x").host}, checks its checksum, then opens it.</p>
+                <UpdateNow />
+              </div>
+            ) : (
+              update.url && <p className="mt-1 break-all">Download: {update.url}</p>
+            )}
           </div>
         )}
       </Card>

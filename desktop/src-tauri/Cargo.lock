@@ -2139,7 +2139,7 @@ dependencies = [
 
 [[package]]
 name = "network-toolkit"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "base64 0.22.1",
  "boringtun",
@@ -2148,6 +2148,7 @@ dependencies = [
  "pcap",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "ureq",

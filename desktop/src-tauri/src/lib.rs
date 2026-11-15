@@ -38,6 +38,7 @@ pub fn run() {
             filters::save_store,
             geo::geo_lookup,
             update::check_update,
+            update::install_update,
             scan::scan_start,
             scan::scan_poll,
             scan::scan_cancel,

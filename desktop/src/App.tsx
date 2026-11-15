@@ -10,6 +10,7 @@ import { CaptureView } from "@/views/CaptureView";
 import { VpnView } from "@/views/VpnView";
 import { HotspotView } from "@/views/HotspotView";
 import { SettingsView } from "@/views/SettingsView";
+import { UpdateNow } from "@/components/UpdateNow";
 import { TopNav } from "@/components/TopNav";
 
 const NAV = [
@@ -141,14 +142,14 @@ export default function App() {
             role="status"
             className="glass glass-blur anim-drop mb-3 flex items-center justify-between gap-3 rounded-pill py-2 pl-5 pr-2 text-sm text-text"
           >
-            <span>{update.message} Details are in Settings.</span>
-            <button
+            <span>{update.message} {update.canInstall ? "The app downloads it, checks it and opens the installer." : "Details are in Settings."}</span>
+            {update.canInstall ? <UpdateNow /> : <button
               type="button"
               onClick={() => setView("settings")}
               className="rounded-pill bg-[linear-gradient(135deg,#c43e52,#a82f42)] px-4 py-1.5 font-semibold text-on-accent transition-transform duration-base ease-brand hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
             >
               Open Settings
-            </button>
+            </button>}
           </div>
         )}
         <TopNav items={NAV} trailing={NAV_END} active={view} onSelect={(id) => setView(id as ViewId)} />

@@ -100,6 +100,7 @@ export interface UpdateInfo {
   latest: string | null;
   url: string | null;
   notes: string | null;
+  canInstall: boolean;
   message: string;
 }
 
@@ -171,5 +172,6 @@ export const api = {
   sharingReset: () => invoke<void>("sharing_reset"),
   geoLookup: (ips: string[]) => invoke<Record<string, Country>>("geo_lookup", { ips }),
   checkUpdate: () => invoke<UpdateInfo>("check_update"),
+  installUpdate: () => invoke<string>("install_update"),
   dataFolder: () => invoke<string>("data_folder"),
 };

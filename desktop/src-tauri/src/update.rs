@@ -4,16 +4,24 @@
 use serde::{Deserialize, Serialize};
 use std::{io::Read, time::Duration};
 use crate::updatever;
+use std::sync::Mutex;
 use tauri::AppHandle;
+use sha2::{Digest, Sha256};
 
 const DEFAULT_URL: &str = "https://updates.eqqx2.com/update.json";
 const MAX_BYTES: u64 = 64 * 1024;
+/// Largest installer the app will download.
+const MAX_INSTALLER: u64 = 128 * 1024 * 1024;
+
+/// The installer found by the last check: its address and the SHA-256 the version file promised.
+static PENDING: Mutex<Option<(String, String)>> = Mutex::new(None);
 
 #[derive(Deserialize)]
 struct Remote {
     version: String,
     url: Option<String>,
     notes: Option<String>,
+    sha256: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -25,6 +33,8 @@ pub struct UpdateInfo {
     pub latest: Option<String>,
     pub url: Option<String>,
     pub notes: Option<String>,
+    /// True when the app can download and start the installer itself.
+    pub can_install: bool,
     pub message: String,
 }
 
@@ -37,6 +47,7 @@ pub fn check_update(app: AppHandle) -> UpdateInfo {
         latest: None,
         url: None,
         notes: None,
+        can_install: false,
         message: message.to_string(),
     };
 
@@ -75,8 +86,45 @@ pub fn check_update(app: AppHandle) -> UpdateInfo {
     let notes = remote.notes.map(|n| n.chars().take(500).collect::<String>());
     let shown = updatever::display(&remote.version);
     if latest > now {
-        UpdateInfo { status: "available", current, latest: Some(shown.clone()), url: link, notes, message: format!("Version {shown} is available.") }
+        // The app installs by itself only when the installer is on the same host as the version
+        // file and the file names its SHA-256. Otherwise the link is shown for the person to open.
+        let sha = remote.sha256.as_deref().and_then(updatever::clean_sha256);
+        let installable = match (&link, &sha) {
+            (Some(l), Some(_)) => updatever::same_host(&url, l),
+            _ => false,
+        };
+        *PENDING.lock().unwrap() = match (&link, sha) {
+            (Some(l), Some(h)) if installable => Some((l.clone(), h)),
+            _ => None,
+        };
+        UpdateInfo { status: "available", current, latest: Some(shown.clone()), url: link, notes, can_install: installable, message: format!("Version {shown} is available.") }
     } else {
-        UpdateInfo { status: "up-to-date", current, latest: Some(shown), url: None, notes: None, message: "You have the latest version.".into() }
+        *PENDING.lock().unwrap() = None;
+        UpdateInfo { status: "up-to-date", current, latest: Some(shown), url: None, notes: None, can_install: false, message: "You have the latest version.".into() }
     }
+}
+
+/// Downloads the installer found by the last check, checks its SHA-256, starts it and closes the app.
+/// The address and hash come from the app's own memory of the last check, never from the window.
+#[tauri::command(async)]
+pub fn install_update(app: AppHandle) -> Result<String, String> {
+    let (url, want) = PENDING.lock().unwrap().clone().ok_or("Check for updates first.")?;
+    let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(120)).user_agent("NetworkToolkit-update-check").build();
+    let resp = agent.get(&url).call().map_err(|_| "Could not download the update. Check your connection and try again.".to_string())?;
+    let mut bytes = Vec::new();
+    resp.into_reader().take(MAX_INSTALLER + 1).read_to_end(&mut bytes).map_err(|_| "The download was interrupted.".to_string())?;
+    if bytes.len() as u64 > MAX_INSTALLER {
+        return Err("The update file is larger than expected, so it was not used.".into());
+    }
+    let got: String = Sha256::digest(&bytes).iter().map(|b| format!("{b:02x}")).collect();
+    if got != want {
+        return Err("The downloaded file does not match the published checksum, so it was not run.".into());
+    }
+    let dir = std::env::temp_dir().join("NetworkToolkit-update");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Could not prepare a download folder: {e}"))?;
+    let file = dir.join("NetworkToolkit-setup.exe");
+    std::fs::write(&file, &bytes).map_err(|e| format!("Could not save the update: {e}"))?;
+    std::process::Command::new(&file).spawn().map_err(|e| format!("Could not start the installer: {e}"))?;
+    app.exit(0);
+    Ok("Installer started.".into())
 }

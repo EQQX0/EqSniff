@@ -1,5 +1,6 @@
 {
-  "version": "0.2.0",
+  "version": "0.2.1",
   "url": "https://updates.eqqx2.com/NetworkToolkit-setup.exe",
-  "notes": "New look, country flags and a column picker in Capture, whole-network scan in Devices, and Hotspot with automatic internet sharing."
+  "sha256": "c5b9452219528a82a9144731745c3ca06d0c3e386604c3c29e9e9712919bd87d",
+  "notes": "Update now button: the app downloads the installer, checks its checksum and opens it. Also in 0.2: new look, country flags and a column picker in Capture, whole-network scan in Devices, Hotspot with automatic sharing."
 }

@@ -82,3 +82,25 @@ pub fn choose_url(over: Option<String>, default: &str) -> String {
         _ => default.to_string(),
     }
 }
+
+/// The host part of an https address, lower case, without port or credentials. `None` for anything else.
+pub fn https_host(url: &str) -> Option<String> {
+    let rest = url.trim().strip_prefix("https://").or_else(|| url.trim().strip_prefix("HTTPS://"))?;
+    let authority = rest.split(['/', '?', '#']).next()?;
+    if authority.contains('@') {
+        return None; // credentials in an address are never expected here
+    }
+    let host = authority.split(':').next()?.to_ascii_lowercase();
+    (!host.is_empty()).then_some(host)
+}
+
+/// The installer may only come from the same host that served the version file.
+pub fn same_host(feed: &str, link: &str) -> bool {
+    matches!((https_host(feed), https_host(link)), (Some(a), Some(b)) if a == b)
+}
+
+/// A SHA-256 written as 64 hex digits. Returns it in lower case.
+pub fn clean_sha256(s: &str) -> Option<String> {
+    let s = s.trim().to_ascii_lowercase();
+    (s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit())).then_some(s)
+}
