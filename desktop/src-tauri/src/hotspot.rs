@@ -149,6 +149,55 @@ pub fn check_apply(public: &str, private: &str, adapters: &[AdapterInfo], sharin
     Ok(())
 }
 
+/// Connected, real adapters first, then virtual or disconnected ones; names keep Windows spelling, sorted within a group.
+pub fn order_adapters(list: &mut [AdapterInfo]) {
+    list.sort_by(|a, b| {
+        let rank = |x: &AdapterInfo| (!x.connected, x.is_virtual);
+        rank(a).cmp(&rank(b)).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+}
+
+/// Finds the adapter the Windows hotspot just created: one that is new, came up, or got a new address since `before`.
+/// `public` (the internet source) is never chosen. It looks like "Local Area Connection* 9" with a "Wi-Fi Direct Virtual" description.
+pub fn pick_hotspot_adapter(before: &[AdapterInfo], after: &[AdapterInfo], public: &str) -> Option<String> {
+    let mut best: Option<(u32, &AdapterInfo)> = None;
+    for a in after.iter().filter(|a| a.connected && a.name != public) {
+        let changed = match before.iter().find(|b| b.name == a.name) {
+            None => true,
+            Some(b) => !b.connected || b.ipv4 != a.ipv4,
+        };
+        let direct = a.description.to_lowercase().contains("wi-fi direct virtual");
+        let on_default = a.ipv4.as_deref() == Some(DEFAULT_PRIVATE_IP);
+        if !changed && !(direct && on_default) {
+            continue;
+        }
+        let mut score = 1;
+        if direct {
+            score += 3;
+        }
+        if a.name.to_lowercase().starts_with("local area connection*") {
+            score += 2;
+        }
+        if on_default {
+            score += 2;
+        }
+        if best.map_or(true, |(sc, b)| score > sc || (score == sc && a.name < b.name)) {
+            best = Some((score, a));
+        }
+    }
+    // A bare "new adapter" with no hotspot traits is too weak a guess to share the internet through.
+    best.filter(|(sc, _)| *sc >= 3).map(|(_, a)| a.name.clone())
+}
+
+/// A saved public adapter is either empty (none chosen) or a sane adapter name.
+pub fn check_public_pref(name: &str) -> Result<(), String> {
+    if name.is_empty() || name_ok(name) {
+        Ok(())
+    } else {
+        Err("That adapter name is not valid.".into())
+    }
+}
+
 /// Adapter names go into a PowerShell script only after base64, but keep them sane anyway.
 fn name_ok(s: &str) -> bool {
     !s.is_empty() && s.len() <= 256 && !s.chars().any(|c| c.is_control())
@@ -168,7 +217,7 @@ fn encode_script(script: &str) -> String {
 /// Runs a script in PowerShell 5.1 and returns what it printed. `env` is for values that must not sit in the script text.
 fn run_ps(script: &str, env: &[(&str, &str)]) -> Result<String, String> {
     let full = format!("$ProgressPreference='SilentlyContinue'\n$ErrorActionPreference='Stop'\n{script}");
-    let mut cmd = Command::new("powershell.exe");
+    let mut cmd = Command::new(crate::vpnengine::powershell_exe());
     cmd.args(["-NoProfile", "-NonInteractive", "-EncodedCommand", &encode_script(&full)])
         .stdin(Stdio::null())
         .creation_flags(NO_WINDOW);
@@ -216,10 +265,11 @@ fn run_elevated(body: &str, result: &Path, args: &[(&str, String)]) -> Result<Va
     script.push_str(ELEVATED_PRELUDE);
     script.push_str(body);
     let outer = format!(
-        "Start-Process -FilePath 'powershell.exe' -ArgumentList '-NoProfile','-NonInteractive','-EncodedCommand','{}' -Verb RunAs -WindowStyle Hidden",
+        "Start-Process -FilePath '{}' -ArgumentList '-NoProfile','-NonInteractive','-EncodedCommand','{}' -Verb RunAs -WindowStyle Hidden",
+        crate::vpnengine::powershell_exe().display().to_string().replace('\'', "''"),
         encode_script(&script)
     );
-    let out = Command::new("powershell.exe")
+    let out = Command::new(crate::vpnengine::powershell_exe())
         .args(["-NoProfile", "-NonInteractive", "-EncodedCommand", &encode_script(&outer)])
         .stdin(Stdio::null())
         .creation_flags(NO_WINDOW)
@@ -309,10 +359,21 @@ try{
 }
 "#;
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize)]
+#[serde(default)]
 struct Saved {
     ssid: String,
     password: String,
+    /// The internet source to share when the hotspot starts.
+    public_adapter: String,
+    /// Share the internet automatically when the hotspot starts.
+    auto_share: bool,
+}
+
+impl Default for Saved {
+    fn default() -> Self {
+        Saved { ssid: String::new(), password: String::new(), public_adapter: String::new(), auto_share: true }
+    }
 }
 
 fn read_saved(dir: &Path) -> Saved {
@@ -329,9 +390,12 @@ pub struct HotspotStatus {
     pub ssid: String,
     pub has_password: bool,
     pub message: Option<String>,
+    pub auto_share: bool,
+    pub public_adapter: String,
 }
 
-#[tauri::command]
+// Runs on the async thread pool: it spawns a process, which must never block the UI thread.
+#[tauri::command(async)]
 pub fn hotspot_status(app: AppHandle) -> Result<HotspotStatus, String> {
     let saved = read_saved(&data_dir(&app)?);
     let out = run_ps(&format!("{WINRT}{STATUS_SCRIPT}"), &[])?;
@@ -344,6 +408,8 @@ pub fn hotspot_status(app: AppHandle) -> Result<HotspotStatus, String> {
         wifi_available: wifi,
         ssid: saved.ssid,
         has_password: !saved.password.is_empty(),
+        auto_share: saved.auto_share,
+        public_adapter: saved.public_adapter,
         message: if wifi { note } else { Some(NO_WIFI_MESSAGE.to_string()) },
     })
 }
@@ -366,6 +432,17 @@ pub fn hotspot_save(app: AppHandle, ssid: String, password: Option<String>) -> R
     write_json(&dir.join("hotspot.json"), &saved)
 }
 
+/// Remembers the public adapter and whether to share automatically when the hotspot starts.
+#[tauri::command]
+pub fn hotspot_prefs(app: AppHandle, public_adapter: String, auto_share: bool) -> Result<(), String> {
+    check_public_pref(&public_adapter)?;
+    let dir = data_dir(&app)?;
+    let mut saved = read_saved(&dir);
+    saved.public_adapter = public_adapter;
+    saved.auto_share = auto_share;
+    write_json(&dir.join("hotspot.json"), &saved)
+}
+
 /// One background job at a time for everything on this page. The window asks `hotspot_job` how it is going.
 #[derive(Default, Clone)]
 pub struct HotspotState(Arc<Mutex<Job>>);
@@ -376,6 +453,17 @@ pub struct Job {
     pub running: bool,
     pub kind: String,
     pub error: Option<String>,
+    /// A good-news detail for the window to show when the job ends.
+    pub note: Option<String>,
+    /// The job worked, but one part did not (for example the hotspot is on and sharing could not be set up).
+    pub warning: Option<String>,
+}
+
+fn set_job_text(job: &Arc<Mutex<Job>>, note: Option<String>, warning: Option<String>) {
+    if let Ok(mut j) = job.lock() {
+        j.note = note;
+        j.warning = warning;
+    }
 }
 
 fn spawn_job(state: &HotspotState, kind: &str, work: impl FnOnce() -> Result<(), String> + Send + 'static) -> Result<(), String> {
@@ -385,13 +473,14 @@ fn spawn_job(state: &HotspotState, kind: &str, work: impl FnOnce() -> Result<(),
         if j.running {
             return Err("Another change is still running. Wait for it to finish.".into());
         }
-        *j = Job { running: true, kind: kind.to_string(), error: None };
+        *j = Job { running: true, kind: kind.to_string(), ..Default::default() };
     }
     let kind = kind.to_string();
     thread::spawn(move || {
         let result = work();
         if let Ok(mut j) = job.lock() {
-            *j = Job { running: false, kind, error: result.err() };
+            let (note, warning) = (j.note.take(), j.warning.take());
+            *j = Job { running: false, kind, error: result.err(), note, warning };
         }
     });
     Ok(())
@@ -404,20 +493,75 @@ pub fn hotspot_job(state: State<HotspotState>) -> Job {
 
 #[tauri::command]
 pub fn hotspot_start(app: AppHandle, state: State<HotspotState>) -> Result<(), String> {
-    let saved = read_saved(&data_dir(&app)?);
+    let dir = data_dir(&app)?;
+    let saved = read_saved(&dir);
     validate_ssid(&saved.ssid).map_err(|_| "Save a hotspot name and password first.".to_string())?;
     validate_password(&saved.password).map_err(|_| "Save a hotspot name and password first.".to_string())?;
+    let auto = saved.auto_share && !saved.public_adapter.is_empty() && name_ok(&saved.public_adapter);
+    let job = state.0.clone();
     spawn_job(&state, "hotspot-start", move || {
+        let list = || run_ps(ADAPTERS_SCRIPT, &[]).ok().and_then(|t| parse_adapters(&t).ok());
+        let before = if auto { list().unwrap_or_default() } else { vec![] };
         let script = format!("{WINRT}{START_SCRIPT}");
         let out = run_ps(&script, &[("NT_SSID", &saved.ssid), ("NT_PASS", &saved.password)])?;
         let v: Value = serde_json::from_str(out.trim()).map_err(|_| "Windows gave an answer this app could not read.".to_string())?;
-        elevated_outcome_hotspot(v)
+        elevated_outcome_hotspot(v)?;
+        if auto {
+            auto_share(&job, &dir, &saved.public_adapter, &before, &list);
+        }
+        Ok(())
     })
 }
 
+/// After the hotspot starts: wait (up to about 15 seconds) for its virtual adapter, then share the internet through it.
+/// Never fails the job: the hotspot is already on, so problems are reported as a warning.
+fn auto_share(job: &Arc<Mutex<Job>>, dir: &Path, public: &str, before: &[AdapterInfo], list: &dyn Fn() -> Option<Vec<AdapterInfo>>) {
+    let warn = |t: String| set_job_text(job, None, Some(t));
+    let mut found: Option<(String, Vec<AdapterInfo>)> = None;
+    for i in 0..15 {
+        if i > 0 {
+            thread::sleep(Duration::from_secs(1));
+        }
+        if let Some(after) = list() {
+            if let Some(name) = pick_hotspot_adapter(before, &after, public) {
+                found = Some((name, after));
+                break;
+            }
+        }
+    }
+    let Some((private, after)) = found else {
+        warn("The hotspot is on, but the app could not tell which adapter it created. Pick it as the Private adapter and press Share internet.".into());
+        return;
+    };
+    let on = read_sharing().map(|l| !l.is_empty()).unwrap_or(false);
+    if let Err(e) = check_apply(public, &private, &after, on) {
+        warn(format!("The hotspot is on, but internet sharing was not set up. {e}"));
+        return;
+    }
+    let result = run_elevated(SHARING_APPLY_BODY, &dir.join("sharing-result.json"), &[("pubN", public.to_string()), ("priN", private.clone())])
+        .and_then(elevated_outcome)
+        .and_then(|_| write_json(&dir.join("sharing.json"), &Pair { public: public.to_string(), private: private.clone(), via_hotspot: true }));
+    match result {
+        Ok(()) => set_job_text(job, Some(format!("Hotspot started and the internet from {public} is shared through {private}.")), None),
+        Err(e) => warn(format!("The hotspot is on, but internet sharing was not set up. {e}")),
+    }
+}
+
 #[tauri::command]
-pub fn hotspot_stop(state: State<HotspotState>) -> Result<(), String> {
+pub fn hotspot_stop(app: AppHandle, state: State<HotspotState>) -> Result<(), String> {
+    let dir = data_dir(&app)?;
+    let job = state.0.clone();
     spawn_job(&state, "hotspot-stop", move || {
+        // Sharing this app turned on together with the hotspot goes off with it.
+        let mine = fs::read_to_string(dir.join("sharing.json")).ok().and_then(|t| serde_json::from_str::<Pair>(&t).ok());
+        if mine.map_or(false, |p| p.via_hotspot) {
+            match run_elevated(SHARING_RESET_BODY, &dir.join("sharing-result.json"), &[]).and_then(elevated_outcome) {
+                Ok(()) => {
+                    let _ = fs::remove_file(dir.join("sharing.json"));
+                }
+                Err(e) => set_job_text(&job, None, Some(format!("Internet sharing could not be turned off. Use Disable Sharing. {e}"))),
+            }
+        }
         let out = run_ps(&format!("{WINRT}{STOP_SCRIPT}"), &[])?;
         let v: Value = serde_json::from_str(out.trim()).map_err(|_| "Windows gave an answer this app could not read.".to_string())?;
         elevated_outcome_hotspot(v)
@@ -517,6 +661,9 @@ pub struct SharingStatus {
 struct Pair {
     public: String,
     private: String,
+    /// Set when the app turned sharing on together with the hotspot, so stopping the hotspot turns it off again.
+    #[serde(default)]
+    via_hotspot: bool,
 }
 
 fn read_sharing() -> Result<Vec<SharedConnection>, String> {
@@ -527,7 +674,8 @@ fn read_sharing() -> Result<Vec<SharedConnection>, String> {
         .collect())
 }
 
-#[tauri::command]
+// Runs on the async thread pool: it spawns a process, which must never block the UI thread.
+#[tauri::command(async)]
 pub fn sharing_status(app: AppHandle) -> Result<SharingStatus, String> {
     let list = read_sharing().map_err(|e| format!("Could not read the sharing state from Windows. {e}"))?;
     let public = list.iter().find(|c| c.role == "public").map(|c| c.name.clone());
@@ -543,9 +691,12 @@ pub fn sharing_status(app: AppHandle) -> Result<SharingStatus, String> {
     Ok(SharingStatus { on: !list.is_empty(), public, private, by_app })
 }
 
-#[tauri::command]
+// Runs on the async thread pool: it spawns a process, which must never block the UI thread.
+#[tauri::command(async)]
 pub fn sharing_adapters() -> Result<Vec<AdapterInfo>, String> {
-    parse_adapters(&run_ps(ADAPTERS_SCRIPT, &[])?)
+    let mut list = parse_adapters(&run_ps(ADAPTERS_SCRIPT, &[])?)?;
+    order_adapters(&mut list);
+    Ok(list)
 }
 
 #[tauri::command]
@@ -563,7 +714,7 @@ pub fn sharing_apply(app: AppHandle, state: State<HotspotState>, public: String,
         check_apply(&public, &private, &adapters, on)?;
         let v = run_elevated(SHARING_APPLY_BODY, &dir.join("sharing-result.json"), &[("pubN", public.clone()), ("priN", private.clone())])?;
         elevated_outcome(v)?;
-        write_json(&dir.join("sharing.json"), &Pair { public, private })
+        write_json(&dir.join("sharing.json"), &Pair { public, private, via_hotspot: false })
     })
 }
 
@@ -589,14 +740,15 @@ pub struct Device {
 
 /// Devices the PC has talked to on one private subnet, from the ARP table. Reads the table only; sends nothing.
 /// `interface_ip` is the PC's own address on that subnet; without it, Windows' default sharing address is used.
-#[tauri::command]
+// Runs on the async thread pool: it spawns a process, which must never block the UI thread.
+#[tauri::command(async)]
 pub fn hotspot_devices(interface_ip: Option<String>) -> Result<Vec<Device>, String> {
     let ip = interface_ip.filter(|s| !s.is_empty()).unwrap_or_else(|| DEFAULT_PRIVATE_IP.to_string());
     let parsed: std::net::Ipv4Addr = ip.parse().map_err(|_| "That is not an IPv4 address.".to_string())?;
     if !(parsed.is_private() || parsed.is_link_local()) {
         return Err("Only private networks are read.".into());
     }
-    let out = Command::new("arp")
+    let out = Command::new(crate::vpnengine::sys32("arp.exe"))
         .arg("-a")
         .stdin(Stdio::null())
         .creation_flags(NO_WINDOW)

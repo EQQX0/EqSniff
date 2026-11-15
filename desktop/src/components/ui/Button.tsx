@@ -10,16 +10,19 @@ interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const VARIANT: Record<Variant, string> = {
-  primary: "bg-accent text-on-accent hover:brightness-110",
-  secondary: "bg-surface text-text border border-border hover:bg-border",
-  ghost: "bg-transparent text-text hover:bg-surface",
-  danger: "bg-danger text-on-accent hover:brightness-110",
+  primary:
+    "bg-[linear-gradient(135deg,#c43e52,#a82f42)] text-on-accent shadow-[0_8px_22px_rgba(168,47,66,0.38)] hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(209,73,91,0.5)]",
+  secondary:
+    "border border-border-input bg-white/[0.06] text-text hover:-translate-y-0.5 hover:bg-white/[0.12]",
+  ghost: "bg-transparent text-text hover:bg-white/10",
+  danger:
+    "bg-[linear-gradient(135deg,#b3263a,#8e1f2e)] text-on-accent shadow-[0_8px_22px_rgba(142,31,46,0.38)] hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(179,38,58,0.5)]",
 };
 
 const SIZE: Record<Size, string> = {
-  sm: "h-8 px-3 text-xs",
-  md: "h-10 px-4 text-sm",
-  lg: "h-12 px-5 text-base",
+  sm: "h-8 px-3.5 text-xs",
+  md: "h-10 px-5 text-sm",
+  lg: "h-12 px-6 text-base",
 };
 
 export const Button = forwardRef<HTMLButtonElement, Props>(function Button(
@@ -30,9 +33,10 @@ export const Button = forwardRef<HTMLButtonElement, Props>(function Button(
     <button
       ref={ref}
       disabled={disabled || loading}
-      className={`inline-flex items-center justify-center gap-2 rounded-md font-semibold
-        transition-colors duration-fast disabled:opacity-40 disabled:pointer-events-none
-        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2
+      className={`inline-flex items-center justify-center gap-2 rounded-pill font-semibold
+        transition-all duration-base ease-brand active:translate-y-0 active:scale-[0.97]
+        disabled:opacity-40 disabled:pointer-events-none
+        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:ring-offset-2
         focus-visible:ring-offset-bg ${VARIANT[variant]} ${SIZE[size]} ${className}`}
       aria-busy={loading || undefined}
       {...rest}

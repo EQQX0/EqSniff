@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Switch } from "@/components/ui/Switch";
 import { NetworkIcon } from "@/components/ui/icons";
 import {
   DIRECTIONS,
@@ -28,7 +29,7 @@ interface Props {
 }
 
 const selectClass =
-  "h-10 rounded-md border border-border-input bg-surface px-3 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+  "h-10 w-full rounded-pill border border-border-input bg-white/[0.06] px-4 text-sm text-text transition-all duration-base ease-brand hover:bg-white/[0.09] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft";
 
 export function FiltersView({ filters, onChange, onUse }: Props) {
   const [draft, setDraft] = useState<Filter | null>(null);
@@ -87,21 +88,28 @@ export function FiltersView({ filters, onChange, onUse }: Props) {
     if (fileInput.current) fileInput.current.value = "";
   }
 
+  const onCount = filters.filter((f) => f.enabled).length;
+  const closeDraft = () => {
+    setDraft(null);
+    setShowErrors(false);
+  };
+
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <div>
         <h1 className="text-xl font-bold text-text">Filters</h1>
         <p className="mt-1 text-sm text-muted">
-          A filter picks which packets the Capture table shows. A packet must match every box you fill in. Switch several filters on and the
-          table shows packets that match any of them. With none on, it shows everything.
+          A filter picks which packets the Capture table shows. A packet must match every box you fill in. With several filters on, a packet
+          that matches any of them is shown. With none on, everything is shown.
         </p>
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Button onClick={() => { setDraft(blankFilter(newId())); setShowErrors(false); }}>New filter</Button>
         <Button variant="secondary" onClick={addStarters}>Add starter filters</Button>
-        <Button variant="secondary" onClick={() => fileInput.current?.click()}>Import file</Button>
-        <Button variant="secondary" onClick={exportFile} disabled={filters.length === 0}>Export file</Button>
+        <span className="mx-1 hidden h-6 w-px bg-border sm:block" aria-hidden="true" />
+        <Button variant="ghost" onClick={() => fileInput.current?.click()}>Import</Button>
+        <Button variant="ghost" onClick={exportFile} disabled={filters.length === 0}>Export</Button>
         <input
           ref={fileInput}
           type="file"
@@ -113,26 +121,31 @@ export function FiltersView({ filters, onChange, onUse }: Props) {
         />
       </div>
 
-      <p
-        role={message?.kind === "error" ? "alert" : "status"}
-        className={`min-h-5 text-sm ${message?.kind === "error" ? "text-danger" : "text-muted"}`}
-      >
-        {message?.text}
-      </p>
+      {message && (
+        <p
+          role={message.kind === "error" ? "alert" : "status"}
+          className={`anim-fade rounded-pill border px-4 py-2 text-sm ${
+            message.kind === "error" ? "border-danger/40 bg-danger-solid/20 text-danger" : "border-border bg-white/[0.05] text-muted"
+          }`}
+        >
+          {message.text}
+        </p>
+      )}
 
       {draft && (
-        <Card className="flex flex-col gap-4">
-          <h2 className="text-base font-semibold text-text">
-            {filters.some((f) => f.id === draft.id) ? "Edit filter" : "New filter"}
-          </h2>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Input
-              label="Name"
-              value={draft.name}
-              maxLength={80}
-              error={showErrors ? errors.name : undefined}
-              onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-            />
+        <Card className="anim-pop flex flex-col gap-6">
+          <h2 className="text-lg font-semibold text-text">{filters.some((f) => f.id === draft.id) ? "Edit filter" : "New filter"}</h2>
+
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="sm:col-span-2">
+              <Input
+                label="Name"
+                value={draft.name}
+                maxLength={80}
+                error={showErrors ? errors.name : undefined}
+                onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+              />
+            </div>
             <label className="flex flex-col gap-1.5 text-sm">
               <span className="font-medium text-text">Protocol</span>
               <select value={draft.protocol} onChange={(e) => setDraft({ ...draft, protocol: e.target.value as Proto })} className={selectClass}>
@@ -141,56 +154,69 @@ export function FiltersView({ filters, onChange, onUse }: Props) {
                 ))}
               </select>
             </label>
-            <label className="flex flex-col gap-1.5 text-sm">
-              <span className="font-medium text-text">Direction</span>
-              <select value={draft.direction} onChange={(e) => setDraft({ ...draft, direction: e.target.value as Direction })} className={selectClass}>
-                {DIRECTIONS.map((d) => (
-                  <option key={d.id} value={d.id}>{d.label}</option>
-                ))}
-              </select>
-              <span className="text-xs text-muted">Which side the port and address boxes check.</span>
-            </label>
-            <Input
-              label="Port"
-              hint="Empty means any."
-              inputMode="numeric"
-              value={draft.port}
-              error={showErrors ? errors.port : undefined}
-              onChange={(e) => setDraft({ ...draft, port: e.target.value })}
-            />
-            <Input
-              label="Address"
-              hint="A full address such as 192.168.0.20 matches only that device. Something shorter, such as 192.168., matches every address that starts with it."
-              value={draft.address}
-              onChange={(e) => setDraft({ ...draft, address: e.target.value })}
-            />
-            <Input
-              label="Smallest packet (bytes)"
-              hint="Empty means any size."
-              inputMode="numeric"
-              value={draft.minBytes}
-              error={showErrors ? errors.minBytes : undefined}
-              onChange={(e) => setDraft({ ...draft, minBytes: e.target.value })}
-            />
-            <Input
-              label="Largest packet (bytes)"
-              hint="Empty means any size."
-              inputMode="numeric"
-              value={draft.maxBytes}
-              error={showErrors ? errors.maxBytes : undefined}
-              onChange={(e) => setDraft({ ...draft, maxBytes: e.target.value })}
-            />
-            <Input
-              label="Contains bytes (hex)"
-              hint="For example 47 45 54 20 for “GET ”. Looks in the first 32 bytes of the payload of TCP and UDP packets."
-              value={draft.hex}
-              error={showErrors ? errors.hex : undefined}
-              onChange={(e) => setDraft({ ...draft, hex: e.target.value })}
-            />
           </div>
+
+          <fieldset>
+            <legend className="mb-3 text-sm font-semibold text-text">Who is talking</legend>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <label className="flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-text">Direction</span>
+                <select value={draft.direction} onChange={(e) => setDraft({ ...draft, direction: e.target.value as Direction })} className={selectClass}>
+                  {DIRECTIONS.map((d) => (
+                    <option key={d.id} value={d.id}>{d.label}</option>
+                  ))}
+                </select>
+                <span className="text-xs text-muted">Which side Port and Address check.</span>
+              </label>
+              <Input
+                label="Port"
+                hint="Empty means any."
+                inputMode="numeric"
+                value={draft.port}
+                error={showErrors ? errors.port : undefined}
+                onChange={(e) => setDraft({ ...draft, port: e.target.value })}
+              />
+              <Input
+                label="Address"
+                hint="192.168.0.20 matches one device. 192.168. matches everything starting with it."
+                value={draft.address}
+                onChange={(e) => setDraft({ ...draft, address: e.target.value })}
+              />
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend className="mb-3 text-sm font-semibold text-text">Size and content</legend>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Input
+                label="Smallest packet (bytes)"
+                hint="Empty means any size."
+                inputMode="numeric"
+                value={draft.minBytes}
+                error={showErrors ? errors.minBytes : undefined}
+                onChange={(e) => setDraft({ ...draft, minBytes: e.target.value })}
+              />
+              <Input
+                label="Largest packet (bytes)"
+                hint="Empty means any size."
+                inputMode="numeric"
+                value={draft.maxBytes}
+                error={showErrors ? errors.maxBytes : undefined}
+                onChange={(e) => setDraft({ ...draft, maxBytes: e.target.value })}
+              />
+              <Input
+                label="Contains bytes (hex)"
+                hint="47 45 54 20 finds “GET ”. Checks the first 32 payload bytes of TCP and UDP."
+                value={draft.hex}
+                error={showErrors ? errors.hex : undefined}
+                onChange={(e) => setDraft({ ...draft, hex: e.target.value })}
+              />
+            </div>
+          </fieldset>
+
           <div className="flex gap-2">
             <Button onClick={save}>Save filter</Button>
-            <Button variant="ghost" onClick={() => { setDraft(null); setShowErrors(false); }}>Cancel</Button>
+            <Button variant="ghost" onClick={closeDraft}>Cancel</Button>
           </div>
         </Card>
       )}
@@ -203,29 +229,33 @@ export function FiltersView({ filters, onChange, onUse }: Props) {
             body="Add the starter filters for common cases, or make your own. Filters stay on this computer."
           />
         ) : (
-          <ul className="divide-y divide-border">
-            {filters.map((f) => (
-              <li key={f.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={f.enabled}
-                    onChange={() => toggle(f)}
-                    className="h-4 w-4 accent-[var(--color-accent)]"
-                    aria-label={`Switch ${f.name} on`}
-                  />
-                  <span className="text-xs text-muted">{f.enabled ? "On" : "Off"}</span>
-                </label>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-text">{f.name}</p>
-                  <p className="text-xs text-muted">{describe(f)}</p>
-                </div>
-                <Button size="sm" variant="secondary" onClick={() => onUse(f.id)} aria-label={`Show only ${f.name} on the capture table`}>Use alone</Button>
-                <Button size="sm" variant="ghost" onClick={() => { setDraft({ ...f }); setShowErrors(false); }} aria-label={`Edit ${f.name}`}>Edit</Button>
-                <Button size="sm" variant="ghost" onClick={() => remove(f)} aria-label={`Delete ${f.name}`}>Delete</Button>
-              </li>
-            ))}
-          </ul>
+          <>
+            <div className="flex items-center justify-between border-b border-border px-5 py-3">
+              <h2 className="text-sm font-semibold text-text">Your filters</h2>
+              <span className="text-xs text-muted">
+                {filters.length} saved · {onCount} on
+              </span>
+            </div>
+            <ul>
+              {filters.map((f) => (
+                <li
+                  key={f.id}
+                  className="flex flex-wrap items-center gap-4 border-b border-border px-5 py-3.5 transition-colors duration-fast last:border-0 hover:bg-white/[0.04]"
+                >
+                  <Switch checked={f.enabled} label={`Switch ${f.name} on`} onChange={() => toggle(f)} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-text">{f.name}</p>
+                    <p className="truncate text-xs text-muted">{describe(f)}</p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button size="sm" variant="secondary" onClick={() => onUse(f.id)} aria-label={`Show only ${f.name} on the capture table`}>Use alone</Button>
+                    <Button size="sm" variant="ghost" onClick={() => { setDraft({ ...f }); setShowErrors(false); }} aria-label={`Edit ${f.name}`}>Edit</Button>
+                    <Button size="sm" variant="ghost" onClick={() => remove(f)} aria-label={`Delete ${f.name}`}>Delete</Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </Card>
     </div>

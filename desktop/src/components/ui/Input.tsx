@@ -26,8 +26,9 @@ export const Input = forwardRef<HTMLInputElement, Props>(function Input(
         id={inputId}
         aria-invalid={!!error || undefined}
         aria-describedby={[hintId, errorId].filter(Boolean).join(" ") || undefined}
-        className={`h-10 rounded-md border bg-surface px-3 text-sm text-text placeholder:text-muted
-          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent
+        className={`h-10 rounded-pill border bg-white/[0.06] px-4 text-sm text-text placeholder:text-muted
+          transition-all duration-base ease-brand hover:bg-white/[0.09]
+          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:bg-white/[0.1]
           disabled:opacity-50
           ${error ? "border-danger" : "border-border-input"} ${className}`}
         {...rest}

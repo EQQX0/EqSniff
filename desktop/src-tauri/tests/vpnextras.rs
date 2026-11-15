@@ -25,12 +25,73 @@ fn log_tail_keeps_the_last_lines() {
 #[test]
 fn placeholder_is_replaced_only_on_the_private_key_line() {
     let key = "dwdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LCo=";
-    let text = "[Interface]\nPrivateKey = <unchanged>\nAddress = 10.0.0.2/32\n# <unchanged>\n[Peer]\nPresharedKey = <unchanged>\n";
-    let out = fill_placeholder(text, key);
+    let peer = "hSDwCYkwp1R0i33ctD73Wg2/Og0mOBr066SpjqqbTmo=";
+    let psk = "Xf7pR25LCodwdtCnMYpX08FsFyUbJmRd9ML4frwJkqs=";
+    let conf = format!("[Interface]
+PrivateKey = {key}
+Address = 10.0.0.2/32
+[Peer]
+PublicKey = {peer}
+PresharedKey = {psk}
+AllowedIPs = 0.0.0.0/0
+");
+    let stored = parse_for_tests(&conf).unwrap();
+    let text = "[Interface]
+PrivateKey = <unchanged>
+Address = 10.0.0.2/32
+# <unchanged>
+DNS = <unchanged>
+";
+    let out = fill_placeholders(text, &stored);
     assert!(out.contains(&format!("PrivateKey = {key}")));
-    assert!(out.contains("PresharedKey = <unchanged>"));
     assert!(out.contains("# <unchanged>"));
-    assert_eq!(fill_placeholder("PrivateKey = other", key), "PrivateKey = other");
+    assert!(out.contains("DNS = <unchanged>"));
+    assert_eq!(fill_placeholders("PrivateKey = other", &stored), "PrivateKey = other");
+    // A PresharedKey placeholder outside any known peer is left alone (and then fails to parse).
+    assert_eq!(fill_placeholders("[Peer]
+PublicKey = nope
+PresharedKey = <unchanged>", &stored), "[Peer]
+PublicKey = nope
+PresharedKey = <unchanged>");
+}
+
+#[test]
+fn preshared_keys_are_hidden_and_restored_by_peer_public_key() {
+    let key = "dwdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LCo=";
+    let p1 = "hSDwCYkwp1R0i33ctD73Wg2/Og0mOBr066SpjqqbTmo=";
+    let p2 = "Xf7pR25LCodwdtCnMYpX08FsFyUbJmRd9ML4frwJkqs=";
+    let psk1 = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
+    let psk2 = "HwAeAB0AHAAbABoAGQAYABcAFgAVABQAEwASABEAEAA=";
+    let conf = format!(
+        "[Interface]
+PrivateKey = {key}
+Address = 10.0.0.2/32
+[Peer]
+PublicKey = {p1}
+PresharedKey = {psk1}
+AllowedIPs = 10.1.0.0/16
+[Peer]
+PresharedKey = {psk2}
+PublicKey = {p2}
+AllowedIPs = 10.2.0.0/16
+[Peer]
+PublicKey = AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=
+AllowedIPs = 10.3.0.0/16
+"
+    );
+    let cfg = parse_for_tests(&conf).unwrap();
+    let shown = render_for_edit(&cfg);
+    assert!(!shown.contains(psk1) && !shown.contains(psk2) && !shown.contains(key));
+    assert_eq!(shown.matches("PresharedKey = <unchanged>").count(), 2);
+    let back = parse_for_tests(&fill_placeholders(&shown, &cfg)).unwrap();
+    assert_eq!(back, cfg);
+    // Peers swapped in the editor: each key follows its own public key, not its position.
+    let swapped = shown.replace(p1, "@@1").replace(p2, p1).replace("@@1", p2);
+    let back = parse_for_tests(&fill_placeholders(&swapped, &cfg)).unwrap();
+    assert_eq!(back.peers[0].public_key, p2);
+    assert_eq!(back.peers[0].preshared_key.as_deref(), Some(psk2));
+    assert_eq!(back.peers[1].preshared_key.as_deref(), Some(psk1));
+    assert_eq!(back.peers[2].preshared_key, None);
 }
 
 #[test]
@@ -42,7 +103,7 @@ fn edit_view_never_holds_the_private_key() {
     let shown = render_for_edit(&cfg);
     assert!(!shown.contains(key));
     assert!(shown.contains("PrivateKey = <unchanged>"));
-    let back = parse_for_tests(&fill_placeholder(&shown, key)).unwrap();
+    let back = parse_for_tests(&fill_placeholders(&shown, &cfg)).unwrap();
     assert_eq!(back.private_key, key);
 }
 

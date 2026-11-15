@@ -64,3 +64,13 @@ fn names() {
         assert!(!vpnconf::valid_name(bad), "{bad}");
     }
 }
+
+#[test]
+fn windows_device_names_are_refused() {
+    for bad in ["con", "CON", "Prn", "aux", "NUL", "com1", "COM9", "lpt1", "LPT9", "nul.txt", "con.conf", "Aux.x.y"] {
+        assert!(!vpnconf::valid_name(bad), "{bad}");
+    }
+    for ok in ["com0", "com10", "lpt", "console", "mycon", "com1x", "a.con", "Frankfurt"] {
+        assert!(vpnconf::valid_name(ok), "{ok}");
+    }
+}

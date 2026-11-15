@@ -83,7 +83,7 @@ export function SettingsView({ update, onUpdate }: Props) {
           </p>
         </div>
         {update?.status === "available" && (
-          <div className="rounded-md border border-border bg-bg px-3 py-2 text-xs text-text">
+          <div className="rounded-md border border-border bg-black/25 px-3 py-2 text-xs text-text">
             {update.notes && <p>{update.notes}</p>}
             {update.url && <p className="mt-1 break-all">Download: {update.url}</p>}
           </div>
@@ -93,7 +93,7 @@ export function SettingsView({ update, onUpdate }: Props) {
       <Card className="space-y-2">
         <h2 className="text-sm font-semibold text-text">Where your data lives</h2>
         <p className="text-xs text-muted">Settings, filters and labels are stored in this folder. Copy it to back up.</p>
-        <code className="block break-all rounded-md bg-bg px-3 py-2 text-xs text-text">{folder || "…"}</code>
+        <code className="block break-all rounded-md bg-black/25 px-3 py-2 text-xs text-text">{folder || "…"}</code>
       </Card>
 
       <Card className="space-y-2">

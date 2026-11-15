@@ -2,18 +2,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   type HotspotDevice,
+  type HotspotJob,
   type HotspotStatus,
   type SharingAdapter,
   type SharingStatus,
 } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
+import { Select, type SelectOption } from "@/components/ui/Select";
+import { Switch } from "@/components/ui/Switch";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { NetworkIcon, EyeIcon, EyeOffIcon } from "@/components/ui/icons";
 
 const FIELD =
-  "h-11 w-full rounded-md border border-border-input bg-bg px-3 text-sm text-text placeholder:text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50";
+  "h-11 w-full rounded-md border border-border-input bg-black/25 px-3 text-sm text-text placeholder:text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft disabled:opacity-50";
 
 export function HotspotView() {
   const [hs, setHs] = useState<HotspotStatus | null>(null);
@@ -26,11 +29,13 @@ export function HotspotView() {
   const [showPw, setShowPw] = useState(false);
   const [pub, setPub] = useState("");
   const [priv, setPriv] = useState("");
-  const [showAll, setShowAll] = useState(false);
+  const [autoShare, setAutoShare] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const seeded = useRef(false);
+  const privManual = useRef(false);
 
   const privIp = useMemo(() => {
     if (sharing?.on) return null; // Windows gives the private side its own fixed address
@@ -44,12 +49,15 @@ export function HotspotView() {
       if (!seeded.current) {
         seeded.current = true;
         setSsid(h.value.ssid);
+        setAutoShare(h.value.autoShare);
+        if (h.value.publicAdapter) setPub(h.value.publicAdapter);
       }
     } else setError(String(h.reason));
     if (s.status === "fulfilled") {
       setSharing(s.value);
       if (s.value.public) setPub(s.value.public);
       if (s.value.private) setPriv(s.value.private);
+      if (s.value.on) privManual.current = false;
     } else setError(String(s.reason));
     if (a.status === "fulfilled") setAdapters(a.value);
     setLoaded(true);
@@ -76,24 +84,28 @@ export function HotspotView() {
     };
   }, [privIp]);
 
-  async function waitJob() {
+  async function waitJob(): Promise<HotspotJob> {
     for (;;) {
       await new Promise((r) => setTimeout(r, 500));
       const j = await api.hotspotJob();
       if (!j.running) {
         if (j.error) throw j.error;
-        return;
+        return j;
       }
     }
   }
 
-  async function run(label: string, work: () => Promise<unknown>, done?: string) {
+  async function run(label: string, work: () => Promise<HotspotJob | void>, done?: string) {
     setBusy(label);
     setError(null);
     setNotice(null);
+    setWarning(null);
     try {
-      await work();
-      if (done) setNotice(done);
+      const j = await work();
+      if (j && j.warning) {
+        setWarning(j.warning);
+        privManual.current = false;
+      } else if (done) setNotice((j && j.note) || done);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -113,20 +125,35 @@ export function HotspotView() {
   const noWifi = hs != null && !hs.wifiAvailable;
   const canStart = !!hs && hs.wifiAvailable && hs.hasPassword && !!hs.ssid && !busy;
 
-  const visible = useMemo(
-    () => adapters.filter((a) => showAll || (a.connected && !a.isVirtual) || a.name === pub || a.name === priv),
-    [adapters, showAll, pub, priv]
+  // The adapter Windows made for the hotspot: a Wi-Fi Direct virtual adapter, or the one on the default hotspot address.
+  const hotspotAdapter = useMemo(
+    () =>
+      adapters.find(
+        (a) => a.connected && a.name !== pub && (a.ipv4 === "192.168.137.1" || /wi-?fi direct virtual/i.test(a.description))
+      )?.name ?? null,
+    [adapters, pub]
   );
+
+  // While the hotspot is on, point the private picker at its adapter, unless the user chose one.
+  useEffect(() => {
+    if (on && !sharing?.on && hotspotAdapter && !privManual.current && priv !== hotspotAdapter) setPriv(hotspotAdapter);
+  }, [on, sharing, hotspotAdapter, priv]);
+
+  function saveAutoPrefs(p: string, a: boolean) {
+    api.hotspotPrefs(p, a).catch((e) => setError(String(e)));
+  }
 
   const sharingBusy = busy === "apply" || busy === "reset";
   const canApply = !!pub && !!priv && pub !== priv && !sharing?.on && !busy;
 
-  function options(exclude: string) {
-    return visible.map((a) => (
-      <option key={a.name} value={a.name} disabled={a.name === exclude}>
-        {a.name} ({a.description}){a.connected ? "" : " - not connected"}
-      </option>
-    ));
+  function options(exclude: string): SelectOption[] {
+    return adapters.map((a) => ({
+      value: a.name,
+      label: a.name,
+      description: [a.description, a.ipv4].filter(Boolean).join(" · "),
+      tags: [...(a.connected ? [] : ["Not connected"]), ...(a.isVirtual ? ["Virtual"] : [])],
+      disabled: a.name === exclude,
+    }));
   }
 
   return (
@@ -142,13 +169,18 @@ export function HotspotView() {
       <div role="status" aria-live="polite" className="min-h-0">
         {notice && <p className="rounded-md border border-success px-3 py-2 text-sm text-success">{notice}</p>}
       </div>
+      {warning && (
+        <p role="alert" className="rounded-md border border-amber px-3 py-2 text-sm text-amber">
+          {warning}
+        </p>
+      )}
       {error && (
         <p role="alert" className="rounded-md border border-danger px-3 py-2 text-sm text-danger">
           {error}
         </p>
       )}
 
-      <div className="grid grid-cols-2 gap-4 max-md:grid-cols-1">
+      <div className="grid grid-cols-2 gap-4 max-[900px]:grid-cols-1">
         <Card aria-labelledby="hs-title" className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <h2 id="hs-title" className="mr-auto text-base font-semibold text-text">
@@ -164,7 +196,7 @@ export function HotspotView() {
           </div>
 
           {noWifi && (
-            <p role="note" className="rounded-md border border-border bg-bg px-3 py-2 text-sm text-text">
+            <p role="note" className="rounded-md border border-border bg-black/25 px-3 py-2 text-sm text-text">
               {hs?.message}
             </p>
           )}
@@ -178,6 +210,7 @@ export function HotspotView() {
               id="hs-ssid"
               className={FIELD}
               value={ssid}
+              placeholder="e.g. Console Wi-Fi"
               maxLength={32}
               autoComplete="off"
               spellCheck={false}
@@ -209,7 +242,7 @@ export function HotspotView() {
                 onClick={() => setShowPw((v) => !v)}
                 aria-pressed={showPw}
                 aria-label={showPw ? "Hide password" : "Show password"}
-                className="absolute right-0 top-0 flex h-11 w-11 items-center justify-center rounded-md text-muted hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                className="absolute right-0 top-0 flex h-11 w-11 items-center justify-center rounded-md text-muted hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
               >
                 {showPw ? <EyeOffIcon className="h-5 w-5" /> : <EyeIcon className="h-5 w-5" />}
               </button>
@@ -217,6 +250,25 @@ export function HotspotView() {
             <p id="hs-pass-hint" className="text-xs text-muted">
               The eye shows only what you typed just now. A saved password stays hidden.
             </p>
+          </div>
+
+          <div className="flex items-start gap-3">
+            <Switch
+              label="Share internet automatically when the hotspot starts"
+              checked={autoShare}
+              disabled={!!busy}
+              onChange={(v) => {
+                setAutoShare(v);
+                saveAutoPrefs(pub, v);
+              }}
+            />
+            <div className="text-sm text-text">
+              Share internet automatically when the hotspot starts
+              <p className="mt-0.5 text-xs text-muted">
+                {pub ? `Uses ${pub} as the internet source.` : "Choose the Public adapter on the right first."} Windows asks
+                for permission once.
+              </p>
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -229,7 +281,7 @@ export function HotspotView() {
                 className="min-h-11"
                 loading={busy === "stop"}
                 disabled={!!busy && busy !== "stop"}
-                onClick={() => run("stop", async () => { await api.hotspotStop(); await waitJob(); }, "Hotspot stopped.")}
+                onClick={() => run("stop", async () => { await api.hotspotStop(); return waitJob(); }, "Hotspot stopped.")}
               >
                 Stop Hotspot
               </Button>
@@ -238,12 +290,15 @@ export function HotspotView() {
                 className="min-h-11"
                 loading={busy === "start"}
                 disabled={!canStart && busy !== "start"}
-                onClick={() => run("start", async () => { await api.hotspotStart(); await waitJob(); }, "Hotspot started.")}
+                onClick={() => run("start", async () => { await api.hotspotStart(); return waitJob(); }, "Hotspot started.")}
               >
                 Start Hotspot
               </Button>
             )}
           </div>
+          {busy === "start" && autoShare && pub && (
+            <p className="text-xs text-muted">Waiting for the hotspot adapter. Press Yes on the permission prompt if it appears.</p>
+          )}
           {!noWifi && !hs?.hasPassword && loaded && (
             <p className="text-xs text-muted">Save a name and a password first, then start the hotspot.</p>
           )}
@@ -266,34 +321,29 @@ export function HotspotView() {
             </p>
           )}
 
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="sh-pub" className="text-sm font-medium text-text">
-              Public adapter (internet source)
-            </label>
-            <select id="sh-pub" className={FIELD} value={pub} disabled={!!sharing?.on || !!busy} onChange={(e) => setPub(e.target.value)}>
-              <option value="">Choose an adapter</option>
-              {options(priv)}
-            </select>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="sh-priv" className="text-sm font-medium text-text">
-              Private adapter (to console or device)
-            </label>
-            <select id="sh-priv" className={FIELD} value={priv} disabled={!!sharing?.on || !!busy} onChange={(e) => setPriv(e.target.value)}>
-              <option value="">Choose an adapter</option>
-              {options(pub)}
-            </select>
-          </div>
-
-          <label className="flex min-h-11 items-center gap-2 text-sm text-text">
-            <input
-              type="checkbox"
-              className="h-5 w-5 accent-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-              checked={showAll}
-              onChange={(e) => setShowAll(e.target.checked)}
-            />
-            Show all adapters (including disconnected and virtual)
-          </label>
+          <Select
+            label="Public adapter (internet source)"
+            value={pub}
+            options={options(priv)}
+            placeholder="Choose an adapter"
+            disabled={!!sharing?.on || !!busy}
+            onChange={(v) => {
+              setPub(v);
+              saveAutoPrefs(v, autoShare);
+            }}
+          />
+          <Select
+            label="Private adapter (to console or device)"
+            value={priv}
+            options={options(pub)}
+            placeholder="Choose an adapter"
+            disabled={!!sharing?.on || !!busy}
+            hint={on && hotspotAdapter && priv === hotspotAdapter ? "This is the adapter Windows made for your hotspot." : undefined}
+            onChange={(v) => {
+              privManual.current = true;
+              setPriv(v);
+            }}
+          />
 
           <div className="flex flex-wrap gap-2" aria-live="polite">
             {pub && <Badge tone="accent">{pub} · public</Badge>}
@@ -306,7 +356,7 @@ export function HotspotView() {
               className="min-h-11"
               loading={busy === "apply"}
               disabled={!canApply && busy !== "apply"}
-              onClick={() => run("apply", async () => { await api.sharingApply(pub, priv); await waitJob(); }, "Sharing is on.")}
+              onClick={() => run("apply", async () => { await api.sharingApply(pub, priv); return waitJob(); }, "Sharing is on.")}
             >
               Share internet
             </Button>
@@ -315,7 +365,7 @@ export function HotspotView() {
               className="min-h-11"
               loading={busy === "reset"}
               disabled={!!busy && busy !== "reset"}
-              onClick={() => run("reset", async () => { await api.sharingReset(); await waitJob(); }, "Sharing reset.")}
+              onClick={() => run("reset", async () => { await api.sharingReset(); return waitJob(); }, "Sharing reset.")}
             >
               Reset
             </Button>
@@ -323,7 +373,7 @@ export function HotspotView() {
               variant="danger"
               className="min-h-11"
               disabled={!sharing?.on || !!busy}
-              onClick={() => run("reset", async () => { await api.sharingReset(); await waitJob(); }, "Sharing is off.")}
+              onClick={() => run("reset", async () => { await api.sharingReset(); return waitJob(); }, "Sharing is off.")}
             >
               Disable Sharing
             </Button>

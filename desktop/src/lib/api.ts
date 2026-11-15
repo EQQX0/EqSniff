@@ -56,6 +56,8 @@ export interface HotspotStatus {
   ssid: string;
   hasPassword: boolean;
   message: string | null;
+  autoShare: boolean;
+  publicAdapter: string;
 }
 
 export interface SharingStatus {
@@ -83,6 +85,8 @@ export interface HotspotJob {
   running: boolean;
   kind: string;
   error: string | null;
+  note: string | null;
+  warning: string | null;
 }
 
 export interface Country {
@@ -110,12 +114,14 @@ export interface ScanPoll {
   scanned: number;
   total: number;
   hosts: ScanHost[];
-  error: string | null;
 }
 
 export interface ImportResult {
   rows: PacketRow[];
+  /** Records in the file. */
   totalRecords: number;
+  /** Records looked at. Less than totalRecords only when the file was really cut short. */
+  readRecords: number;
 }
 
 export interface Poll {
@@ -128,7 +134,7 @@ export const api = {
   listAdapters: () => invoke<Adapter[]>("list_adapters"),
   startCapture: (adapter: string, filter: string) => invoke<void>("start_capture", { adapter, filter }),
   pollCapture: () => invoke<Poll>("poll_capture"),
-  stopCapture: () => invoke<void>("stop_capture"),
+  stopCapture: () => invoke<PacketRow[]>("stop_capture"),
   getSettings: () => invoke<Settings>("get_settings"),
   setSettings: (settings: Settings) => invoke<void>("set_settings", { settings }),
   getFilters: () => invoke<unknown>("get_filters"),
@@ -152,6 +158,8 @@ export const api = {
   vpnSetOption: (name: string, killswitch: boolean) => invoke<void>("vpn_set_option", { name, killswitch }),
   hotspotStatus: () => invoke<HotspotStatus>("hotspot_status"),
   hotspotSave: (ssid: string, password: string | null) => invoke<void>("hotspot_save", { ssid, password }),
+  hotspotPrefs: (publicAdapter: string, autoShare: boolean) =>
+    invoke<void>("hotspot_prefs", { publicAdapter, autoShare }),
   hotspotStart: () => invoke<void>("hotspot_start"),
   hotspotStop: () => invoke<void>("hotspot_stop"),
   hotspotJob: () => invoke<HotspotJob>("hotspot_job"),

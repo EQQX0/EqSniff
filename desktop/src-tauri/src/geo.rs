@@ -3,6 +3,7 @@
 
 use maxminddb::{geoip2, Reader};
 use serde::Serialize;
+use crate::netaddr::is_public;
 use std::{collections::HashMap, net::IpAddr, sync::OnceLock};
 
 static DB: &[u8] = include_bytes!("../resources/country.mmdb");
@@ -18,17 +19,6 @@ pub struct Country {
     pub name: String,
 }
 
-/// Addresses that stay inside a network have no country.
-fn is_public(ip: IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(v) => !(v.is_private() || v.is_loopback() || v.is_link_local() || v.is_multicast() || v.is_broadcast() || v.is_unspecified()),
-        IpAddr::V6(v) => {
-            let first = v.segments()[0];
-            !(v.is_loopback() || v.is_multicast() || v.is_unspecified() || (first & 0xfe00) == 0xfc00 || (first & 0xffc0) == 0xfe80)
-        }
-    }
-}
-
 fn lookup_one(r: &Reader<&'static [u8]>, ip: IpAddr) -> Option<Country> {
     let rec: geoip2::Country = r.lookup(ip).ok()?;
     let c = rec.country?;
@@ -38,7 +28,7 @@ fn lookup_one(r: &Reader<&'static [u8]>, ip: IpAddr) -> Option<Country> {
 }
 
 /// Looks up up to 500 addresses at once. Private and unknown addresses are left out.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn geo_lookup(ips: Vec<String>) -> HashMap<String, Country> {
     let mut out = HashMap::new();
     let Some(r) = reader() else { return out };

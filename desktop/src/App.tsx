@@ -3,7 +3,6 @@ import { api, type PacketRow, type ScanHost, type UpdateInfo } from "@/lib/api";
 import { isLocalAddress } from "@/lib/export";
 import { DevicesView, type Seen } from "@/views/DevicesView";
 import { IpStorageView } from "@/views/IpStorageView";
-import { ScanView } from "@/views/ScanView";
 import { HelpView } from "@/views/HelpView";
 import { blankFilter, fromStored, newId, type Filter } from "@/lib/filters";
 import { FiltersView } from "@/views/FiltersView";
@@ -11,20 +10,23 @@ import { CaptureView } from "@/views/CaptureView";
 import { VpnView } from "@/views/VpnView";
 import { HotspotView } from "@/views/HotspotView";
 import { SettingsView } from "@/views/SettingsView";
+import { TopNav } from "@/components/TopNav";
 
 const NAV = [
   { id: "capture", label: "Capture" },
   { id: "filters", label: "Filters" },
   { id: "devices", label: "Devices" },
   { id: "ip-storage", label: "IP Storage" },
-  { id: "scan", label: "Network scan" },
   { id: "vpn", label: "VPN" },
   { id: "hotspot", label: "Hotspot" },
+] as const;
+
+const NAV_END = [
   { id: "help", label: "Help" },
   { id: "settings", label: "Settings" },
 ] as const;
 
-type ViewId = (typeof NAV)[number]["id"];
+type ViewId = (typeof NAV)[number]["id"] | (typeof NAV_END)[number]["id"];
 
 export default function App() {
   const [view, setView] = useState<ViewId>("capture");
@@ -124,75 +126,58 @@ export default function App() {
     [saveFilters]
   );
 
+  // A page that was hidden restarts its entrance animation when it is shown again.
+  const pane = (id: ViewId, fill = "") => (view === id ? `view-enter page ${fill}` : "hidden");
+
   return (
-    <div className="flex h-screen flex-col">
-      {update?.status === "available" && (
-        <div role="status" className="flex items-center justify-between gap-3 border-b border-border bg-surface px-4 py-2 text-sm text-text">
-          <span>{update.message} Details are in Settings.</span>
-          <button
-            type="button"
-            onClick={() => setView("settings")}
-            className="rounded-md border border-border px-3 py-1 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+    <div className="relative flex h-screen flex-col">
+      <div className="ember-bg" aria-hidden="true">
+        <span className="ember-orb a" />
+        <span className="ember-orb b" />
+      </div>
+      <header className="relative z-10 px-6 pt-4">
+        {update?.status === "available" && (
+          <div
+            role="status"
+            className="glass glass-blur anim-drop mb-3 flex items-center justify-between gap-3 rounded-pill py-2 pl-5 pr-2 text-sm text-text"
           >
-            Open Settings
-          </button>
-        </div>
-      )}
-      <div className="flex min-h-0 flex-1">
-      <nav aria-label="Main" className="flex w-52 shrink-0 flex-col gap-1 border-r border-border bg-bg p-4">
-        <p className="mb-4 px-2 text-base font-bold text-text">Network Toolkit</p>
-        {NAV.map((item) => {
-          const active = item.id === view;
-          return (
+            <span>{update.message} Details are in Settings.</span>
             <button
-              key={item.id}
               type="button"
-              onClick={() => setView(item.id)}
-              aria-current={active ? "page" : undefined}
-              className={`rounded-md px-3 py-2 text-left text-sm font-medium transition-colors duration-fast
-                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent
-                ${active ? "border-l-2 border-accent bg-surface text-text" : "text-muted hover:bg-surface hover:text-text"}`}
+              onClick={() => setView("settings")}
+              className="rounded-pill bg-[linear-gradient(135deg,#c43e52,#a82f42)] px-4 py-1.5 font-semibold text-on-accent transition-transform duration-base ease-brand hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
             >
-              {item.label}
+              Open Settings
             </button>
-          );
-        })}
-      </nav>
-      <main className="min-w-0 flex-1 overflow-auto p-6">
-        {/* Both views stay mounted so a running capture keeps its table while Settings is open. */}
-        <div className={view === "capture" ? "h-full" : "hidden"}>
-          <CaptureView filters={filters} onToggle={toggleFilter} onSeen={onSeen} />
-        </div>
-        <div className={view === "filters" ? "" : "hidden"}>
-          <FiltersView
-            filters={filters}
-            onChange={saveFilters}
-            onUse={useAlone}
-          />
-        </div>
-        <div className={view === "devices" ? "" : "hidden"}>
-          <DevicesView seen={devices} onWatch={watchDevice} onScan={() => setView("scan")} />
-        </div>
-        <div className={view === "ip-storage" ? "" : "hidden"}>
-          <IpStorageView />
-        </div>
-        <div className={view === "scan" ? "" : "hidden"}>
-          <ScanView onHosts={setScanHosts} />
-        </div>
-        <div className={view === "vpn" ? "h-full" : "hidden"}>
-          {view === "vpn" && <VpnView />}
-        </div>
-        <div className={view === "hotspot" ? "" : "hidden"}>
-          {view === "hotspot" && <HotspotView />}
-        </div>
-        <div className={view === "help" ? "" : "hidden"}>
-          <HelpView />
-        </div>
-        <div className={view === "settings" ? "" : "hidden"}>
-          <SettingsView update={update} onUpdate={setUpdate} />
+          </div>
+        )}
+        <TopNav items={NAV} trailing={NAV_END} active={view} onSelect={(id) => setView(id as ViewId)} />
+      </header>
+      <main className="relative z-10 min-h-0 flex-1 overflow-auto px-6 pb-6 pt-6">
+        <div className="mx-auto h-full w-full max-w-[1400px]">
+          {/* Every view stays mounted so a running capture keeps its table while Settings is open. */}
+          <div className={pane("capture", "h-full")}>
+            <CaptureView filters={filters} onToggle={toggleFilter} onSeen={onSeen} />
+          </div>
+          <div className={pane("filters")}>
+            <FiltersView filters={filters} onChange={saveFilters} onUse={useAlone} />
+          </div>
+          <div className={pane("devices")}>
+            <DevicesView seen={devices} onWatch={watchDevice} onHosts={setScanHosts} />
+          </div>
+          <div className={pane("ip-storage")}>
+            <IpStorageView />
+          </div>
+          <div className={pane("vpn", "h-full")}>{view === "vpn" && <VpnView />}</div>
+          <div className={pane("hotspot")}>{view === "hotspot" && <HotspotView />}</div>
+          <div className={pane("help")}>
+            <HelpView />
+          </div>
+          <div className={pane("settings")}>
+            <SettingsView update={update} onUpdate={setUpdate} />
+          </div>
         </div>
       </main>
-      </div>
     </div>
   );
 }

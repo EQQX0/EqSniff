@@ -1,4 +1,4 @@
-import { normalizeHex, type Proto } from "./filters.ts";
+import { isCompleteIpv6, normalizeHex, type Proto } from "./filters.ts";
 
 /** What the network driver keeps. Packets that do not match are never recorded at all. */
 export interface CaptureFilter {
@@ -11,8 +11,8 @@ export interface CaptureFilter {
 
 export const NO_CAPTURE_FILTER: CaptureFilter = { protocol: "any", port: "", address: "", minBytes: "", hex: "" };
 
-const V4 = /^(\d{1,3})(\.\d{1,3}){3}$/;
-const V6 = /^[0-9a-fA-F:]{2,39}$/;
+// No leading zeros: libpcap reads 010 as octal, which would not be the address the person typed.
+const V4 = /^(0|[1-9]\d{0,2})(\.(0|[1-9]\d{0,2})){3}$/;
 
 export function captureProblems(f: CaptureFilter): { port?: string; address?: string; minBytes?: string; hex?: string } {
   const out: { port?: string; address?: string; minBytes?: string; hex?: string } = {};
@@ -21,7 +21,7 @@ export function captureProblems(f: CaptureFilter): { port?: string; address?: st
   const a = f.address.trim();
   if (a !== "") {
     const v4ok = V4.test(a) && a.split(".").every((n) => Number(n) <= 255);
-    const v6ok = a.includes(":") && V6.test(a) && (a.match(/::/g) ?? []).length <= 1;
+    const v6ok = isCompleteIpv6(a);
     if (!v4ok && !v6ok) out.address = "Use one full address such as 192.168.0.20, or leave it empty.";
   }
   const m = f.minBytes.trim();

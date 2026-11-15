@@ -25,6 +25,17 @@ use std::{
 
 const NO_WINDOW: u32 = 0x0800_0000;
 
+/// Absolute path of a System32 tool, so a planted copy earlier on the PATH or in the folder is never run.
+pub fn sys32(exe: &str) -> PathBuf {
+    let root = std::env::var_os("SystemRoot").or_else(|| std::env::var_os("windir")).unwrap_or_else(|| r"C:\Windows".into());
+    PathBuf::from(root).join("System32").join(exe)
+}
+
+/// Absolute path of Windows PowerShell 5.1.
+pub fn powershell_exe() -> PathBuf {
+    sys32("WindowsPowerShell").join("v1.0").join("powershell.exe")
+}
+
 pub fn decode_key(k: &str) -> Result<[u8; 32], String> {
     use base64::{engine::general_purpose::STANDARD, Engine};
     let v = STANDARD.decode(k.trim()).map_err(|_| "A key in the tunnel file is not valid.".to_string())?;
@@ -79,18 +90,55 @@ pub fn read_options(dir: &Path, name: &str) -> Options {
 /// What the edit box shows in place of the private key.
 pub const KEY_PLACEHOLDER: &str = "<unchanged>";
 
-/// Puts the stored private key back in place of the placeholder (on the PrivateKey line only).
-pub fn fill_placeholder(text: &str, stored_key: &str) -> String {
+/// Puts the stored keys back in place of the placeholders: the private key on the PrivateKey line, and each peer's
+/// preshared key on its PresharedKey line, found by that peer's public key. Anything else is left as typed.
+pub fn fill_placeholders(text: &str, stored: &Config) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    // The public key of the [Peer] section each line sits in (a PresharedKey may come before its PublicKey).
+    let mut owner: Vec<Option<String>> = vec![None; lines.len()];
+    let mut start: Option<usize> = None;
+    let flush = |from: Option<usize>, to: usize, owner: &mut Vec<Option<String>>| {
+        let Some(from) = from else { return };
+        let pk = lines[from..to].iter().find_map(|l| {
+            let (k, v) = l.split_once('=')?;
+            k.trim().eq_ignore_ascii_case("publickey").then(|| v.split('#').next().unwrap_or("").trim().to_string())
+        });
+        for o in &mut owner[from..to] {
+            *o = pk.clone();
+        }
+    };
+    for (i, l) in lines.iter().enumerate() {
+        if l.trim().starts_with('[') {
+            flush(start, i, &mut owner);
+            start = l.trim().eq_ignore_ascii_case("[peer]").then_some(i);
+        }
+    }
+    flush(start, lines.len(), &mut owner);
+
     let mut out = String::with_capacity(text.len() + 44);
-    for (i, line) in text.lines().enumerate() {
+    for (i, line) in lines.iter().enumerate() {
         if i > 0 {
             out.push('\n');
         }
         match line.split_once('=') {
-            Some((k, v)) if k.trim().eq_ignore_ascii_case("privatekey") && v.trim() == KEY_PLACEHOLDER => {
+            Some((k, v)) if v.trim() == KEY_PLACEHOLDER && k.trim().eq_ignore_ascii_case("privatekey") => {
                 out.push_str(k);
                 out.push_str("= ");
-                out.push_str(stored_key);
+                out.push_str(&stored.private_key);
+            }
+            Some((k, v)) if v.trim() == KEY_PLACEHOLDER && k.trim().eq_ignore_ascii_case("presharedkey") => {
+                let psk = owner[i]
+                    .as_ref()
+                    .and_then(|pk| stored.peers.iter().find(|p| &p.public_key == pk))
+                    .and_then(|p| p.preshared_key.as_ref());
+                match psk {
+                    Some(psk) => {
+                        out.push_str(k);
+                        out.push_str("= ");
+                        out.push_str(psk);
+                    }
+                    None => out.push_str(line),
+                }
             }
             _ => out.push_str(line),
         }
@@ -98,10 +146,15 @@ pub fn fill_placeholder(text: &str, stored_key: &str) -> String {
     out
 }
 
-/// The rendered file with the private key hidden, for the edit box.
+/// The rendered file with the private key and every preshared key hidden, for the edit box.
 pub fn render_for_edit(c: &Config) -> String {
     let mut c = c.clone();
     c.private_key = KEY_PLACEHOLDER.to_string();
+    for p in &mut c.peers {
+        if p.preshared_key.is_some() {
+            p.preshared_key = Some(KEY_PLACEHOLDER.to_string());
+        }
+    }
     vpnconf::render(&c)
 }
 
@@ -264,7 +317,7 @@ fn send_net(p: &PeerRun, data: &[u8]) {
 }
 
 fn netsh(args: &[&str]) -> Result<(), String> {
-    let out = Command::new("netsh.exe").args(args).creation_flags(NO_WINDOW).output().map_err(|e| e.to_string())?;
+    let out = Command::new(sys32("netsh.exe")).args(args).creation_flags(NO_WINDOW).output().map_err(|e| e.to_string())?;
     let text = String::from_utf8_lossy(&out.stdout);
     // netsh sometimes exits 0 even when it rejected the command (e.g. an unknown parameter name), so the
     // text is checked either way.
@@ -369,6 +422,38 @@ fn dll_path() -> Result<PathBuf, String> {
     tries.into_iter().find(|p| p.is_file()).ok_or_else(|| "wintun.dll is missing from the program folder.".to_string())
 }
 
+/// Waits up to `limit` for the threads to finish and joins the ones that did. Returns how many are still running.
+fn join_all(handles: Vec<thread::JoinHandle<()>>, limit: Duration) -> usize {
+    let started = Instant::now();
+    while started.elapsed() < limit && handles.iter().any(|h| !h.is_finished()) {
+        thread::sleep(Duration::from_millis(20));
+    }
+    let mut left = 0;
+    for h in handles {
+        if h.is_finished() {
+            let _ = h.join();
+        } else {
+            left += 1;
+        }
+    }
+    left
+}
+
+/// Opens a file for writing that must not exist yet: any old file, link or junction is removed first, and
+/// `create_new` refuses to follow a link planted in between.
+fn create_fresh(path: &Path) -> std::io::Result<fs::File> {
+    let _ = fs::remove_file(path);
+    fs::OpenOptions::new().write(true).create_new(true).open(path)
+}
+
+/// Writes a small state file the same way.
+fn write_fresh(path: &Path, text: &str) {
+    use std::io::Write;
+    if let Ok(mut f) = create_fresh(path) {
+        let _ = f.write_all(text.as_bytes());
+    }
+}
+
 fn run_tunnel(dir: &Path, name: &str, log: &Log) -> Result<(), String> {
     let text = fs::read_to_string(dir.join(format!("{name}.conf"))).map_err(|_| "The tunnel file could not be read.".to_string())?;
     let cfg = vpnconf::parse(&text)?;
@@ -438,6 +523,11 @@ fn run_tunnel(dir: &Path, name: &str, log: &Log) -> Result<(), String> {
     let dll = dll_path()?;
     // SAFETY: loading the WireGuard project's signed Wintun library from our own program folder.
     let wintun = unsafe { wintun::load_from_path(&dll) }.map_err(|e| format!("Could not load wintun.dll: {e}"))?;
+    // A leftover adapter of the same name (from a crashed run) would keep its routes and black-hole traffic.
+    if let Ok(stale) = wintun::Adapter::open(&wintun, name) {
+        log.line("removing a leftover adapter with the same name");
+        drop(stale);
+    }
     let adapter = wintun::Adapter::create(&wintun, name, "Network Toolkit", None)
         .map_err(|e| format!("Could not create the network adapter: {e}"))?;
     let session = Arc::new(adapter.start_session(wintun::MAX_RING_CAPACITY).map_err(|e| format!("Could not start the adapter: {e}"))?);
@@ -464,6 +554,7 @@ fn run_tunnel(dir: &Path, name: &str, log: &Log) -> Result<(), String> {
     // 4. The packet loops.
     let stop = Arc::new(AtomicBool::new(false));
     let dead = Arc::new(AtomicBool::new(false));
+    let mut workers: Vec<thread::JoinHandle<()>> = Vec::new();
     for p in &peers {
         // Starts the handshake right away.
         let mut buf = vec![0u8; 2048];
@@ -474,13 +565,17 @@ fn run_tunnel(dir: &Path, name: &str, log: &Log) -> Result<(), String> {
         }
         // network -> adapter
         let (p2, s2, st2) = (p.clone(), session.clone(), stop.clone());
-        thread::spawn(move || {
+        workers.push(thread::spawn(move || {
             let mut inb = vec![0u8; 65535];
             let mut out = vec![0u8; 65535];
             while !st2.load(Ordering::Relaxed) {
                 let n = match p2.sock.recv(&mut inb) {
                     Ok(n) => n,
-                    Err(_) => continue,
+                    Err(_) => {
+                        // A refused or reset datagram makes recv fail at once, again and again; do not spin.
+                        thread::sleep(Duration::from_millis(50));
+                        continue;
+                    }
                 };
                 p2.got.fetch_add(1, Ordering::Relaxed);
                 let peer_ip = p2.sock.peer_addr().map(|a| a.ip()).ok();
@@ -515,10 +610,10 @@ fn run_tunnel(dir: &Path, name: &str, log: &Log) -> Result<(), String> {
                     break;
                 }
             }
-        });
+        }));
         // timers
         let (p3, st3) = (p.clone(), stop.clone());
-        thread::spawn(move || {
+        workers.push(thread::spawn(move || {
             let mut out = vec![0u8; 2048];
             while !st3.load(Ordering::Relaxed) {
                 thread::sleep(Duration::from_millis(250));
@@ -528,12 +623,12 @@ fn run_tunnel(dir: &Path, name: &str, log: &Log) -> Result<(), String> {
                     }
                 }
             }
-        });
+        }));
     }
     // adapter -> network
     {
         let (peers2, s2, st2, dead2) = (peers.clone(), session.clone(), stop.clone(), dead.clone());
-        thread::spawn(move || {
+        workers.push(thread::spawn(move || {
             let mut out = vec![0u8; 65535];
             while !st2.load(Ordering::Relaxed) {
                 let pk = match s2.receive_blocking() {
@@ -560,10 +655,10 @@ fn run_tunnel(dir: &Path, name: &str, log: &Log) -> Result<(), String> {
                 }
             }
             dead2.store(true, Ordering::Relaxed);
-        });
+        }));
     }
 
-    let _ = fs::write(state_path(dir, name), format!("up {}", std::process::id()));
+    write_fresh(&state_path(dir, name), &format!("up {}", std::process::id()));
     log.line("tunnel up");
 
     // 5. Wait for a stop request.
@@ -597,7 +692,12 @@ fn run_tunnel(dir: &Path, name: &str, log: &Log) -> Result<(), String> {
     }
     stop.store(true, Ordering::Relaxed);
     let _ = session.shutdown();
-    thread::sleep(Duration::from_millis(300));
+    // Every worker holds a share of the session, and the session holds the adapter. Wait for them (the receive
+    // threads wake within their 500 ms read timeout) so the adapter and its routes are really released.
+    let left = join_all(workers, Duration::from_secs(5));
+    if left > 0 {
+        log.line(&format!("{left} worker thread(s) did not stop in time"));
+    }
     drop(session);
     drop(adapter);
     Ok(())
@@ -629,13 +729,14 @@ pub fn run(dir: &str, name: &str) -> i32 {
         return 2;
     }
     let _ = fs::remove_file(stop_path(&dir, name));
-    let Ok(file) = fs::File::create(log_path(&dir, name)) else {
-        let _ = fs::write(state_path(&dir, name), "error The tunnel log file could not be created.");
+    let Ok(file) = create_fresh(&log_path(&dir, name)) else {
+        write_fresh(&state_path(&dir, name), "error The tunnel log file could not be created.");
         return 2;
     };
     let log = Log(Mutex::new(file));
-    let _ = fs::write(state_path(&dir, name), format!("starting {}", std::process::id()));
-    let result = run_tunnel(&dir, name, &log);
+    write_fresh(&state_path(&dir, name), &format!("starting {}", std::process::id()));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_tunnel(&dir, name, &log)))
+        .unwrap_or_else(|_| Err("The tunnel engine stopped unexpectedly.".to_string()));
     let _ = fs::remove_file(stop_path(&dir, name));
     match result {
         Ok(()) => {
@@ -644,7 +745,7 @@ pub fn run(dir: &str, name: &str) -> i32 {
         }
         Err(e) => {
             log.line(&format!("error: {e}"));
-            let _ = fs::write(state_path(&dir, name), format!("error {e}"));
+            write_fresh(&state_path(&dir, name), &format!("error {e}"));
             1
         }
     }

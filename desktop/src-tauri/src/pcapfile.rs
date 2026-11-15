@@ -10,6 +10,23 @@ pub struct Rec {
 }
 
 const MAX_RECORD: usize = 262_144;
+/// Largest capture file the app opens, as bytes and as base64 text (a third larger).
+pub const MAX_FILE: usize = 32 * 1024 * 1024;
+pub const MAX_FILE_B64: usize = 45_000_000;
+
+/// Decodes a file sent as base64, refusing anything over the size limits before the memory is used.
+pub fn decode_upload(text: &str) -> Result<Vec<u8>, String> {
+    use base64::Engine;
+    let text = text.trim();
+    if text.len() > MAX_FILE_B64 {
+        return Err("That file is too large to open. The limit is 32 MB.".into());
+    }
+    let bytes = base64::engine::general_purpose::STANDARD.decode(text).map_err(|_| "The file could not be read.".to_string())?;
+    if bytes.len() > MAX_FILE {
+        return Err("That file is too large to open. The limit is 32 MB.".into());
+    }
+    Ok(bytes)
+}
 
 pub fn write(recs: &[Rec]) -> Vec<u8> {
     let mut out = Vec::with_capacity(24 + recs.iter().map(|r| 16 + r.data.len()).sum::<usize>());
@@ -61,7 +78,7 @@ pub fn read(bytes: &[u8], max: usize) -> Result<(Vec<Rec>, usize), String> {
     let mut o = 24;
     while o + 16 <= bytes.len() {
         let (sec, frac, incl, orig) = (u32at(o), u32at(o + 4), u32at(o + 8) as usize, u32at(o + 12));
-        if incl > MAX_RECORD || o + 16 + incl > bytes.len() {
+        if incl > MAX_RECORD || o.saturating_add(16).saturating_add(incl) > bytes.len() {
             break;
         }
         total += 1;

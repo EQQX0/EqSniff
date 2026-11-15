@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { NetworkIcon } from "@/components/ui/icons";
+import { ScanPanel } from "@/views/ScanPanel";
+import type { ScanHost } from "@/lib/api";
 
 export interface Seen {
   ip: string;
@@ -19,10 +21,11 @@ interface Props {
   seen: Seen[];
   /** Show only this device's packets on the Capture page. */
   onWatch: (ip: string) => void;
-  onScan: () => void;
+  /** Hosts found by the network scan, merged into the table by the parent. */
+  onHosts: (hosts: ScanHost[]) => void;
 }
 
-export function DevicesView({ seen, onWatch, onScan }: Props) {
+export function DevicesView({ seen, onWatch, onHosts }: Props) {
   const [labels, setLabels] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
 
@@ -54,7 +57,7 @@ export function DevicesView({ seen, onWatch, onScan }: Props) {
       <div>
         <h1 className="text-xl font-bold text-text">Devices</h1>
         <p className="mt-1 text-sm text-muted">
-          Devices on your own network, from two sources: traffic seen in a capture, and the Network scan. Capture only listens. Names you give
+          Devices on your own network, from two sources: traffic seen in a capture, and the scan below. Capture only listens. Names you give
           stay on this computer.
         </p>
         <p className="mt-1 text-sm text-muted">
@@ -62,16 +65,14 @@ export function DevicesView({ seen, onWatch, onScan }: Props) {
           sent to or from this computer, or when the network shares it with everyone. The app does not intercept anything.
         </p>
       </div>
-      <div>
-        <Button variant="secondary" onClick={onScan}>Scan my network</Button>
-      </div>
+      <ScanPanel onHosts={onHosts} />
       {error && <p role="alert" className="text-sm text-danger">{error}</p>}
       <Card className="p-0">
         {sorted.length === 0 ? (
           <EmptyState
             icon={<NetworkIcon className="h-6 w-6" />}
             title="No devices yet"
-            body="Start a capture on the Capture page, or run the Network scan. Local devices appear here."
+            body="Run the scan above, or start a capture on the Capture page. Local devices appear here."
           />
         ) : (
           <table className="w-full text-left text-sm">
@@ -100,7 +101,7 @@ export function DevicesView({ seen, onWatch, onScan }: Props) {
                       onBlur={(e) => e.target.value.trim() !== (labels[d.ip] ?? "") && rename(d.ip, e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
                       className="h-9 w-full max-w-xs rounded-md border border-border-input bg-surface px-2 text-sm text-text placeholder:text-muted
-                        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
                     />
                   </td>
                   <td className="px-3 py-2 font-mono text-xs text-muted">{d.mac ?? ""}</td>

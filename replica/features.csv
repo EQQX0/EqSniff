@@ -15,7 +15,7 @@ Live traffic-control stats + emergency stop,traffic-control,must,yes,skip,"Dropp
 Packet Tester: craft/send packets to a device you own,testing,skip,yes,skip,Out by decision 2026-11-15.
 Replay a previously captured packet,testing,must,yes,yes,"Local-to-local packets only, with confirmation. Both ends must be private addresses. Tested: internet-bound packets refused, two local packets sent."
 Packet Inspector: raw hex/ASCII view of a packet,testing,skip,yes,skip,Out by decision 2026-11-15.
-Built-in basic network scan (nmap-style) of own LAN,discovery,could,yes,yes,"Built. Own subnet only (max 256 addresses), 22 common TCP ports, consent box, cancel. MACs from the ARP table. Tested on this PC and the router only."
+Built-in basic network scan (nmap-style) of own LAN,discovery,could,yes,yes,"Built. Own subnet only (max 256 addresses), 22 common TCP ports, no consent box, cancel; refuses tunnel adapters. MACs from the ARP table. Tested on this PC and the router only."
 Account + login,account,skip,yes,skip,Out. App has no accounts.
 Two-factor authentication,account,skip,yes,skip,Out. App has no accounts.
 Persistent sessions between launches,account,skip,yes,skip,Out. App has no accounts.

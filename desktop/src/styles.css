@@ -13,16 +13,211 @@ body {
   background: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+::selection {
+  background: rgba(209, 73, 91, 0.55);
+  color: #fff;
 }
 
 :focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--color-accent-soft);
   outline-offset: 2px;
 }
+
+/* ---------- Ember backdrop: one flat gradient field plus two slow glows ---------- */
+.ember-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background:
+    radial-gradient(70% 55% at 88% -5%, rgba(209, 73, 91, 0.32), transparent 70%),
+    radial-gradient(60% 55% at -5% 105%, rgba(122, 31, 36, 0.75), transparent 70%),
+    linear-gradient(165deg, #14080a 0%, #230a0e 50%, #3b0f14 100%);
+}
+.ember-orb {
+  position: absolute;
+  border-radius: 999px;
+  will-change: transform;
+}
+.ember-orb.a {
+  width: 38vw;
+  height: 38vw;
+  right: -8vw;
+  top: 12vh;
+  background: radial-gradient(closest-side, rgba(209, 73, 91, 0.16), transparent);
+  animation: drift-a 26s ease-in-out infinite alternate;
+}
+.ember-orb.b {
+  width: 30vw;
+  height: 30vw;
+  left: 18vw;
+  bottom: -14vw;
+  background: radial-gradient(closest-side, rgba(245, 158, 11, 0.09), transparent);
+  animation: drift-b 32s ease-in-out infinite alternate;
+}
+@keyframes drift-a {
+  to { transform: translate3d(-9vw, 8vh, 0) scale(1.15); }
+}
+@keyframes drift-b {
+  to { transform: translate3d(10vw, -9vh, 0) scale(1.2); }
+}
+
+/* ---------- Glass surfaces ---------- */
+.glass {
+  background: linear-gradient(var(--color-surface), var(--color-surface)), rgba(20, 8, 10, 0.42);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-card);
+}
+.glass-blur {
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  backdrop-filter: blur(22px) saturate(150%);
+}
+.glass-strong {
+  background: var(--color-surface-strong);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-pop);
+  -webkit-backdrop-filter: blur(30px) saturate(160%);
+  backdrop-filter: blur(30px) saturate(160%);
+}
+.lift {
+  transition: transform var(--motion-base) var(--motion-ease), box-shadow var(--motion-base) var(--motion-ease),
+    border-color var(--motion-base) var(--motion-ease);
+}
+.lift:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lift);
+  border-color: rgba(251, 227, 208, 0.28);
+}
+
+/* ---------- Page entrance: the heading, then each block, rising in turn ---------- */
+.view-enter > * > *:not(.fixed) {
+  animation: rise var(--motion-slow) var(--motion-ease) backwards;
+}
+.view-enter > * > *:nth-child(2) { animation-delay: 70ms; }
+.view-enter > * > *:nth-child(3) { animation-delay: 140ms; }
+.view-enter > * > *:nth-child(4) { animation-delay: 210ms; }
+.view-enter > * > *:nth-child(5) { animation-delay: 280ms; }
+.view-enter > * > *:nth-child(n + 6) { animation-delay: 340ms; }
+@keyframes rise {
+  from { opacity: 0; transform: translateY(22px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes pop-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes drop-in {
+  from { opacity: 0; transform: translateY(-18px); }
+  to { opacity: 1; transform: none; }
+}
+.anim-pop { animation: pop-in var(--motion-base) var(--motion-ease) backwards; }
+.anim-fade { animation: fade-in var(--motion-base) ease backwards; }
+.anim-drop { animation: drop-in var(--motion-slow) var(--motion-ease) backwards; }
+
+/* ---------- Page headings: large, tight, one size ---------- */
+.page h1 {
+  font-size: clamp(26px, 3.1vw, 38px);
+  line-height: 1.08;
+  letter-spacing: -0.035em;
+  font-weight: 700;
+}
+.page h1 + p {
+  max-width: 68ch;
+  font-size: 14.5px;
+  line-height: 22px;
+}
+
+/* ---------- Tables ---------- */
+.page table tbody tr {
+  transition: background-color var(--motion-fast) ease;
+}
+.page table tbody tr:hover {
+  background: rgba(251, 227, 208, 0.06);
+}
+.page table th {
+  font-weight: 600;
+}
+
+/* ---------- Scrollbars ---------- */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(251, 227, 208, 0.28) transparent;
+}
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: rgba(251, 227, 208, 0.22);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(251, 227, 208, 0.4); background-clip: content-box; border: 3px solid transparent; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; }
+
+/* Native form controls follow the dark glass look */
+select, input, textarea { color-scheme: dark; }
 
 @media (prefers-reduced-motion: reduce) {
   * {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+  .ember-orb { animation: none !important; }
+  .view-enter > * > *, .anim-pop, .anim-fade, .anim-drop { animation: none !important; }
+  .lift:hover { transform: none; }
+}
+
+/* ---------- Tick boxes ---------- */
+.tick { position: relative; display: inline-flex; flex: none; }
+.tick input {
+  position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; margin: 0;
+  opacity: 0; cursor: pointer;
+}
+.tick input:disabled { cursor: not-allowed; }
+.tick-box {
+  position: relative; display: grid; place-items: center;
+  width: 1.375rem; height: 1.375rem; border-radius: 8px;
+  border: 1.5px solid var(--color-border-input);
+  background: rgba(255, 255, 255, 0.06);
+  transition: background var(--motion-base) var(--motion-ease), border-color var(--motion-base) var(--motion-ease),
+    transform var(--motion-fast) var(--motion-ease), box-shadow var(--motion-base) var(--motion-ease);
+}
+.tick-box::after {
+  content: ""; position: absolute; inset: -2px; border-radius: 10px;
+  border: 2px solid var(--color-accent-soft); opacity: 0; pointer-events: none;
+}
+.tick:hover input:not(:disabled) + .tick-box { border-color: var(--color-accent-soft); background: rgba(255, 255, 255, 0.12); }
+.tick input:active:not(:disabled) + .tick-box { transform: scale(0.86); }
+.tick input:focus-visible + .tick-box { outline: 2px solid var(--color-accent-soft); outline-offset: 3px; }
+.tick input:disabled + .tick-box { opacity: 0.45; }
+.tick-box svg path { stroke-dasharray: 24; stroke-dashoffset: 24; transition: stroke-dashoffset 320ms var(--motion-ease) 90ms; }
+.tick input:checked + .tick-box {
+  background: linear-gradient(135deg, #c43e52, #a82f42); border-color: transparent;
+  box-shadow: 0 0 0 4px rgba(209, 73, 91, 0.16), 0 6px 16px rgba(209, 73, 91, 0.4);
+  animation: tick-pop 420ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.tick input:checked + .tick-box::after { animation: tick-ring 560ms ease-out; }
+.tick input:checked + .tick-box svg path { stroke-dashoffset: 0; }
+@keyframes tick-pop { 0% { transform: scale(0.82); } 55% { transform: scale(1.16); } 100% { transform: scale(1); } }
+@keyframes tick-ring { 0% { opacity: 0.7; transform: scale(1); } 100% { opacity: 0; transform: scale(1.9); } }
+
+/* Native dropdown lists open in the OS popup: give the options a dark ground so the cream text stays readable. */
+select option,
+select optgroup {
+  background-color: #2a0d11;
+  color: #fbe3d0;
+}
+select option:checked,
+select option:hover {
+  background-color: #a82f42;
+  color: #ffffff;
 }

@@ -11,11 +11,7 @@ fn path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
 
 #[tauri::command]
 pub fn get_filters(app: AppHandle) -> Result<serde_json::Value, String> {
-    let p = path(&app)?;
-    match fs::read_to_string(&p) {
-        Ok(s) => serde_json::from_str(&s).map_err(|_| "Your saved filters file is damaged.".to_string()),
-        Err(_) => Ok(serde_json::Value::Null), // never saved yet
-    }
+    crate::storefile::read_json(&path(&app)?, "Your saved filters file is damaged.")
 }
 
 #[tauri::command]
@@ -39,10 +35,7 @@ fn named(app: &AppHandle, name: &str) -> Result<std::path::PathBuf, String> {
 
 #[tauri::command]
 pub fn get_store(app: AppHandle, name: String) -> Result<serde_json::Value, String> {
-    match fs::read_to_string(named(&app, &name)?) {
-        Ok(s) => serde_json::from_str(&s).map_err(|_| "A saved file is damaged.".to_string()),
-        Err(_) => Ok(serde_json::Value::Null),
-    }
+    crate::storefile::read_json(&named(&app, &name)?, "A saved file is damaged.")
 }
 
 #[tauri::command]

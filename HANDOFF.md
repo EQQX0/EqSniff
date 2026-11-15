@@ -9,7 +9,7 @@ Session summary: Built a WireGuard engine into the app (no WireGuard install nee
 3. Next step: the user's call. Open items are under "Unfinished".
 
 ## Where we stopped
-Everything asked for is built, tested and committed. The built-in VPN engine passed a live test with the user's own Frankfurt config: the public IP changed through the tunnel and went back after Deactivate, with no leftover adapter or routes.
+Everything asked for is built and tested. The Ember glass redesign (top nav, glass cards, motion) and the review fixes since commit a648940 are NOT committed yet. The built-in VPN engine passed a live test with the user's own Frankfurt config: the public IP changed through the tunnel and went back after Deactivate, with no leftover adapter or routes.
 
 ## Changes this session
 - `desktop/src-tauri/src/vpnengine.rs` (new): the engine. A second copy of the app runs elevated (`network-toolkit.exe --vpn-run <folder> <name>`), makes a Wintun adapter, runs the WireGuard protocol with `boringtun`, and sets address, routes and DNS with `netsh`. Files next to the tunnel: `.state`, `.stop`, `.log`.
@@ -27,6 +27,13 @@ Everything asked for is built, tested and committed. The built-in VPN engine pas
 - Verified: unit tests, tsc, build, no vertdll import, and the read-only PowerShell scripts (adapter list, sharing read, hotspot status) ran and returned sane JSON on this PC. This PC has a Wi-Fi adapter (MediaTek, disconnected).
 - NOT verified live: Start/Stop Hotspot, Share internet, Reset, the elevated result-file round trip. The sharing read returned no connections without admin; it may under-report, so check the ON chip against Windows.
 - Names in the devices table are placeholders ("Unnamed device"); no vendor lookup exists in the repo.
+
+## Hotspot page: OctoSniff-style layout and auto sharing (added later)
+- `components/ui/Select.tsx` (new): accessible listbox dropdown (combobox pattern, arrows/Home/End/Enter/Esc/typeahead, outside click). Used only by the Hotspot page.
+- `HotspotView.tsx`: two cards in one row (stack under 900px), both adapter pickers list every Windows connection (connected real adapters first, then virtual or disconnected, tags "Not connected"/"Virtual"). Switch "Share internet automatically when the hotspot starts" (default on); the public adapter and the switch are saved in `hotspot.json` via the new `hotspot_prefs` command. While the hotspot is on, the private picker auto-selects the hotspot adapter.
+- `hotspot.rs`: `hotspot_start` snapshots adapters, starts the hotspot, polls up to 15 s with `pick_hotspot_adapter`, then runs the existing elevated sharing apply (one UAC). `hotspot_stop` resets sharing first when `sharing.json` has `viaHotspot` (only sharing started by the auto path; manual sharing is left alone, so Stop Hotspot does not kill a wired share). The job now carries `note` and `warning`. If the adapter is not found or apply fails, the hotspot stays on and a warning tells the user to pick Private by hand.
+- Tests: 4 new in `tests/hotspot.rs` (ordering, picking, no-guess cases, pref check), 10 total.
+- NOT verified live (would cut the connection): auto start/stop, whether Windows allows ICS on top of Mobile Hotspot, the detection on real hardware. "Loopback Pseudo-Interface" is not listed (Get-NetAdapter does not return it).
 
 ## IP Storage page (added later)
 - New `desktop/src/views/IpStorageView.tsx`, nav entry on App.tsx (next to Devices), Help FAQ entry. Reused the existing generic store (`filters.rs` `get_store`/`save_store`), adding `"ip-storage"` to the allowed store names; no new Tauri commands or `api.ts` changes needed since `getStore`/`saveStore` already take a store name.
@@ -50,11 +57,11 @@ Everything asked for is built, tested and committed. The built-in VPN engine pas
 - Did not scan outside the user's own network.
 
 ## Unfinished (kept on purpose)
-- DNS for `updates.eqqx2.com`: the user must set a Cloudflare CNAME `updates` -> `cname.vercel-dns.com` (DNS only). Now it is a proxied record pointing at another site. Then switch `DEFAULT_URL` in `desktop/src-tauri/src/update.rs` and rebuild.
+- DNS for `updates.eqqx2.com` is done (CNAME to Vercel, certificate issued). `DEFAULT_URL` now uses it; the release is 0.2.0.
 - OctoSniff screens not seen: Tools submenu, Process Filters, Hotkeys, Appearance, Account, Link Account, Start Sniff dropdown, FAQ, tutorial chapters 2 to 4. Needs the user's screenshots.
 - VPN: kill switch, edit tunnel and log tab are built but the kill switch has not been tested live (needs an elevated run). No new keys. IPv6 MTU note in the log is harmless. DNS may still leak through other adapters (Windows multi-homed lookup).
 - Installer is self-signed (`release/EqSniff-selfsigned.cer` must be imported by hand). The installer was not run end to end after the engine change.
-- Candidate OctoSniff features not built: ISP filters, device categories, manual device add, hotspot page, auto-remove inactive IPs, buffer settings, in-app changelog, tutorial.
+- Candidate OctoSniff features not built: ISP filters, device categories, manual device add, auto-remove inactive IPs, buffer settings, in-app changelog, tutorial.
 
 ## Cleaned up this session
 - Dropped: none requested.
@@ -74,4 +81,4 @@ Everything asked for is built, tested and committed. The built-in VPN engine pas
 - `_archive/web-dashboard/.env.example` is the only env file; it is a template. `.env*` is git-ignored: yes.
 
 ## Git state
-Branch `main`, origin https://github.com/EQQX0/EqSniff (private). Everything from this session is committed in one commit (see `git log`). Stashes: none.
+Branch `main`, origin https://github.com/EQQX0/EqSniff (private). Work through a648940 is committed (not pushed); the redesign and review fixes are uncommitted. Stashes: none.

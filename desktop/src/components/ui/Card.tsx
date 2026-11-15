@@ -3,21 +3,19 @@ import { HTMLAttributes, ReactNode } from "react";
 export function Card({
   children,
   className = "",
+  lift = false,
   ...rest
-}: HTMLAttributes<HTMLDivElement> & { children: ReactNode }) {
+}: HTMLAttributes<HTMLDivElement> & { children: ReactNode; lift?: boolean }) {
   return (
-    <div
-      className={`rounded-lg border border-border bg-surface p-5 shadow-card ${className}`}
-      {...rest}
-    >
+    <div className={`glass ${lift ? "lift" : ""} rounded-lg p-5 ${className}`} {...rest}>
       {children}
     </div>
   );
 }
 
-/** A "card inside a card" row — same surface token, one more border, no new color. */
+/** A row inside a card: lighter tint, no blur, no lift. */
 export function NestedRow({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <div className={`rounded-md border border-border bg-surface/60 p-4 ${className}`}>{children}</div>
+    <div className={`rounded-md border border-border bg-white/[0.04] p-4 ${className}`}>{children}</div>
   );
 }

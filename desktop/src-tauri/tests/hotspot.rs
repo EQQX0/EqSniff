@@ -96,3 +96,64 @@ fn sharing_request_checks() {
     let on = check_apply("Ethernet", "Ethernet 2", &a, true).unwrap_err();
     assert!(on.contains("Reset"));
 }
+
+fn ad(name: &str, desc: &str, up: bool, virt: bool, ip: Option<&str>) -> AdapterInfo {
+    AdapterInfo { name: name.into(), description: desc.into(), connected: up, is_virtual: virt, ipv4: ip.map(str::to_string) }
+}
+
+#[test]
+fn adapters_are_ordered_connected_real_first() {
+    let mut l = vec![
+        ad("vEthernet (Default Switch)", "Hyper-V", true, true, None),
+        ad("Wi-Fi", "MediaTek", false, false, None),
+        ad("Ethernet", "Realtek", true, false, Some("192.168.1.20")),
+        ad("Bluetooth Network Connection", "Bluetooth", false, true, None),
+        ad("Ethernet 2", "Intel", true, false, None),
+    ];
+    order_adapters(&mut l);
+    let names: Vec<&str> = l.iter().map(|a| a.name.as_str()).collect();
+    assert_eq!(names, ["Ethernet", "Ethernet 2", "vEthernet (Default Switch)", "Wi-Fi", "Bluetooth Network Connection"]);
+}
+
+#[test]
+fn picks_the_new_hotspot_adapter() {
+    let before = vec![
+        ad("Ethernet", "Realtek", true, false, Some("192.168.1.20")),
+        ad("Wi-Fi", "MediaTek", false, false, None),
+        ad("Local Area Connection* 9", "Microsoft Wi-Fi Direct Virtual Adapter", false, true, None),
+    ];
+    let mut after = before.clone();
+    after[2].connected = true;
+    after[2].ipv4 = Some("192.168.137.1".into());
+    assert_eq!(pick_hotspot_adapter(&before, &after, "Ethernet").as_deref(), Some("Local Area Connection* 9"));
+
+    // brand new adapter name
+    let mut after2 = before.clone();
+    after2.push(ad("Local Area Connection* 12", "Microsoft Wi-Fi Direct Virtual Adapter #2", true, true, None));
+    assert_eq!(pick_hotspot_adapter(&before, &after2, "Ethernet").as_deref(), Some("Local Area Connection* 12"));
+}
+
+#[test]
+fn does_not_guess_the_hotspot_adapter() {
+    let before = vec![ad("Ethernet", "Realtek", true, false, Some("192.168.1.20")), ad("Wi-Fi", "MediaTek", false, false, None)];
+    // nothing changed
+    assert_eq!(pick_hotspot_adapter(&before, &before, "Ethernet"), None);
+    // a new adapter without hotspot traits is not enough
+    let mut other = before.clone();
+    other.push(ad("Ethernet 3", "USB NIC", true, false, None));
+    assert_eq!(pick_hotspot_adapter(&before, &other, "Ethernet"), None);
+    // the public adapter is never the answer
+    let mut pubchange = before.clone();
+    pubchange[0].ipv4 = Some("192.168.137.1".into());
+    pubchange[0].description = "Wi-Fi Direct Virtual".into();
+    assert_eq!(pick_hotspot_adapter(&before, &pubchange, "Ethernet"), None);
+    assert_eq!(pick_hotspot_adapter(&[], &[], "Ethernet"), None);
+}
+
+#[test]
+fn public_pref_checks() {
+    assert!(check_public_pref("").is_ok());
+    assert!(check_public_pref("Ethernet").is_ok());
+    assert!(check_public_pref("bad\nname").is_err());
+    assert!(check_public_pref(&"x".repeat(300)).is_err());
+}

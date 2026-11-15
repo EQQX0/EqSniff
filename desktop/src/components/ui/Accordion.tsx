@@ -13,7 +13,7 @@ export function AccordionItem({ question, answer }: { question: string; answer: 
         aria-controls={id}
         onClick={() => setOpen((o) => !o)}
         className="flex w-full items-center justify-between gap-4 text-left text-sm font-medium text-text
-          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-sm"
+          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft rounded-sm transition-colors hover:text-accent-soft"
       >
         <span>{question}</span>
         <ChevronDownIcon

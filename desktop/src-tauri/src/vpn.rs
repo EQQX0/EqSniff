@@ -182,7 +182,7 @@ fn launch_elevated(dir: &std::path::Path, name: &str) -> Result<(), String> {
         q(&exe.display().to_string()),
         q(&args)
     );
-    let out = Command::new("powershell.exe")
+    let out = Command::new(vpnengine::powershell_exe())
         .args(["-NoProfile", "-NonInteractive", "-Command", &script])
         .creation_flags(NO_WINDOW)
         .output()
@@ -231,6 +231,8 @@ fn switch(dir: PathBuf, name: String, on: bool) -> Result<(), String> {
             }
             thread::sleep(Duration::from_millis(250));
         }
+        // Do not leave the stop file behind: the next Activate would see it and stop at once.
+        let _ = fs::remove_file(vpnengine::stop_path(&dir, &name));
         Err("The tunnel did not stop. Try again.".into())
     }
 }
@@ -282,7 +284,7 @@ fn save_conf(path: &std::path::Path, cfg: &Config) -> Result<(), String> {
     fs::rename(&tmp, path).map_err(|e| e.to_string())
 }
 
-/// The saved config for the edit box. The private key is replaced by a placeholder and never leaves this process.
+/// The saved config for the edit box. The private key and preshared keys are replaced by a placeholder and never leaves this process.
 #[tauri::command]
 pub fn vpn_read(app: AppHandle, name: String) -> Result<String, String> {
     let path = file(&app, &name)?;
@@ -290,7 +292,7 @@ pub fn vpn_read(app: AppHandle, name: String) -> Result<String, String> {
     Ok(vpnengine::render_for_edit(&vpnconf::parse(&text)?))
 }
 
-/// Replaces the saved config of a tunnel that is off. If the private key is still the placeholder, the stored key stays.
+/// Replaces the saved config of a tunnel that is off. If a key is still the placeholder, the stored key stays (preshared keys are matched by peer public key).
 #[tauri::command]
 pub fn vpn_update(app: AppHandle, name: String, text: String) -> Result<(), String> {
     let path = file(&app, &name)?;
@@ -302,8 +304,8 @@ pub fn vpn_update(app: AppHandle, name: String, text: String) -> Result<(), Stri
         return Err("That text is too large to be a WireGuard tunnel.".into());
     }
     let old = fs::read_to_string(&path).map_err(|_| "That tunnel no longer exists.".to_string())?;
-    let stored = vpnconf::parse(&old)?.private_key;
-    let cfg = vpnconf::parse(&vpnengine::fill_placeholder(&text, &stored))?;
+    let stored = vpnconf::parse(&old)?;
+    let cfg = vpnconf::parse(&vpnengine::fill_placeholders(&text, &stored))?;
     save_conf(&path, &cfg)
 }
 

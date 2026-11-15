@@ -19,6 +19,7 @@ use std::{
     },
     time::Duration,
 };
+use crate::scannet::{self, targets};
 use tauri::State;
 
 const PORTS: &[(u16, &str)] = &[
@@ -29,7 +30,6 @@ const PORTS: &[(u16, &str)] = &[
 ];
 const WORKERS: usize = 48;
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(300);
-const MAX_HOSTS: u32 = 256;
 
 #[derive(Serialize, Clone)]
 pub struct OpenPort {
@@ -50,7 +50,6 @@ struct Shared {
     done: AtomicUsize,
     finished: AtomicBool,
     hosts: Mutex<Vec<Host>>,
-    error: Mutex<Option<String>>,
 }
 
 struct Run {
@@ -67,86 +66,46 @@ pub struct ScanPoll {
     pub scanned: usize,
     pub total: usize,
     pub hosts: Vec<Host>,
-    pub error: Option<String>,
-    pub network: Option<String>,
 }
 
-/// This computer's address and subnet size on the connected adapter. Falls back to a /24.
+/// This computer's address and subnet size on the connected adapter. Falls back to a /24 when
+/// the adapter's mask cannot be read, and refuses single-address networks such as VPN tunnels.
 fn local_network() -> Result<(Ipv4Addr, u8), String> {
     let own = match crate::capture::default_route_ip() {
         Some(IpAddr::V4(v)) if v.is_private() => v,
         Some(_) => return Err("Scanning works only on a private home or office network. This computer is not on one.".into()),
         None => return Err("Could not tell which network this computer is on. Check that you are connected.".into()),
     };
-    let mut prefix = 24u8;
+    let mut found: Option<u8> = None;
     if crate::capture::require_npcap().is_ok() {
         if let Ok(devices) = pcap::Device::list() {
             for d in devices {
                 for a in d.addresses {
                     if a.addr == IpAddr::V4(own) {
                         if let Some(IpAddr::V4(mask)) = a.netmask {
-                            prefix = u32::from(mask).count_ones() as u8;
+                            found = Some(u32::from(mask).count_ones() as u8);
                         }
                     }
                 }
             }
         }
     }
-    Ok((own, prefix.clamp(24, 30))) // never wider than a /24
-}
-
-/// Turns the user's optional target ("" , "192.168.0.7" or "192.168.0.0/28") into addresses,
-/// and refuses anything outside the local subnet.
-fn targets(own: Ipv4Addr, prefix: u8, text: &str) -> Result<Vec<Ipv4Addr>, String> {
-    let mask = !0u32 << (32 - prefix);
-    let net = u32::from(own) & mask;
-    let bcast = net | !mask;
-    let (start, end) = if text.trim().is_empty() {
-        (net + 1, bcast - 1)
-    } else if let Some((ip, bits)) = text.trim().split_once('/') {
-        let ip: Ipv4Addr = ip.trim().parse().map_err(|_| "That is not a valid address range.".to_string())?;
-        let bits: u8 = bits.trim().parse().map_err(|_| "That is not a valid address range.".to_string())?;
-        if !(24..=32).contains(&bits) {
-            return Err("Use a range of /24 or smaller (at most 256 addresses).".into());
-        }
-        let m = !0u32 << (32 - bits);
-        (u32::from(ip) & m, (u32::from(ip) & m) | !m)
-    } else {
-        let ip: Ipv4Addr = text.trim().parse().map_err(|_| "That is not a valid address.".to_string())?;
-        (u32::from(ip), u32::from(ip))
-    };
-    if start < net || end > bcast {
-        return Err("You can only scan the network this computer is on.".into());
-    }
-    if end - start + 1 > MAX_HOSTS {
-        return Err("A scan is limited to 256 addresses.".into());
-    }
-    Ok((start..=end).filter(|a| *a != net && *a != bcast).map(Ipv4Addr::from).collect())
+    Ok((own, scannet::pick_prefix(found)?))
 }
 
 /// IPv4 -> MAC from Windows' own ARP table. Entries appear once this computer has talked to a device.
 fn arp_table() -> Vec<(Ipv4Addr, String)> {
     #[cfg(windows)]
     use std::os::windows::process::CommandExt;
-    let mut cmd = Command::new("arp");
+    let mut cmd = Command::new(crate::vpnengine::sys32("arp.exe"));
     cmd.arg("-a");
     #[cfg(windows)]
     cmd.creation_flags(0x0800_0000);
     let Ok(out) = cmd.output() else { return vec![] };
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .filter_map(|l| {
-            let mut it = l.split_whitespace();
-            let ip: Ipv4Addr = it.next()?.parse().ok()?;
-            let mac = it.next()?.to_string();
-            let kind = it.next()?;
-            let known = kind.eq_ignore_ascii_case("dynamic") || kind.eq_ignore_ascii_case("static");
-            (known && mac.len() == 17 && !mac.eq_ignore_ascii_case("ff-ff-ff-ff-ff-ff")).then(|| (ip, mac))
-        })
-        .collect()
+    scannet::parse_arp(&String::from_utf8_lossy(&out.stdout))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn scan_start(state: State<ScanState>, target: String) -> Result<String, String> {
     let mut slot = state.0.lock().map_err(|_| "scan state is locked")?;
     if let Some(r) = slot.as_ref() {
@@ -228,7 +187,7 @@ pub fn scan_start(state: State<ScanState>, target: String) -> Result<String, Str
 pub fn scan_poll(state: State<ScanState>) -> Result<ScanPoll, String> {
     let slot = state.0.lock().map_err(|_| "scan state is locked")?;
     let Some(run) = slot.as_ref() else {
-        return Ok(ScanPoll { running: false, scanned: 0, total: 0, hosts: vec![], error: None, network: None });
+        return Ok(ScanPoll { running: false, scanned: 0, total: 0, hosts: vec![] });
     };
     let mut hosts = run.shared.hosts.lock().map_err(|_| "scan results are locked")?.clone();
     hosts.sort_by_key(|h| h.ip.parse::<Ipv4Addr>().map(u32::from).unwrap_or(0));
@@ -237,8 +196,6 @@ pub fn scan_poll(state: State<ScanState>) -> Result<ScanPoll, String> {
         scanned: run.shared.done.load(Ordering::Relaxed),
         total: run.shared.total.load(Ordering::Relaxed),
         hosts,
-        error: run.shared.error.lock().ok().and_then(|e| e.clone()),
-        network: None,
     })
 }
 

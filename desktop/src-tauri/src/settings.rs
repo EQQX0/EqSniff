@@ -1,20 +1,8 @@
-use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
 use tauri::{AppHandle, Manager};
 
-/// Everything the app remembers. Stored as one JSON file in the user's app data folder.
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(default, rename_all = "camelCase")]
-pub struct Settings {
-    pub update_check: bool,
-    pub last_adapter: Option<String>,
-}
-
-impl Default for Settings {
-    fn default() -> Self {
-        Self { update_check: true, last_adapter: None }
-    }
-}
+pub use crate::settingscore::Settings;
+use crate::settingscore::from_read;
 
 fn file(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
@@ -22,12 +10,13 @@ fn file(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir.join("settings.json"))
 }
 
+/// Reads the settings. A missing file gives the defaults; a file that is there but cannot be
+/// read or understood turns the update check off, so nothing is sent over the network.
 pub(crate) fn read(app: &AppHandle) -> Settings {
-    file(app)
-        .ok()
-        .and_then(|p| fs::read_to_string(p).ok())
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+    match file(app) {
+        Ok(p) => from_read(fs::read_to_string(p)),
+        Err(_) => Settings::failed_closed(),
+    }
 }
 
 #[tauri::command]

@@ -35,9 +35,9 @@ npm run tauri dev
 
 ```powershell
 cd desktop
-npm test                          # 45 filter checks
+npm test                          # 71 filter checks
 cd src-tauri
-cargo test --tests                # 5 pcap, 6 VPN parser, 3 VPN engine, 7 VPN extras and 6 hotspot tests
+cargo test --tests                # 65 tests: pcap, packet, scan, update, settings, store, VPN parser/engine/extras, hotspot
 ```
 
 Rust tests live in `desktop/src-tauri/tests/` and do not link Tauri. Tests that did crashed on the author's PC, so keep new ones there.
@@ -56,6 +56,7 @@ The app has its own WireGuard engine (`src-tauri/src/vpnengine.rs`): `boringtun`
 
 - **Hotspot**: Windows Mobile Hotspot through `NetworkOperatorTetheringManager`. Needs a Wi-Fi adapter; without one the page says so and Start is off. Name and password are checked in Rust (name 1 to 32 characters, password 8 to 63 printable ASCII) and stored in `hotspot/hotspot.json` in the app data folder. The password never goes back to the window (only a `hasPassword` flag) and reaches PowerShell through environment variables.
 - **Sharing / Bridge**: Windows internet connection sharing (`HNetCfg.HNetShare`) between a public and a private adapter. Changing it runs an elevated PowerShell (Windows admin prompt) and reads the result from `hotspot/sharing-result.json`. The script travels on the command line, adapter names as base64. The app refuses to apply while sharing is already on; Reset or Disable Sharing turns it off.
+- **Auto sharing**: the Hotspot card has a switch (default on, saved in `hotspot.json` with the chosen public adapter). Start Hotspot then waits up to 15 s for the new hotspot adapter and applies sharing public=chosen, private=hotspot adapter in one elevated step; Stop Hotspot resets sharing that was set up this way. Both adapter pickers use `components/ui/Select.tsx` and list every connection.
 - **Connected devices**: read from `arp -a` for the private subnet only (default 192.168.137.1). Nothing is sent.
 
 ## IP Storage
@@ -72,7 +73,7 @@ Install Npcap first. The network scan works without it, but capture needs it.
 
 ## Update check
 
-The app can fetch one small file, `update.json`, from `https://eqsniff-updates.vercel.app/update.json` (a separate Vercel project, so this repository stays private). Once DNS for `updates.eqqx2.com` points at Vercel, that name serves the same file. The switch in Settings turns the check off completely.
+The app can fetch one small file, `update.json`, from `https://updates.eqqx2.com/update.json` (a separate Vercel project, `eqsniff-updates`, so this repository stays private). The switch in Settings turns the check off completely.
 
 ## Data sources and licences
 

@@ -27,7 +27,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "How do I share this PC's internet with my console?",
-    a: "Open the Hotspot page. With a Wi-Fi adapter, save a name and password and press Start Hotspot; the console joins that network. Without Wi-Fi (a wired PC), use Sharing / Bridge: pick the adapter that has internet as Public and the adapter that goes to the console as Private, then press Share. Windows asks for administrator permission. Windows gives the private side the address 192.168.137.1 and hands the console an address by itself, so leave the console on automatic (DHCP). If sharing was turned on outside this app, press Reset first. Press Disable Sharing when you are done. The hotspot password is saved on this PC and never shown again.",
+    a: "Open the Hotspot page. With a Wi-Fi adapter, save a name and password. On the right, pick the Public adapter (the connection that has internet; the list shows every connection the way Windows names it). Leave \"Share internet automatically\" on and press Start Hotspot: the app starts the hotspot, finds the adapter Windows made for it, and shares the internet through it. Windows asks for administrator permission once. Stop Hotspot turns that sharing off again. Without Wi-Fi (a wired PC), use Sharing / Bridge by hand: Public is the adapter with internet, Private is the adapter that goes to the console, then press Share internet. Windows gives the private side the address 192.168.137.1 and hands the console an address by itself, so leave the console on automatic (DHCP). If sharing was turned on outside this app, press Reset first. Press Disable Sharing when you are done. The hotspot password is saved on this PC and never shown again.",
   },
   {
     q: "How do filters work?",
@@ -38,8 +38,8 @@ const FAQ: { q: string; a: string }[] = [
     a: "It sends one saved packet again, once, from the adapter it was captured on. It only works for packets between two devices on your own network (neither end can be an internet address), and it asks you to confirm first. The app keeps the most recent 20,000 packets. Packets opened from a file cannot be replayed. Packets larger than the saved size cannot be replayed.",
   },
   {
-    q: "What does the Network scan do?",
-    a: "It finds the devices on your own network and checks 22 common ports on each, using ordinary connections like a browser makes. It scans only the network this computer is on, up to 256 addresses, and asks you to confirm you own or manage the network. Devices that block every connection may show up only by their MAC address, or not at all. Scan only networks you are allowed to scan.",
+    q: "What does the scan on the Devices page do?",
+    a: "It finds the devices on your own network and checks 22 common ports on each, using ordinary connections like a browser makes. It scans only the network this computer is on, up to 256 addresses,. Devices that block every connection may show up only by their MAC address, or not at all. Found devices appear in the Devices table.",
   },
   {
     q: "Can I save a capture and open it in Wireshark?",
@@ -77,7 +77,7 @@ export function HelpView() {
       <Card className="divide-y divide-border p-0">
         {FAQ.map((item) => (
           <details key={item.q} className="group px-4 py-3">
-            <summary className="cursor-pointer text-sm font-medium text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+            <summary className="cursor-pointer text-sm font-medium text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft">
               {item.q}
             </summary>
             <p className="mt-2 text-sm text-muted">{item.a}</p>

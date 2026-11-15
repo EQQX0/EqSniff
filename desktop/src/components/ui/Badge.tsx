@@ -3,10 +3,10 @@ import { ReactNode } from "react";
 type Tone = "neutral" | "accent" | "danger-soft" | "success";
 
 const TONE: Record<Tone, string> = {
-  neutral: "bg-surface border border-border text-muted",
-  accent: "bg-accent/15 border border-accent/30 text-accent",
-  "danger-soft": "bg-danger/15 border border-danger/30 text-danger",
-  success: "bg-success/15 border border-success/30 text-success",
+  neutral: "bg-white/[0.07] border border-border text-muted",
+  accent: "bg-accent/20 border border-accent/40 text-accent-soft",
+  "danger-soft": "bg-danger-solid/30 border border-danger/40 text-danger",
+  success: "bg-success/15 border border-success/35 text-success",
 };
 
 export function Badge({ tone = "neutral", children }: { tone?: Tone; children: ReactNode }) {

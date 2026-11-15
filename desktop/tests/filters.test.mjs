@@ -61,4 +61,49 @@ ok(cf.captureProblems(cfo({ hex: "zz" })).hex && cf.captureProblems(cfo({ hex: "
 ok(cf.captureProblems(cfo({ protocol: "ICMP", hex: "47" })).hex, "hex with ICMP flagged");
 ok(cf.toBpf(cfo({ hex: "zz" })) === "", "bad boxes give an empty filter");
 ok(cf.fromStoredCapture({ protocol: "TCP", hex: "47 45" }).hex === "47 45" && cf.fromStoredCapture({ protocol: "TCP" }).hex === "", "stored filter reads hex, old files default");
+
+// Address matching: IPv4 on octet boundaries
+const addr = (address, ip, o = {}) => f.matches(mk({ address, ...o }), row({ src: ip, dst: "8.8.8.8", ...o.row }));
+ok(addr("10.1", "10.1.2.3") && addr("10.1.", "10.1.2.3"), "10.1 matches 10.1.x.x");
+ok(!addr("10.1", "10.10.2.3") && !addr("10.1", "10.100.0.1"), "10.1 does not match 10.10.x.x");
+ok(!addr("10.1.", "10.10.2.3"), "10.1. does not match 10.10.x.x");
+ok(addr("10", "10.0.0.1") && !addr("10", "100.0.0.1") && !addr("1", "10.0.0.1"), "single octet is an octet, not a text prefix");
+ok(addr("192.168.0", "192.168.0.20") && !addr("192.168.0", "192.168.1.20"), "three octets");
+ok(addr("192.168.0.20", "192.168.0.20") && !addr("192.168.0.2", "192.168.0.20"), "full v4 exact");
+ok(!addr("10.1", "2001:db8::1"), "v4 text does not match v6 rows");
+
+// Address matching: IPv6
+ok(addr("2001:db8::1", "2001:db8::1"), "v6 full exact");
+ok(addr("2001:0db8:0:0:0:0:0:1", "2001:db8::1"), "v6 full, different spelling, same address");
+ok(addr("2001:DB8::1", "2001:db8::1"), "v6 case");
+ok(!addr("2001:db8::1", "2001:db8::10") && !addr("2001:db8::1", "2001:db8::1:0"), "v6 full never matches a longer one");
+ok(addr("2001:db8", "2001:db8::10") && addr("2001:db8:", "2001:db8::10") && addr("fe80::", "fe80::1234"), "v6 partial and trailing :: are prefixes");
+ok(addr("fe80:", "fe80::1") && !addr("fe80:", "fd00::1"), "v6 prefix with colon");
+ok(addr("::1", "::1") && !addr("::1", "::10"), "loopback is exact");
+ok(addr("::ffff:1.2.3.4", "::ffff:102:304"), "v4-mapped spelling");
+ok(f.isCompleteIpv6("fe80::1") && f.isCompleteIpv6("1:2:3:4:5:6:7:8") && f.isCompleteIpv6("::") && f.isCompleteIpv6("::ffff:1.2.3.4"), "complete v6");
+ok(!f.isCompleteIpv6("fe80:") && !f.isCompleteIpv6("1:2:3:4:5:6:7") && !f.isCompleteIpv6("1::2::3") && !f.isCompleteIpv6("12345::1") && !f.isCompleteIpv6("1:2:3:4:5:6:7:8:9") && !f.isCompleteIpv6("::g") && !f.isCompleteIpv6("1:2:3:4:5:6:7::8") && !f.isCompleteIpv6("1.2.3.4"), "incomplete v6");
+ok(f.matches(mk({ protocol: "ICMP" }), row({ protocol: "ICMPv6" })) && !f.matches(mk({ protocol: "UDP" }), row({ protocol: "ICMPv6" })), "ICMP filter covers ICMPv6");
+
+// Capture filter: addresses
+const addrProblem = (a) => cf.captureProblems(cfo({ address: a })).address;
+ok(!addrProblem("192.168.0.20") && !addrProblem("10.0.0.1") && !addrProblem("0.0.0.0"), "plain v4 fine");
+ok(addrProblem("192.168.000.20") && addrProblem("010.0.0.1") && addrProblem("1.2.3.04") && addrProblem("00.1.1.1"), "leading-zero octets rejected");
+ok(addrProblem("256.1.1.1") && addrProblem("1.2.3") && addrProblem("1.2.3.4.5") && addrProblem("1.2.3.-4"), "bad v4 rejected");
+ok(!addrProblem("fe80::1") && !addrProblem("2001:db8:0:0:0:0:0:1") && !addrProblem("::1"), "v6 fine");
+ok(addrProblem(":::") && addrProblem("1::2::3") && addrProblem("fe80:") && addrProblem("12345::1") && addrProblem("g::1"), "bad v6 rejected");
+ok(cf.toBpf(cfo({ address: "010.0.0.1" })) === "", "leading zeros give no filter");
+ok(cf.toBpf(cfo({ address: "fe80::1", protocol: "TCP", port: "80" })) === "tcp and port 80 and host fe80::1", "v6 host");
+
+// Every filter text the app can build stays inside the characters the app side accepts.
+const WHITELIST = /^[A-Za-z0-9 .:()\[\]+&>=]*$/;
+const protocols = ["any", "TCP", "UDP", "ICMP"], ports = ["", "80", "65535"], addrs = ["", "192.168.0.20", "fe80::1", "::1", "2001:db8::abcd"];
+const mins = ["", "1", "1500"], hexes = ["", "47", "47 45 54 20", "0102030405060708", "ab:cd", "010203"];
+let combos = 0, bad = [];
+for (const protocol of protocols) for (const port of ports) for (const address of addrs) for (const minBytes of mins) for (const hex of hexes) {
+  const text = cf.toBpf(cfo({ protocol, port, address, minBytes, hex }));
+  combos++;
+  if (!WHITELIST.test(text) || text.length > 600) bad.push(text);
+}
+ok(combos > 500 && bad.length === 0, "every toBpf output matches the whitelist and length cap: " + bad[0]);
 console.log(`${n} checks passed`);

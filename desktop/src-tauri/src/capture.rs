@@ -1,9 +1,7 @@
-use etherparse::{NetSlice, SlicedPacket, TransportSlice};
 use pcap::{Capture, Device};
 use serde::Serialize;
 use std::{
     collections::VecDeque,
-    net::{Ipv4Addr, Ipv6Addr},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
@@ -11,6 +9,8 @@ use std::{
     thread::JoinHandle,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+use crate::packet::{both_ends_local, summarize};
+pub use crate::packet::PacketRow;
 use crate::pcapfile;
 use tauri::State;
 
@@ -27,21 +27,6 @@ pub struct Adapter {
     pub description: String,
     /// True for the adapter this computer uses to reach the internet.
     pub connected: bool,
-}
-
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct PacketRow {
-    pub id: u64,
-    pub time: f64,
-    pub src: String,
-    pub dst: String,
-    pub src_port: Option<u16>,
-    pub dst_port: Option<u16>,
-    pub protocol: String,
-    pub length: u32,
-    /// First bytes of the payload as hex, so the filter editor can match on content.
-    pub head: String,
 }
 
 /// What the capture thread hands to the window. The window asks for it with `poll_capture`.
@@ -114,7 +99,7 @@ pub(crate) fn require_npcap() -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_adapters() -> Result<Vec<Adapter>, String> {
     require_npcap()?;
     let devices = Device::list().map_err(explain)?;
@@ -131,7 +116,7 @@ pub fn list_adapters() -> Result<Vec<Adapter>, String> {
     Ok(list)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn start_capture(state: State<CaptureState>, adapter: String, filter: Option<String>) -> Result<(), String> {
     let mut slot = state.slot.lock().map_err(|_| "capture state is locked")?;
     if slot.is_some() {
@@ -169,8 +154,11 @@ pub fn poll_capture(state: State<CaptureState>) -> Result<Poll, String> {
     let Some(running) = slot.as_ref() else {
         return Ok(Poll { rows: vec![], running: false, error: None });
     };
+    // Read `done` first. The capture thread sets it only after its last flush, so when it is
+    // already true, taking the rows afterwards cannot miss the final batch.
+    let done = running.shared.done.load(Ordering::Acquire);
     let rows = std::mem::take(&mut *running.shared.rows.lock().map_err(|_| "capture buffer is locked")?);
-    if running.shared.done.load(Ordering::Acquire) {
+    if done {
         let error = running.shared.error.lock().ok().and_then(|mut e| e.take());
         if let Some(r) = slot.take() {
             let _ = r.handle.join();
@@ -180,14 +168,16 @@ pub fn poll_capture(state: State<CaptureState>) -> Result<Poll, String> {
     Ok(Poll { rows, running: true, error: None })
 }
 
-#[tauri::command]
-pub fn stop_capture(state: State<CaptureState>) -> Result<(), String> {
+/// Stops the capture and returns the packets the window has not received yet (up to the last
+/// moments before the stop), so none are lost.
+#[tauri::command(async)]
+pub fn stop_capture(state: State<CaptureState>) -> Result<Vec<PacketRow>, String> {
     let running = state.slot.lock().map_err(|_| "capture state is locked")?.take();
-    if let Some(r) = running {
-        r.stop.store(true, Ordering::Relaxed);
-        let _ = r.handle.join();
-    }
-    Ok(())
+    let Some(r) = running else { return Ok(vec![]) };
+    r.stop.store(true, Ordering::Relaxed);
+    let _ = r.handle.join();
+    let rows = std::mem::take(&mut *r.shared.rows.lock().map_err(|_| "capture buffer is locked")?);
+    Ok(rows)
 }
 
 fn run(mut cap: Capture<pcap::Active>, stop: Arc<AtomicBool>, shared: Arc<Shared>) {
@@ -210,10 +200,10 @@ fn run(mut cap: Capture<pcap::Active>, stop: Arc<AtomicBool>, shared: Arc<Shared
         match cap.next_packet() {
             Ok(p) => {
                 let now = now_secs();
-                if let Some(mut row) = summarize(p.data, p.header.len, now) {
+                if let Some((mut row, cut)) = summarize(p.data, p.header.len, now) {
                     row.id = next_id;
                     if let Ok(mut frames) = shared.frames.lock() {
-                        frames.push_back(Frame { id: next_id, time: now, wire_len: p.header.len, data: p.data.to_vec(), truncated: p.header.caplen < p.header.len });
+                        frames.push_back(Frame { id: next_id, time: now, wire_len: p.header.len, data: p.data.to_vec(), truncated: p.header.caplen < p.header.len || cut });
                         if frames.len() > MAX_FRAMES {
                             frames.pop_front();
                         }
@@ -243,37 +233,6 @@ fn now_secs() -> f64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0)
 }
 
-fn hex_head(bytes: &[u8]) -> String {
-    bytes.iter().take(32).map(|b| format!("{b:02x}")).collect()
-}
-
-fn summarize(data: &[u8], wire_len: u32, time: f64) -> Option<PacketRow> {
-    let parsed = SlicedPacket::from_ethernet(data).ok()?;
-    let (src, dst, ip_proto) = match parsed.net.as_ref()? {
-        NetSlice::Ipv4(ip) => {
-            let h = ip.header();
-            (h.source_addr().to_string(), h.destination_addr().to_string(), "IPv4")
-        }
-        NetSlice::Ipv6(ip) => {
-            let h = ip.header();
-            (h.source_addr().to_string(), h.destination_addr().to_string(), "IPv6")
-        }
-        _ => return None,
-    };
-    let (protocol, src_port, dst_port) = match parsed.transport.as_ref() {
-        Some(TransportSlice::Tcp(t)) => ("TCP", Some(t.source_port()), Some(t.destination_port())),
-        Some(TransportSlice::Udp(u)) => ("UDP", Some(u.source_port()), Some(u.destination_port())),
-        Some(TransportSlice::Icmpv4(_)) | Some(TransportSlice::Icmpv6(_)) => ("ICMP", None, None),
-        None => (ip_proto, None, None),
-    };
-    let payload: &[u8] = match parsed.transport.as_ref() {
-        Some(TransportSlice::Tcp(t)) => t.payload(),
-        Some(TransportSlice::Udp(u)) => u.payload(),
-        _ => &[],
-    };
-    Some(PacketRow { id: 0, time, src, dst, src_port, dst_port, protocol: protocol.into(), length: wire_len, head: hex_head(payload) })
-}
-
 /// Turns driver errors into something a person can act on.
 fn explain(e: pcap::Error) -> String {
     let raw = e.to_string();
@@ -287,30 +246,8 @@ fn explain(e: pcap::Error) -> String {
     }
 }
 
-fn is_local_v4(ip: Ipv4Addr) -> bool {
-    ip.is_private() || ip.is_loopback() || ip.is_link_local()
-}
-
-fn is_local_v6(ip: Ipv6Addr) -> bool {
-    let first = ip.segments()[0];
-    ip.is_loopback() || (first & 0xfe00) == 0xfc00 || (first & 0xffc0) == 0xfe80
-}
-
-/// Replay is for testing your own network, so both ends of the packet must be devices inside it.
-/// A packet from or to an internet address is refused, so the app cannot put forged internet
-/// traffic onto your network.
-fn both_ends_local(data: &[u8]) -> Result<(), String> {
-    let parsed = SlicedPacket::from_ethernet(data).map_err(|_| "This packet cannot be read, so it was not sent.".to_string())?;
-    let ok = match parsed.net.as_ref() {
-        Some(NetSlice::Ipv4(ip)) => is_local_v4(ip.header().source_addr()) && is_local_v4(ip.header().destination_addr()),
-        Some(NetSlice::Ipv6(ip)) => is_local_v6(ip.header().source_addr()) && is_local_v6(ip.header().destination_addr()),
-        _ => false,
-    };
-    if ok { Ok(()) } else { Err("Replay only works for packets between two devices on your own network. This one involves an address outside it.".into()) }
-}
-
 /// Sends one saved packet once, on the adapter it was captured from.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn replay_packet(state: State<CaptureState>, id: u64) -> Result<String, String> {
     let (adapter, shared) = state
         .last
@@ -340,7 +277,7 @@ pub fn replay_packet(state: State<CaptureState>, id: u64) -> Result<String, Stri
 
 /// Builds a .pcap file from the saved packets with these ids (in the order given) and returns it
 /// as base64 text, which is how the window receives binary data.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn export_pcap(state: State<CaptureState>, ids: Vec<u64>) -> Result<String, String> {
     use base64::Engine;
     let (_, shared) = state.last.lock().map_err(|_| "capture state is locked")?.clone().ok_or("Capture some traffic first.")?;
@@ -361,29 +298,32 @@ pub fn export_pcap(state: State<CaptureState>, ids: Vec<u64>) -> Result<String, 
 #[serde(rename_all = "camelCase")]
 pub struct ImportResult {
     pub rows: Vec<PacketRow>,
-    /// Records in the file, including ones that were not shown.
+    /// Records in the file, including ones that were not looked at.
     pub total_records: usize,
+    /// Records that were looked at (the first ones, up to a limit). Less than `total_records`
+    /// only when the file was really cut short.
+    pub read_records: usize,
 }
 
 /// Opens a .pcap file (sent as base64). The packets become the saved capture, so they can be
 /// exported again, but not replayed.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn import_pcap(state: State<CaptureState>, data: String) -> Result<ImportResult, String> {
-    use base64::Engine;
     if state.slot.lock().map_err(|_| "capture state is locked")?.is_some() {
         return Err("Stop the capture before opening a file.".into());
     }
-    let bytes = base64::engine::general_purpose::STANDARD.decode(data.trim()).map_err(|_| "The file could not be read.".to_string())?;
+    let bytes = pcapfile::decode_upload(&data)?;
     let (recs, total_records) = pcapfile::read(&bytes, MAX_IMPORT)?;
+    let read_records = recs.len();
     let shared = Arc::new(Shared::default());
     let mut rows = Vec::new();
     {
         let mut frames = shared.frames.lock().map_err(|_| "capture buffer is locked")?;
         let mut next_id = 1u64;
         for r in recs {
-            if let Some(mut row) = summarize(&r.data, r.wire_len, r.time) {
+            if let Some((mut row, cut)) = summarize(&r.data, r.wire_len, r.time) {
                 row.id = next_id;
-                frames.push_back(Frame { id: next_id, time: r.time, wire_len: r.wire_len, truncated: (r.data.len() as u32) < r.wire_len, data: r.data });
+                frames.push_back(Frame { id: next_id, time: r.time, wire_len: r.wire_len, truncated: (r.data.len() as u32) < r.wire_len || cut, data: r.data });
                 next_id += 1;
                 rows.push(row);
             }
@@ -393,5 +333,5 @@ pub fn import_pcap(state: State<CaptureState>, data: String) -> Result<ImportRes
         return Err("No IPv4 or IPv6 packets were found in that file.".into());
     }
     *state.last.lock().map_err(|_| "capture state is locked")? = Some((String::new(), shared));
-    Ok(ImportResult { rows, total_records })
+    Ok(ImportResult { rows, total_records, read_records })
 }

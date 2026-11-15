@@ -1,4 +1,10 @@
 mod capture;
+mod netaddr;
+mod packet;
+mod scannet;
+mod settingscore;
+mod storefile;
+mod updatever;
 mod pcapfile;
 mod filters;
 mod geo;
@@ -46,6 +52,7 @@ pub fn run() {
             vpn::vpn_set_option,
             hotspot::hotspot_status,
             hotspot::hotspot_save,
+            hotspot::hotspot_prefs,
             hotspot::hotspot_start,
             hotspot::hotspot_stop,
             hotspot::hotspot_job,

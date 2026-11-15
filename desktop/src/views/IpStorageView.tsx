@@ -225,7 +225,7 @@ function EntryForm({
           onChange={(e) => setNote(e.target.value)}
           rows={3}
           className="rounded-md border border-border-input bg-surface px-3 py-2 text-sm text-text placeholder:text-muted
-            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
         />
       </div>
       <div className="flex justify-end gap-2">

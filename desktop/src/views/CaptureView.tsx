@@ -20,11 +20,46 @@ import {
 } from "@/lib/export";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { NetworkIcon } from "@/components/ui/icons";
+import { Checkbox } from "@/components/ui/Checkbox";
+import "flag-icons/css/flag-icons.min.css";
+
+type ColumnId = "time" | "source" | "destination" | "country" | "protocol" | "bytes";
+const COLUMNS: { id: ColumnId; label: string }[] = [
+  { id: "time", label: "Time" },
+  { id: "source", label: "Source" },
+  { id: "destination", label: "Destination" },
+  { id: "country", label: "Country" },
+  { id: "protocol", label: "Protocol" },
+  { id: "bytes", label: "Bytes" },
+];
+const COLUMNS_KEY = "capture-columns";
+
+function loadColumns(): ColumnId[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(COLUMNS_KEY) ?? "null");
+    if (Array.isArray(raw)) {
+      const ok = COLUMNS.map((c) => c.id).filter((id) => raw.includes(id));
+      if (ok.length > 0) return ok;
+    }
+  } catch {
+    /* unreadable: use the default */
+  }
+  return COLUMNS.map((c) => c.id);
+}
+
+/** Flag drawn from files shipped inside the app, so it also works offline and on Windows, which has no flag emoji. */
+function Flag({ code }: { code: string }) {
+  if (!/^[A-Za-z]{2}$/.test(code)) return <span className="inline-block h-3.5 w-5 rounded-sm bg-white/10" aria-hidden="true" />;
+  return <span className={`fi fi-${code.toLowerCase()} inline-block h-3.5 w-5 rounded-sm bg-cover shadow-[0_0_0_1px_rgba(255,255,255,.18)]`} aria-hidden="true" />;
+}
 
 const MAX_ROWS = 1000;
 /** The window reads at most this much of a capture file. */
 const MAX_FILE_BYTES = 32 * 1024 * 1024;
-const MAX_OPEN_ROWS = 5000;
+/** The app side looks up at most this many addresses per request. */
+const GEO_CHUNK = 500;
+/** Remembered lookups are dropped past this, so a very long capture cannot grow without bound. */
+const GEO_REMEMBER = 20000;
 
 function clock(t: number) {
   const d = new Date(t * 1000);
@@ -56,6 +91,10 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
   const [replayError, setReplayError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [geo, setGeo] = useState<Record<string, Country>>({});
+  const [cols, setCols] = useState<ColumnId[]>(loadColumns);
+  const [colsOpen, setColsOpen] = useState(false);
+  const colsBox = useRef<HTMLDivElement>(null);
+  const show = (id: ColumnId) => cols.includes(id);
   const asked = useRef(new Set<string>());
   const tableEnd = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -79,9 +118,65 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
       if (!isLocalAddress(far) && !asked.current.has(far)) fresh.add(far);
     }
     if (fresh.size === 0) return;
-    fresh.forEach((ip) => asked.current.add(ip));
-    api.geoLookup([...fresh]).then((found) => setGeo((g) => ({ ...g, ...found }))).catch(() => {});
+    if (asked.current.size > GEO_REMEMBER) {
+      asked.current.clear();
+      setGeo({});
+    }
+    const all = [...fresh];
+    for (let i = 0; i < all.length; i += GEO_CHUNK) {
+      const chunk = all.slice(i, i + GEO_CHUNK); // only addresses really sent are marked as asked
+      chunk.forEach((ip) => asked.current.add(ip));
+      api
+        .geoLookup(chunk)
+        .then((found) => setGeo((g) => ({ ...g, ...found })))
+        .catch(() => chunk.forEach((ip) => asked.current.delete(ip))); // try again later
+    }
   }, []);
+
+  function toggleColumn(id: ColumnId) {
+    const next = COLUMNS.map((c) => c.id).filter((c) => (c === id ? !cols.includes(c) : cols.includes(c)));
+    if (next.length === 0) return; // keep at least one column
+    setCols(next);
+    try {
+      localStorage.setItem(COLUMNS_KEY, JSON.stringify(next));
+    } catch {
+      /* not remembered; still works for this run */
+    }
+  }
+
+  useEffect(() => {
+    if (!colsOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!colsBox.current?.contains(e.target as Node)) setColsOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setColsOpen(false);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [colsOpen]);
+
+  const resetGeo = useCallback(() => {
+    asked.current.clear();
+    setGeo({});
+  }, []);
+
+  /** Adds packets from the app side to the table. */
+  const ingest = useCallback(
+    (fresh: PacketRow[]) => {
+      if (fresh.length === 0) return;
+      onSeen(fresh);
+      askGeo(fresh);
+      setTotal((n) => n + fresh.length);
+      setRows((prev) => {
+        const next = prev.concat(fresh);
+        return next.length > MAX_ROWS ? next.slice(next.length - MAX_ROWS) : next;
+      });
+    },
+    [onSeen, askGeo]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -117,15 +212,7 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
       try {
         const poll = await api.pollCapture();
         if (cancelled) return;
-        if (poll.rows.length > 0) {
-          onSeen(poll.rows);
-          askGeo(poll.rows);
-          setTotal((n) => n + poll.rows.length);
-          setRows((prev) => {
-            const next = prev.concat(poll.rows);
-            return next.length > MAX_ROWS ? next.slice(next.length - MAX_ROWS) : next;
-          });
-        }
+        ingest(poll.rows);
         if (!poll.running) {
           setRunning(false);
           if (poll.error) setError(poll.error);
@@ -142,7 +229,7 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [running, onSeen, askGeo]);
+  }, [running, ingest]);
 
   // Follow new packets only while the user is at the bottom, so they can scroll back and read.
   const stick = useRef(true);
@@ -172,6 +259,7 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
       api.saveStore("capture-filter", cf).catch(() => {});
       setRows([]);
       setTotal(0);
+      resetGeo();
       setFromFile(null);
       setNotice(null);
       setRunning(true);
@@ -182,19 +270,20 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
     } finally {
       setBusy(false);
     }
-  }, [adapter, cf]);
+  }, [adapter, cf, resetGeo]);
 
   const stop = useCallback(async () => {
     setBusy(true);
     try {
-      await api.stopCapture();
+      const last = await api.stopCapture(); // the final moments of traffic come back with the stop
+      ingest(last);
       setRunning(false);
     } catch (e) {
       setError(String(e));
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [ingest]);
 
   async function copy(text: string, what: string) {
     setNotice((await copyText(text)) ? `Copied ${what}.` : "Copying was blocked by Windows. Select the text and press Ctrl+C instead.");
@@ -221,11 +310,15 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
       setRows(res.rows);
       setTotal(res.rows.length);
       setFromFile(file.name);
+      resetGeo();
       onSeen(res.rows);
       askGeo(res.rows);
-      const cut = res.totalRecords > res.rows.length ? ` Showing the first ${MAX_OPEN_ROWS.toLocaleString()} of ${res.totalRecords.toLocaleString()}.` : "";
+      // Only say "first N of M" when records were really left unread. Records that are not IP
+      // (ARP and the like) are counted separately.
+      const cut = res.totalRecords > res.readRecords ? ` Showing the first ${res.readRecords.toLocaleString()} of ${res.totalRecords.toLocaleString()}.` : "";
+      const other = res.readRecords > res.rows.length ? ` ${(res.readRecords - res.rows.length).toLocaleString()} non-IP packets were skipped.` : "";
       const big = file.size > MAX_FILE_BYTES ? " Only the first 32 MB of the file was read." : "";
-      setNotice(`Opened ${file.name}: ${res.rows.length.toLocaleString()} packets.${cut}${big}`);
+      setNotice(`Opened ${file.name}: ${res.rows.length.toLocaleString()} packets.${cut}${other}${big}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -247,7 +340,7 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
             disabled={running || adapters.length === 0}
             onChange={(e) => setAdapter(e.target.value)}
             className="h-10 min-w-0 rounded-md border border-border-input bg-surface px-3 text-sm text-text
-              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft disabled:opacity-50"
           >
             {adapters.length === 0 && <option value="">No adapters found</option>}
             {adapters.map((a) => (
@@ -291,7 +384,7 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
             type="button"
             aria-expanded={cfOpen}
             onClick={() => setCfOpen((o) => !o)}
-            className="rounded-md text-sm font-medium text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="rounded-md text-sm font-medium text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
           >
             {cfOpen ? "▾" : "▸"} Capture filter
           </button>
@@ -310,7 +403,7 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
                 value={cf.protocol}
                 disabled={running}
                 onChange={(e) => setCf({ ...cf, protocol: e.target.value as Proto })}
-                className="h-10 rounded-md border border-border-input bg-surface px-3 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+                className="h-10 rounded-md border border-border-input bg-surface px-3 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft disabled:opacity-50"
               >
                 {PROTOCOLS.map((p) => (
                   <option key={p} value={p}>{p === "any" ? "Any protocol" : p}</option>
@@ -331,7 +424,7 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
                   inputMode={key === "address" || key === "hex" ? "text" : "numeric"}
                   aria-invalid={cfProblems[key] ? true : undefined}
                   onChange={(e) => setCf({ ...cf, [key]: e.target.value })}
-                  className={`h-10 rounded-md border bg-surface px-3 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50
+                  className={`h-10 rounded-md border bg-surface px-3 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft disabled:opacity-50
                     ${cfProblems[key] ? "border-danger" : "border-border-input"}`}
                 />
                 <span className={`text-xs ${cfProblems[key] ? "text-danger" : "text-muted"}`}>{cfProblems[key] ?? hint}</span>
@@ -355,7 +448,7 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
             aria-pressed={f.enabled}
             onClick={() => onToggle(f.id)}
             className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors duration-fast
-              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent
+              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft
               ${f.enabled ? "border-accent bg-surface text-text" : "border-border text-muted hover:text-text"}`}
           >
             {f.enabled ? "✓ " : ""}{f.name}
@@ -396,6 +489,26 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
           Copy table
         </Button>
         <span role="status" className="text-sm text-muted">{notice}</span>
+        <div ref={colsBox} className="relative ml-auto">
+          <Button size="sm" variant="secondary" aria-expanded={colsOpen} aria-haspopup="true" onClick={() => setColsOpen((o) => !o)}>
+            Columns
+          </Button>
+          {colsOpen && (
+            <div role="group" aria-label="Visible columns" className="glass-strong anim-pop absolute right-0 top-full z-30 mt-2 w-52 rounded-lg p-3">
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">Visible columns</p>
+              <ul className="flex flex-col gap-1">
+                {COLUMNS.map((c) => (
+                  <li key={c.id}>
+                    <label className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-sm text-text transition-colors duration-fast hover:bg-white/[0.07]">
+                      <Checkbox checked={show(c.id)} onChange={() => toggleColumn(c.id)} />
+                      {c.label}
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
       </div>
 
       {error && (
@@ -418,15 +531,15 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
             }
           />
         ) : (
-          <table className="w-full min-w-[44rem] text-left font-mono text-xs">
-            <thead className="sticky top-0 bg-surface text-muted">
+          <table className="w-full min-w-[32rem] text-left font-mono text-xs">
+            <thead className="sticky top-0 bg-surface-strong text-muted">
               <tr className="border-b border-border">
-                <th scope="col" className="px-3 py-2 font-semibold">Time</th>
-                <th scope="col" className="px-3 py-2 font-semibold">Source</th>
-                <th scope="col" className="px-3 py-2 font-semibold">Destination</th>
-                <th scope="col" className="px-3 py-2 font-semibold">Country</th>
-                <th scope="col" className="px-3 py-2 font-semibold">Protocol</th>
-                <th scope="col" className="px-3 py-2 text-right font-semibold">Bytes</th>
+                {show("time") && <th scope="col" className="px-3 py-2 font-semibold">Time</th>}
+                {show("source") && <th scope="col" className="px-3 py-2 font-semibold">Source</th>}
+                {show("destination") && <th scope="col" className="px-3 py-2 font-semibold">Destination</th>}
+                {show("country") && <th scope="col" className="px-3 py-2 font-semibold">Country</th>}
+                {show("protocol") && <th scope="col" className="px-3 py-2 font-semibold">Protocol</th>}
+                {show("bytes") && <th scope="col" className="px-3 py-2 text-right font-semibold">Bytes</th>}
                 <th scope="col" className="px-3 py-2"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
@@ -440,17 +553,26 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
                 });
                 return (
                   <tr key={r.id} className="border-b border-border last:border-0">
-                    <td className="px-3 py-1.5 text-muted" {...cellCopy(clock(r.time), "the time")}>{clock(r.time)}</td>
-                    <td className="px-3 py-1.5 text-text" {...cellCopy(endpoint(r.src, r.srcPort), "the source")}>{endpoint(r.src, r.srcPort)}</td>
-                    <td className="px-3 py-1.5 text-text" {...cellCopy(endpoint(r.dst, r.dstPort), "the destination")}>{endpoint(r.dst, r.dstPort)}</td>
-                    <td className="px-3 py-1.5 text-muted">
-                      {(() => {
-                        const hit = geo[isLocalAddress(r.src) ? r.dst : r.src];
-                        return hit ? <span title={hit.name}>{hit.code}</span> : "";
-                      })()}
-                    </td>
-                    <td className="px-3 py-1.5 text-muted">{r.protocol}</td>
-                    <td className="px-3 py-1.5 text-right text-muted" {...cellCopy(String(r.length), "the size")}>{r.length}</td>
+                    {show("time") && <td className="px-3 py-1.5 text-muted" {...cellCopy(clock(r.time), "the time")}>{clock(r.time)}</td>}
+                    {show("source") && <td className="px-3 py-1.5 text-text" {...cellCopy(endpoint(r.src, r.srcPort), "the source")}>{endpoint(r.src, r.srcPort)}</td>}
+                    {show("destination") && <td className="px-3 py-1.5 text-text" {...cellCopy(endpoint(r.dst, r.dstPort), "the destination")}>{endpoint(r.dst, r.dstPort)}</td>}
+                    {show("country") && (
+                      <td className="px-3 py-1.5 text-text">
+                        {(() => {
+                          const hit = geo[isLocalAddress(r.src) ? r.dst : r.src];
+                          return hit ? (
+                            <span className="inline-flex items-center gap-2" title={hit.code}>
+                              <Flag code={hit.code} />
+                              <span className="font-sans">{hit.name}</span>
+                            </span>
+                          ) : (
+                            ""
+                          );
+                        })()}
+                      </td>
+                    )}
+                    {show("protocol") && <td className="px-3 py-1.5 text-muted">{r.protocol}</td>}
+                    {show("bytes") && <td className="px-3 py-1.5 text-right text-muted" {...cellCopy(String(r.length), "the size")}>{r.length}</td>}
                     <td className="whitespace-nowrap px-3 py-1 text-right">
                       <Button
                         size="sm"

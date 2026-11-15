@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type VpnStatus, type VpnTunnel } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
 import { Badge } from "@/components/ui/Badge";
 
 const NAME_OK = /^[A-Za-z0-9_=+.-]{1,32}$/;
@@ -164,7 +165,7 @@ export function VpnView() {
       )}
 
       <div className="grid min-h-0 flex-1 grid-cols-[14rem_1fr] gap-4 max-md:grid-cols-1">
-        <section aria-label="Tunnels" className="flex min-h-0 flex-col rounded-lg border border-border bg-surface">
+        <section aria-label="Tunnels" className="flex min-h-0 flex-col glass rounded-lg">
           <h2 className="border-b border-border px-4 py-3 text-sm font-semibold text-text">Tunnels</h2>
           <ul className="min-h-0 flex-1 overflow-auto p-2">
             {status?.tunnels.length === 0 && (
@@ -180,8 +181,8 @@ export function VpnView() {
                     setEditing(false);
                   }}
                   aria-current={t.name === selected ? "true" : undefined}
-                  className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent
-                    ${t.name === selected ? "bg-bg text-text" : "text-muted hover:bg-bg hover:text-text"}`}
+                  className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft
+                    ${t.name === selected ? "bg-white/10 text-text" : "text-muted hover:bg-white/10 hover:text-text"}`}
                 >
                   <span
                     aria-hidden="true"
@@ -221,7 +222,7 @@ export function VpnView() {
           </div>
         </section>
 
-        <section aria-label="Tunnel details" className="min-h-0 overflow-auto rounded-lg border border-border bg-surface p-5">
+        <section aria-label="Tunnel details" className="min-h-0 overflow-auto glass rounded-lg p-5">
           {!tunnel && <p className="text-sm text-muted">Pick a tunnel on the left, or add one.</p>}
           {tunnel && (
             <div role="tablist" aria-label="Tunnel sections" className="mb-4 flex gap-2">
@@ -234,8 +235,8 @@ export function VpnView() {
                   aria-selected={tab === t}
                   aria-controls={`vpn-panel-${t}`}
                   onClick={() => setTab(t)}
-                  className={`rounded-md px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent
-                    ${tab === t ? "bg-bg font-semibold text-text" : "text-muted hover:bg-bg hover:text-text"}`}
+                  className={`rounded-md px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft
+                    ${tab === t ? "bg-white/10 font-semibold text-text" : "text-muted hover:bg-white/10 hover:text-text"}`}
                 >
                   {t === "details" ? "Details" : "Log"}
                 </button>
@@ -260,7 +261,7 @@ export function VpnView() {
               <pre
                 tabIndex={0}
                 aria-label={`Log for ${tunnel.name}`}
-                className="max-h-96 overflow-auto whitespace-pre-wrap break-all rounded-md border border-border bg-bg p-3 text-xs text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                className="max-h-96 overflow-auto whitespace-pre-wrap break-all rounded-md border border-border bg-black/25 p-3 text-xs text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
               >
                 {log || "No log yet. It appears after the first time you activate this tunnel."}
               </pre>
@@ -301,9 +302,8 @@ export function VpnView() {
                     Edit
                   </Button>
                   <label className="mt-3 flex items-start gap-2 text-sm text-text">
-                    <input
-                      type="checkbox"
-                      className="mt-0.5 h-4 w-4 shrink-0 accent-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    <Checkbox
+                      className="mt-0.5"
                       checked={tunnel.killswitch}
                       disabled={busy || tunnel.active}
                       onChange={(e) => run(() => api.vpnSetOption(tunnel.name, e.target.checked))}
@@ -346,7 +346,7 @@ export function VpnView() {
       </div>
 
       {editing && tunnel && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div className="anim-fade fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm">
           <div
             role="dialog"
             aria-modal="true"
@@ -354,7 +354,7 @@ export function VpnView() {
             onKeyDown={(e) => {
               if (e.key === "Escape") setEditing(false);
             }}
-            className="flex max-h-full w-full max-w-xl flex-col gap-3 overflow-auto rounded-lg border border-border bg-surface p-5"
+            className="glass-strong anim-pop flex max-h-full w-full max-w-xl flex-col gap-3 overflow-auto rounded-lg p-5"
           >
             <h2 id="vpn-edit-title" className="text-sm font-semibold text-text">
               Edit tunnel: {tunnel.name}
@@ -370,7 +370,7 @@ export function VpnView() {
               spellCheck={false}
               rows={16}
               disabled={tunnel.active || saving}
-              className="min-h-[12rem] w-full rounded-md border border-border bg-bg p-3 font-mono text-xs text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="min-h-[12rem] w-full rounded-md border border-border bg-black/25 p-3 font-mono text-xs text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
             />
             {editError && (
               <p role="alert" className="text-sm text-danger">

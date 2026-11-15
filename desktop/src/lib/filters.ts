@@ -43,9 +43,57 @@ export function blankFilter(id: string): Filter {
   return { ...base, id, name: "", protocol: "any" };
 }
 
-const isFullAddress = (a: string) => (a.includes(":") ? !a.endsWith(":") : /^\d{1,3}(\.\d{1,3}){3}$/.test(a));
-const sameAddress = (filter: string, ip: string) =>
-  isFullAddress(filter) ? ip.toLowerCase() === filter.toLowerCase() : ip.toLowerCase().startsWith(filter.toLowerCase());
+const V4_FULL = /^(0|[1-9]\d{0,2})(\.(0|[1-9]\d{0,2})){3}$/;
+
+/** Expands an IPv6 address to its 8 groups, or null if it is not a complete, valid address. */
+function v6Groups(a: string): number[] | null {
+  if (!a.includes(":") || /[^0-9a-fA-F:.]/.test(a)) return null;
+  let text = a;
+  const tail = text.match(/(\d+\.\d+\.\d+\.\d+)$/); // ::ffff:1.2.3.4
+  if (tail) {
+    if (!V4_FULL.test(tail[1]) || tail[1].split(".").some((n) => Number(n) > 255)) return null;
+    const [p, q, r, s] = tail[1].split(".").map(Number);
+    text = text.slice(0, text.length - tail[1].length) + ((p << 8) | q).toString(16) + ":" + ((r << 8) | s).toString(16);
+  }
+  if (text.includes(".")) return null;
+  const halves = text.split("::");
+  if (halves.length > 2) return null;
+  const part = (h: string) => (h === "" ? [] : h.split(":"));
+  const head = part(halves[0]);
+  const rest = halves.length === 2 ? part(halves[1]) : [];
+  const all = head.concat(rest);
+  if (all.some((g) => !/^[0-9a-fA-F]{1,4}$/.test(g))) return null;
+  if (halves.length === 1 ? head.length !== 8 : head.length + rest.length > 7) return null;
+  const nums = (g: string[]) => g.map((x) => parseInt(x, 16));
+  return [...nums(head), ...Array(halves.length === 2 ? 8 - all.length : 0).fill(0), ...nums(rest)];
+}
+
+/** True if the text is a complete, valid IPv6 address (with or without "::"). */
+export const isCompleteIpv6 = (a: string) => v6Groups(a) !== null;
+
+/**
+ * A complete address matches exactly. An IPv6 address ending in "::" (such as fe80::) is treated
+ * as a prefix, since it is far more useful that way.
+ */
+const isFullAddress = (a: string) => (a.includes(":") ? isCompleteIpv6(a) && !a.endsWith("::") : V4_FULL.test(a));
+
+const sameAddress = (filter: string, ip: string) => {
+  const f = filter.toLowerCase();
+  const x = ip.toLowerCase();
+  if (f.includes(":")) {
+    if (!isFullAddress(f)) return x.startsWith(f);
+    const g = v6Groups(f);
+    const h = v6Groups(x);
+    return g !== null && h !== null && g.every((n, i) => n === h[i]);
+  }
+  // IPv4 (or a bare number): "10.1" means 10.1.x.x, never 10.10.x.x.
+  if (/^\d{1,3}(\.\d{1,3}){0,3}\.?$/.test(f) && !x.includes(":")) {
+    const want = f.replace(/\.$/, "").split(".").map(Number);
+    const have = x.split(".").map(Number);
+    return want.every((n, i) => n === have[i]);
+  }
+  return x.startsWith(f);
+};
 
 export function normalizeHex(text: string): string {
   return text.replace(/[\s:,-]/g, "").toLowerCase();
@@ -58,7 +106,8 @@ function headHas(head: string, needle: string): boolean {
 }
 
 export function matches(f: Filter, r: PacketRow): boolean {
-  if (f.protocol !== "any" && r.protocol !== f.protocol) return false;
+  // The ICMP filter covers both the IPv4 and IPv6 flavours.
+  if (f.protocol !== "any" && r.protocol !== f.protocol && !(f.protocol === "ICMP" && r.protocol === "ICMPv6")) return false;
   const side = (src: boolean, dst: boolean) => (f.direction === "from" ? src : f.direction === "to" ? dst : src || dst);
   if (f.port.trim() !== "") {
     const p = Number(f.port);

@@ -25,9 +25,19 @@ pub struct Config {
 
 pub const MAX_CONF_BYTES: usize = 16 * 1024;
 
-/// WireGuard's own rule for tunnel names, which are also the Windows service names.
+/// True for names Windows reserves for devices (CON, PRN, AUX, NUL, COM1-9, LPT1-9), with or without an extension.
+fn is_reserved_device(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or("").trim_end().to_ascii_lowercase();
+    matches!(stem.as_str(), "con" | "prn" | "aux" | "nul")
+        || (stem.len() == 4 && (stem.starts_with("com") || stem.starts_with("lpt")) && matches!(stem.as_bytes()[3], b'1'..=b'9'))
+}
+
+/// WireGuard's own rule for tunnel names, which are also the Windows service names, minus Windows device names.
 pub fn valid_name(name: &str) -> bool {
-    !name.is_empty() && name.len() <= 32 && name.chars().all(|c| c.is_ascii_alphanumeric() || "_=+.-".contains(c))
+    !name.is_empty()
+        && name.len() <= 32
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || "_=+.-".contains(c))
+        && !is_reserved_device(name)
 }
 
 fn key(v: &str, what: &str) -> Result<String, String> {
