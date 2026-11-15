@@ -1,4 +1,4 @@
-import { isCompleteIpv6, normalizeHex, type Proto } from "./filters.ts";
+import { isCompleteIpv6, normalizeHex, parsePorts, portsToBpf, type Proto } from "./filters.ts";
 
 /** What the network driver keeps. Packets that do not match are never recorded at all. */
 export interface CaptureFilter {
@@ -17,7 +17,7 @@ const V4 = /^(0|[1-9]\d{0,2})(\.(0|[1-9]\d{0,2})){3}$/;
 export function captureProblems(f: CaptureFilter): { port?: string; address?: string; minBytes?: string; hex?: string } {
   const out: { port?: string; address?: string; minBytes?: string; hex?: string } = {};
   const port = f.port.trim();
-  if (port !== "" && !(/^\d+$/.test(port) && Number(port) >= 1 && Number(port) <= 65535)) out.port = "Use a port from 1 to 65535, or leave it empty.";
+  if (port !== "" && parsePorts(port) === null) out.port = "Use ports from 1 to 65535 separated by commas, ranges like 100-200 allowed, or leave it empty.";
   const a = f.address.trim();
   if (a !== "") {
     const v4ok = V4.test(a) && a.split(".").every((n) => Number(n) <= 255);
@@ -58,7 +58,7 @@ export function toBpf(f: CaptureFilter): string {
   else if (f.protocol === "TCP") parts.push("tcp");
   else if (f.protocol === "UDP") parts.push("udp");
   else if (f.protocol === "ICMP") parts.push("(icmp or icmp6)");
-  if (f.port.trim() !== "") parts.push(`port ${Number(f.port)}`);
+  if (f.port.trim() !== "") parts.push(portsToBpf(f.port));
   if (f.address.trim() !== "") parts.push(`host ${f.address.trim()}`);
   if (f.minBytes.trim() !== "") parts.push(`greater ${Number(f.minBytes)}`);
   return parts.join(" and ");
@@ -73,7 +73,7 @@ export function fromStoredCapture(raw: unknown): CaptureFilter {
   const r = (raw ?? {}) as Record<string, unknown>;
   const f: CaptureFilter = {
     protocol: (["any", "TCP", "UDP", "ICMP"] as const).includes(r.protocol as Proto) ? (r.protocol as Proto) : "any",
-    port: String(r.port ?? "").slice(0, 5),
+    port: String(r.port ?? "").slice(0, 200),
     address: String(r.address ?? "").slice(0, 45),
     minBytes: String(r.minBytes ?? "").slice(0, 5),
     hex: String(r.hex ?? "").slice(0, 40),

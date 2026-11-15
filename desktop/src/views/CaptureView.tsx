@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, type Adapter, type Country, type PacketRow } from "@/lib/api";
-import { matchesAny, type Filter } from "@/lib/filters";
+import { api, type Adapter, type Country, type IpDetails, type PacketRow } from "@/lib/api";
+import { matchesAny, type Filter, type Lookup } from "@/lib/filters";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import {
@@ -103,22 +103,10 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
   const [cols, setCols] = useState<ColumnId[]>(loadColumns);
   const [colsOpen, setColsOpen] = useState(false);
   const [tab, setTab] = useState<"all" | "filtered">("filtered");
-  const [ipsOpen, setIpsOpen] = useState(false);
-  const [serverPort, setServerPort] = useState(() => {
-    try {
-      return localStorage.getItem("capture-server-port") ?? "";
-    } catch {
-      return "";
-    }
-  });
-  const changePort = (v: string) => {
-    setServerPort(v);
-    try {
-      localStorage.setItem("capture-server-port", v);
-    } catch {
-      /* remembering the port is a convenience only */
-    }
-  };
+  // The IP list is the main view. The packet table stays hidden until you ask for it.
+  const [ipsOpen, setIpsOpen] = useState(true);
+  const [details, setDetails] = useState<Record<string, IpDetails>>({});
+  const lookupBusy = useRef(new Set<string>());
   const [clockNow, setClockNow] = useState(() => Date.now() / 1000);
   const ipBook = useRef<IpBook>(new Map());
   useEffect(() => {
@@ -129,6 +117,10 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
   const [ipVersion, setIpVersion] = useState(0);
   const filtersNow = useRef(filters);
   filtersNow.current = filters;
+  // Country and ISP filters ask what is known about an address so far.
+  const lookup = useMemo<Lookup>(() => ({ country: (ip) => geo[ip]?.code, isp: (ip) => details[ip]?.isp }), [geo, details]);
+  const lookupNow = useRef(lookup);
+  lookupNow.current = lookup;
   const colsBox = useRef<HTMLDivElement>(null);
   const show = (id: ColumnId) => cols.includes(id);
   const visibleWidth = COLUMNS.filter((c) => cols.includes(c.id)).reduce((n, c) => n + COL_WIDTH[c.id], 0) || 1;
@@ -149,7 +141,7 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
 
   /** What is left after the filters. The All Traffic tab ignores them, so hidden addresses still show up there. */
   const filteredRows = useMemo(() => {
-    const kept = rows.filter((r) => matchesAny(filters, r));
+    const kept = rows.filter((r) => matchesAny(filters, r, lookup));
     // Drop packets from addresses that are not holding a real conversation: local ones, and ones that only probe or ping.
     const book = ipBook.current;
     return kept.filter((r) => {
@@ -158,8 +150,8 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
       const e = book.get(far);
       return !!e && e.inbound >= ACTIVE_EACH_WAY && e.outbound >= ACTIVE_EACH_WAY;
     });
-  }, [rows, filters, ipVersion]);
-  const portNum = serverPort ? Number(serverPort) : null;
+  }, [rows, filters, ipVersion, lookup]);
+  const portNum = null;
   const allIps = useMemo(() => listBook(ipBook.current, false, portNum), [ipVersion, portNum]);
   const filteredIps = useMemo(() => listBook(ipBook.current, true, portNum), [ipVersion, portNum]);
 
@@ -223,6 +215,36 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
   }
 
   /** Reads Minecraft logs and saves each player's name as the label of the address they joined from. */
+  /** */
+  async function lookUp(list: string[]) {
+    const todo = list.filter((a) => !details[a] && !lookupBusy.current.has(a));
+    if (todo.length === 0) return;
+    // Addresses stay marked after a failure so a dead connection is not retried every second.
+    todo.forEach((a) => lookupBusy.current.add(a));
+    try {
+      const got = await api.ipDetails(todo);
+      setDetails((d) => ({ ...d, ...Object.fromEntries(got.map((g) => [g.address, g])) }));
+    } catch {
+      /* the City and ISP columns stay empty */
+    }
+  }
+
+  // City and ISP are always shown: look up each new address in the list a moment after it appears.
+  useEffect(() => {
+    const missing = [...allIps, ...filteredIps].map((i) => i.address).filter((a) => !details[a] && !lookupBusy.current.has(a));
+    if (missing.length === 0) return;
+    const t = window.setTimeout(() => void lookUp([...new Set(missing)].slice(0, 100)), 1500);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allIps, filteredIps, details]);
+
+  /** Forgets one address and its packets. It returns if it sends more. */
+  function deleteRow(address: string) {
+    ipBook.current.delete(address);
+    setIpVersion((v) => v + 1);
+    setRows((r) => r.filter((x) => x.src !== address && x.dst !== address));
+  }
+
   /** Forgets the addresses and packets seen so far. Labels saved in IP Storage stay. */
   function clearCaptured() {
     ipBook.current = new Map();
@@ -230,45 +252,6 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
     setRows([]);
     setTotal(0);
     setNotice("Cleared the captured addresses and packets. Saved labels were kept.");
-  }
-
-  async function importMinecraftLogs(files: File[]) {
-    if (files.length === 0) return;
-    setError(null);
-    try {
-      const merged = new Map<string, Set<string>>();
-      for (const f of files) {
-        for (const seen of parseMinecraftLog(await f.text())) {
-          const set = merged.get(seen.address) ?? new Set<string>();
-          seen.names.forEach((n) => set.add(n));
-          merged.set(seen.address, set);
-        }
-      }
-      if (merged.size === 0) {
-        setNotice("No player logins found. Pick the server's logs\\latest.log (lines like Steve[/1.2.3.4:5555] logged in).");
-        return;
-      }
-      const list = await loadEntries();
-      const byAddress = new Map(list.map((e) => [e.address, e]));
-      let added = 0, labelled = 0, kept = 0;
-      const next = [...list];
-      for (const [address, set] of merged) {
-        const label = labelFor([...set]);
-        const have = byAddress.get(address);
-        if (!have) {
-          next.push({ id: newEntryId(), address, note: label, createdAt: Date.now() });
-          added++;
-        } else if (!have.note) {
-          const i = next.findIndex((e) => e.address === address);
-          next[i] = { ...have, note: label };
-          labelled++;
-        } else kept++;
-      }
-      await saveEntries(next, list);
-      setNotice(`Read ${merged.size} address${merged.size === 1 ? "" : "es"} from the log: ${added} added, ${labelled} labelled${kept ? `, ${kept} already had a label and were left alone` : ""}.`);
-    } catch (e) {
-      setError(String(e));
-    }
   }
 
   const askGeo = useCallback((list: PacketRow[]) => {
@@ -329,7 +312,7 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
       if (fresh.length === 0) return;
       onSeen(fresh);
       askGeo(fresh);
-      absorb(ipBook.current, fresh, farOf, (r) => matchesAny(filtersNow.current, r));
+      absorb(ipBook.current, fresh, farOf, (r) => matchesAny(filtersNow.current, r, lookupNow.current));
       setIpVersion((v) => v + 1);
       setTotal((n) => n + fresh.length);
       setRows((prev) => {
@@ -456,7 +439,7 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
       const res = await api.importPcap(bytesToBase64(new Uint8Array(await part.arrayBuffer())));
       setRows(res.rows);
       ipBook.current = new Map();
-      absorb(ipBook.current, res.rows, farOf, (r) => matchesAny(filtersNow.current, r));
+      absorb(ipBook.current, res.rows, farOf, (r) => matchesAny(filtersNow.current, r, lookupNow.current));
       setIpVersion((v) => v + 1);
       setTotal(res.rows.length);
       setFromFile(file.name);
@@ -547,7 +530,7 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
         {!anyOn && filters.length > 0 && <span className="text-xs text-muted">None switched on, so everything shows.</span>}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className={`flex flex-wrap items-center gap-2 ${ipsOpen ? "hidden" : ""}`}>
         <span className="text-sm text-muted">Export {anyOn ? "matching" : "shown"} packets:</span>
         {(["CSV", "JSON", "TXT"] as const).map((kind) => (
           <Button
@@ -610,8 +593,8 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
       <div className="flex flex-wrap items-center gap-2">
         <div role="tablist" aria-label="Traffic view" className="flex items-center gap-2">
           {([
-            ["all", "All Traffic", rows.length],
-            ["filtered", "Filtered Traffic", filteredRows.length],
+            ["all", ipsOpen ? "Unfiltered IPs" : "All Traffic", ipsOpen ? allIps.length : rows.length],
+            ["filtered", ipsOpen ? "Filtered IPs" : "Filtered Traffic", ipsOpen ? filteredIps.length : filteredRows.length],
           ] as const).map(([id, text, n]) => (
             <button
               key={id}
@@ -630,17 +613,17 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
         </div>
         <button
           type="button"
-          aria-pressed={ipsOpen}
           onClick={() => setIpsOpen((o) => !o)}
-          title={tab === "all" ? "Every address seen, including the ones your filters hide" : "Only the addresses left after your filters"}
+          title={ipsOpen ? "Show the captured packets as a table" : "Go back to the list of IPs"}
           className={`ml-2 inline-flex items-center gap-2 rounded-pill border px-3 py-1.5 text-sm transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft ${
-            ipsOpen ? "border-accent text-text" : "border-border text-muted hover:bg-white/[0.06]"
+            "border-border text-muted hover:bg-white/[0.06]"
           }`}
         >
           <NetworkIcon className="h-4 w-4" />
-          {(tab === "all" ? allIps : filteredIps).length.toLocaleString()} IPs
+          {ipsOpen ? "Show traffic" : "Back to IPs"}
         </button>
         {ipsOpen && <span className="text-xs text-muted">Click a label to edit it. Labels are saved in IP Storage.</span>}
+        {ipsOpen && notice && <span role="status" className="text-xs text-muted">{notice}</span>}
       </div>
 
       {ipsOpen ? (
@@ -651,11 +634,10 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
             geo={geo}
             hidden={tab === "all" ? new Set(allIps.map((i) => i.address).filter((a) => !filteredIps.some((f) => f.address === a))) : undefined}
             onSave={saveName}
-            onImportLog={importMinecraftLogs}
-            port={serverPort}
             now={running ? clockNow : allIps.reduce((m, i) => Math.max(m, i.last), 0)}
             onClear={clearCaptured}
-            onPort={changePort}
+            onDelete={deleteRow}
+            details={details}
           />
         </Card>
       ) : (

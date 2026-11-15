@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from "react";
-import type { Country, PacketRow } from "@/lib/api";
+import { useEffect, useMemo, useState } from "react";
+import type { Country, IpDetails, PacketRow } from "@/lib/api";
 import { Flag } from "@/views/CaptureView";
 import { isLocalAddress } from "@/lib/export";
 import { NAME_MAX } from "@/lib/ipstore";
@@ -9,6 +9,8 @@ export interface IpSummary {
   packets: number;
   bytes: number;
   last: number;
+  /** When the first packet from this address arrived. */
+  first: number;
   /** Packets that passed the filters when they arrived. */
   passed: number;
   /** Packets sent to this computer by the address, and sent back to it. A player talks both ways, a scanner mostly does not. */
@@ -16,6 +18,8 @@ export interface IpSummary {
   outbound: number;
   /** Service ports (below 49152) seen on either end of packets with this address. Games use these; clients use random high ports. */
   ports: Set<number>;
+  /** TCP, UDP and so on, as seen in this address's packets. */
+  protocols: Set<string>;
 }
 
 /** Every address seen since the capture started. It is not cut at the table's row limit, so busy traffic never pushes a server out. */
@@ -28,7 +32,7 @@ export function absorb(book: IpBook, rows: PacketRow[], farOf: (r: PacketRow) =>
     let hit = book.get(a);
     if (!hit) {
       if (book.size >= limit) continue;
-      hit = { address: a, packets: 0, bytes: 0, last: r.time, passed: 0, inbound: 0, outbound: 0, ports: new Set() };
+      hit = { address: a, packets: 0, bytes: 0, last: r.time, first: r.time, passed: 0, inbound: 0, outbound: 0, ports: new Set(), protocols: new Set() };
       book.set(a, hit);
     }
     hit.packets++;
@@ -37,12 +41,16 @@ export function absorb(book: IpBook, rows: PacketRow[], farOf: (r: PacketRow) =>
     else hit.inbound++;
     if (r.time > hit.last) hit.last = r.time;
     if (passes(r)) hit.passed++;
+    hit.protocols.add(r.protocol);
     for (const pt of [r.srcPort, r.dstPort]) if (pt !== null && pt < 49152 && hit.ports.size < 40) hit.ports.add(pt);
   }
 }
 
 /** An address counts as an active connection once it has sent and received at least this many packets. */
 export const ACTIVE_EACH_WAY = 5;
+
+/** ...and been talking for at least this many seconds. A scanner that pings the port and gets answered is gone in a moment; a player stays. */
+export const ACTIVE_SPAN = 20;
 
 /** An address is online while its last packet is newer than this many seconds. */
 export const ONLINE_WITHIN = 15;
@@ -53,7 +61,7 @@ export function listBook(book: IpBook, onlyFiltered: boolean, serverPort: number
   // Only real connections from the internet: not local addresses, and not scanners that never really talk back.
   all = all.filter((i) => !isLocalAddress(i.address));
   if (serverPort !== null) all = all.filter((i) => i.ports.has(serverPort));
-  all = all.filter((i) => i.inbound >= ACTIVE_EACH_WAY && i.outbound >= ACTIVE_EACH_WAY);
+  all = all.filter((i) => i.inbound >= ACTIVE_EACH_WAY && i.outbound >= ACTIVE_EACH_WAY && i.last - i.first >= ACTIVE_SPAN);
   return (onlyFiltered ? all.filter((i) => i.passed > 0) : all).sort((x, y) => y.packets - x.packets);
 }
 
@@ -64,29 +72,52 @@ interface Props {
   /** Addresses the filters hide. Only passed for the All Traffic list. */
   hidden?: Set<string>;
   onSave: (address: string, value: string) => void;
-  /** Reads Minecraft server logs and labels each address with the players who used it. */
-  onImportLog?: (files: File[]) => void;
-  /** Only addresses that talked to this port on this computer. Empty means all. */
-  port: string;
-  onPort: (v: string) => void;
   /** Forgets every captured address (saved labels stay). */
   onClear: () => void;
+  /** Forgets one captured address. It comes back if it sends more packets. */
+  onDelete: (address: string) => void;
   /** The moment to judge online against, in seconds: now while capturing, the newest packet in a saved file. */
   now: number;
+  /** City, ISP and VPN flags from the online lookup, keyed by address. */
+  details: Record<string, IpDetails>;
 }
 
 /** The addresses seen in a capture, each with an editable label saved in IP Storage. */
-export function IpList({ items, names, geo, hidden, onSave, onImportLog, port, onPort, onClear, now }: Props) {
-  const logInput = useRef<HTMLInputElement>(null);
+export function IpList({ items, names, geo, hidden, onSave, onClear, onDelete, now, details }: Props) {
   const [editing, setEditing] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  // Right-click menu and the views it sets up. These only change what this list shows, not the capture.
+  const [menu, setMenu] = useState<{ x: number; y: number; address: string } | null>(null);
+  const [hiddenIsps, setHiddenIsps] = useState<Set<string>>(new Set());
+  const [hiddenIps, setHiddenIps] = useState<Set<string>>(new Set());
+  const [onlyIsp, setOnlyIsp] = useState<string | null>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const key = (e: KeyboardEvent) => e.key === "Escape" && close();
+    window.addEventListener("click", close);
+    window.addEventListener("resize", close);
+    window.addEventListener("keydown", key);
+    window.addEventListener("scroll", close, true);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("keydown", key);
+      window.removeEventListener("scroll", close, true);
+    };
+  }, [menu]);
+  const ispOf = (a: string) => details[a]?.isp ?? "";
+  const copy = (text: string) => void navigator.clipboard?.writeText(text).catch(() => {});
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const list = q ? items.filter((i) => i.address.toLowerCase().includes(q) || (names[i.address] ?? "").toLowerCase().includes(q)) : items;
+    let base = items.filter((i) => !hiddenIps.has(i.address) && !(ispOf(i.address) && hiddenIsps.has(ispOf(i.address))));
+    if (onlyIsp !== null) base = base.filter((i) => ispOf(i.address) === onlyIsp);
+    const list = q ? base.filter((i) => i.address.toLowerCase().includes(q) || (names[i.address] ?? "").toLowerCase().includes(q)) : base;
     // players who are online come first; each group keeps its order
     const on = (i: IpSummary) => now - i.last <= ONLINE_WITHIN;
     return [...list.filter(on), ...list.filter((i) => !on(i))];
-  }, [items, names, query, now]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, names, query, now, hiddenIps, hiddenIsps, onlyIsp, details]);
   const onlineCount = useMemo(() => items.filter((i) => now - i.last <= ONLINE_WITHIN).length, [items, now]);
 
   return (
@@ -103,19 +134,6 @@ export function IpList({ items, names, geo, hidden, onSave, onImportLog, port, o
           aria-label="Search addresses or labels"
           className="h-8 w-full max-w-xs rounded-pill border border-border bg-white/[0.06] px-3 text-xs text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
         />
-        <label className="ml-3 inline-flex items-center gap-2 text-xs text-muted">
-          Server port
-          <input
-            value={port}
-            inputMode="numeric"
-            maxLength={5}
-            onChange={(e) => onPort(e.target.value.replace(/\D/g, ""))}
-            placeholder="all"
-            aria-label="Only show addresses that used this server port"
-            title="Type the port your game server uses, for example 25565. Only addresses that sent or received on that port are listed, which leaves your players."
-            className="h-8 w-20 rounded-pill border border-border bg-white/[0.06] px-3 text-xs text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
-          />
-        </label>
         <button
           type="button"
           onClick={onClear}
@@ -125,44 +143,34 @@ export function IpList({ items, names, geo, hidden, onSave, onImportLog, port, o
         >
           Clear
         </button>
-        {onImportLog && (
-          <>
-            <button
-              type="button"
-              onClick={() => logInput.current?.click()}
-              title="Pick your Minecraft server's logs\latest.log. Each player's name is saved as the label of the address they joined from."
-              className="ml-3 h-8 rounded-pill border border-border px-3 text-xs text-text hover:bg-white/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
-            >
-              Label from Minecraft log
-            </button>
-            <input
-              ref={logInput}
-              type="file"
-              accept=".log,.txt,text/plain"
-              multiple
-              className="hidden"
-              aria-label="Choose Minecraft server log files"
-              onChange={(e) => {
-                onImportLog(Array.from(e.target.files ?? []));
-                e.target.value = "";
-              }}
-            />
-          </>
-        )}
       </div>
+      {(hiddenIsps.size > 0 || hiddenIps.size > 0 || onlyIsp !== null) && (
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2 text-xs text-muted">
+          {onlyIsp !== null && <button type="button" onClick={() => setOnlyIsp(null)} className="rounded-pill border border-border px-2 py-0.5 hover:bg-white/10">Only ISP: {onlyIsp} ✕</button>}
+          {[...hiddenIsps].map((n) => (
+            <button key={n} type="button" onClick={() => setHiddenIsps((s) => { const x = new Set(s); x.delete(n); return x; })} className="rounded-pill border border-border px-2 py-0.5 hover:bg-white/10">Hiding ISP: {n} ✕</button>
+          ))}
+          {hiddenIps.size > 0 && <button type="button" onClick={() => setHiddenIps(new Set())} className="rounded-pill border border-border px-2 py-0.5 hover:bg-white/10">Hiding {hiddenIps.size} address{hiddenIps.size === 1 ? "" : "es"} ✕</button>}
+          <button type="button" onClick={() => { setHiddenIsps(new Set()); setHiddenIps(new Set()); setOnlyIsp(null); }} className="px-2 py-0.5 text-text underline">Show all</button>
+        </div>
+      )}
       <div className="min-h-0 flex-1 overflow-auto">
         {shown.length === 0 ? (
-          <p className="p-6 text-sm text-muted">{items.length === 0 ? port ? `No address has talked to port ${port} yet.` : "No addresses yet. Start a capture or open a file." : "Nothing matches that search."}</p>
+          <p className="p-6 text-sm text-muted">{items.length === 0 ? "No addresses yet. Start a capture or open a file." : "Nothing matches that search."}</p>
         ) : (
-          <table className="w-full table-fixed text-left text-xs">
+          <table className="w-full min-w-[64rem] table-fixed text-left text-xs">
             <thead className="sticky top-0 bg-[linear-gradient(180deg,#4a1621,#33101a)] text-text">
               <tr>
-                <th className="w-[26%] px-3 py-2 font-semibold">Label</th>
-                <th className="w-[22%] px-3 py-2 font-semibold">IP address</th>
-                <th className="w-[20%] px-3 py-2 font-semibold">Country</th>
-                <th className="w-[10%] px-3 py-2 text-right font-semibold" title="Packets in / out">In / out</th>
-                <th className="w-[12%] px-3 py-2 text-right font-semibold">Bytes</th>
-                <th className="w-[10%] px-3 py-2 font-semibold">{hidden ? "Filter" : ""}</th>
+                <th className="w-[15%] px-3 py-2 font-semibold">Label</th>
+                <th className="w-[12%] px-3 py-2 font-semibold">IP address</th>
+                <th className="w-[6%] px-3 py-2 font-semibold">Type</th>
+                <th className="w-[7%] px-3 py-2 font-semibold">Port</th>
+                <th className="w-[11%] px-3 py-2 font-semibold">Country</th>
+                <th className="w-[11%] px-3 py-2 font-semibold">City</th>
+                <th className="w-[15%] px-3 py-2 font-semibold">ISP</th>
+                <th className="w-[7%] px-3 py-2 font-semibold" title="Known VPN, proxy or data-centre address (needs the lookup)">VPN</th>
+                <th className="w-[9%] px-3 py-2 text-right font-semibold" title="Packets in / out">In / out</th>
+                <th className="w-[7%] px-3 py-2 font-semibold">{hidden ? "Filter" : ""}</th>
               </tr>
             </thead>
             <tbody>
@@ -171,7 +179,14 @@ export function IpList({ items, names, geo, hidden, onSave, onImportLog, port, o
                 const hit = geo[i.address];
                 const online = now - i.last <= ONLINE_WITHIN;
                 return (
-                  <tr key={i.address} className="border-b border-border last:border-0 hover:bg-white/[0.05]">
+                  <tr
+                    key={i.address}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      setMenu({ x: Math.min(e.clientX, window.innerWidth - 240), y: Math.min(e.clientY, window.innerHeight - 330), address: i.address });
+                    }}
+                    className="border-b border-border last:border-0 hover:bg-white/[0.05]"
+                  >
                     <td className="px-3 py-1.5">
                      <div className="flex items-center gap-2">
                       <span
@@ -214,6 +229,10 @@ export function IpList({ items, names, geo, hidden, onSave, onImportLog, port, o
                      </div>
                     </td>
                     <td className="px-3 py-1.5 font-mono text-text">{i.address}</td>
+                    <td className="px-3 py-1.5 font-mono text-muted">{[...i.protocols].join(" / ")}</td>
+                    <td className="px-3 py-1.5 font-mono text-muted" title="Service port seen on this connection">
+                      {[...i.ports].sort((a, b) => a - b).slice(0, 2).join(", ")}
+                    </td>
                     <td className="px-3 py-1.5 text-text">
                       {hit && (
                         <span className="inline-flex items-center gap-2">
@@ -222,8 +241,14 @@ export function IpList({ items, names, geo, hidden, onSave, onImportLog, port, o
                         </span>
                       )}
                     </td>
+                    <td className="truncate px-3 py-1.5 text-text" title={details[i.address] ? [details[i.address].city, details[i.address].region].filter(Boolean).join(", ") : ""}>{details[i.address]?.city ?? ""}</td>
+                    <td className="truncate px-3 py-1.5 text-text" title={details[i.address]?.isp ?? ""}>{details[i.address]?.isp ?? ""}</td>
+                    <td className="px-3 py-1.5">
+                      {details[i.address] && (
+                        <span className={details[i.address].vpn ? "font-semibold text-[#ff4d4d]" : "text-muted"}>{details[i.address].vpn ? "VPN" : "No"}</span>
+                      )}
+                    </td>
                     <td className="px-3 py-1.5 text-right font-mono text-muted">{i.inbound.toLocaleString()} / {i.outbound.toLocaleString()}</td>
-                    <td className="px-3 py-1.5 text-right font-mono text-muted">{i.bytes.toLocaleString()}</td>
                     <td className="px-3 py-1.5 text-muted">{hidden?.has(i.address) ? "Hidden" : ""}</td>
                   </tr>
                 );
@@ -232,6 +257,29 @@ export function IpList({ items, names, geo, hidden, onSave, onImportLog, port, o
           </table>
         )}
       </div>
+      {menu && (() => {
+        const i = items.find((x) => x.address === menu.address);
+        if (!i) return null;
+        const isp = ispOf(i.address);
+        const d = details[i.address];
+        const row = [names[i.address] ?? "", i.address, [...i.protocols].join("/"), [...i.ports].sort((a, b) => a - b).slice(0, 2).join(","), geo[i.address]?.name ?? "", d?.city ?? "", isp, d ? (d.vpn ? "VPN" : "No") : "", `${i.inbound}/${i.outbound}`].join("\t");
+        const item = "block w-full px-4 py-2 text-left text-sm text-text hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-none";
+        const danger = "block w-full px-4 py-2 text-left text-sm text-[#ff4d4d] hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-none";
+        return (
+          <div role="menu" aria-label={`Actions for ${i.address}`} style={{ left: menu.x, top: menu.y }} onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()} className="fixed z-50 w-56 overflow-hidden rounded-lg border border-border bg-[#1c0b11] py-1 shadow-xl">
+            <button role="menuitem" type="button" className={item} onClick={() => { copy(i.address); setMenu(null); }}>Copy IP address</button>
+            <button role="menuitem" type="button" className={item} onClick={() => { copy(row); setMenu(null); }}>Copy row</button>
+            <button role="menuitem" type="button" className={item} onClick={() => { setEditing(i.address); setMenu(null); }}>{names[i.address] ? "Change label" : "Create IP label"}</button>
+            <div className="my-1 border-t border-border" />
+            {isp && <button role="menuitem" type="button" className={item} onClick={() => { setOnlyIsp(isp); setMenu(null); }}>Show only ISP: {isp}</button>}
+            {isp && <button role="menuitem" type="button" className={item} onClick={() => { setHiddenIsps((s) => new Set(s).add(isp)); setMenu(null); }}>Hide ISP: {isp}</button>}
+            <button role="menuitem" type="button" className={item} onClick={() => { setHiddenIps((s) => new Set(s).add(i.address)); setMenu(null); }}>Hide this IP</button>
+            <div className="my-1 border-t border-border" />
+            <button role="menuitem" type="button" className={danger} onClick={() => { onDelete(i.address); setMenu(null); }}>Delete row</button>
+            <button role="menuitem" type="button" className={danger} onClick={() => { onClear(); setMenu(null); }}>Clear all</button>
+          </div>
+        );
+      })()}
     </div>
   );
 }

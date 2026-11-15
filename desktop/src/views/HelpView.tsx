@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/Card";
 const FAQ: { q: string; a: string }[] = [
   {
     q: "Does this app send my data anywhere?",
-    a: "No. Captures, filters and device names stay in a folder on this computer (see Settings). The app contacts only two things: an update server (you can turn that off in Settings) and, only if you sign in to an account, your sync account, which keeps your IP Storage, filters and VPN tunnels the same on every computer. Tunnels, filters and IP addresses you choose to share become visible to other signed-in accounts; nothing is shared unless you press Share. You can also export and import everything as a file in Settings.",
+    a: "No. Captures, filters and device names stay in a folder on this computer (see Settings). The app contacts only two things: an update server (you can turn that off in Settings) and, only if you sign in to an account, your sync account, which keeps your IP Storage, filters and VPN tunnels the same on every computer. Tunnels, filters and IP addresses you choose to share become visible to other signed-in accounts; nothing is shared unless you press Share. You can also export and import everything as a file in Settings. Capture can also look up each address's city, ISP and VPN status, but only when you press Look up ISP and city, and then only the listed addresses are sent to ip-api.com.",
   },
   {
     q: "The capture will not start. What do I check?",

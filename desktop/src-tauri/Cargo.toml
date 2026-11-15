@@ -1,11 +1,15 @@
 [package]
 name = "network-toolkit"
-version = "0.2.6"
+version = "0.2.9"
 edition = "2021"
 
 [lib]
 name = "network_toolkit_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+# Used only by the command-line crate (../cli): lets it build the app without a window.
+cli = ["tauri/test"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

@@ -80,6 +80,18 @@ export function onChange(fn: () => void): () => void {
   return () => window.removeEventListener(CHANGED, fn);
 }
 
+/** One label keeps at most this many addresses. A fourth one written to it replaces the oldest. */
+export const LABEL_IPS_MAX = 3;
+
+/** Drops the oldest addresses of `label` so only the newest LABEL_IPS_MAX stay. `newest` is the address just written; it always stays. */
+export function capLabel(list: IpEntry[], label: string, newest: string): IpEntry[] {
+  const same = list.filter((e) => e.note === label);
+  if (same.length <= LABEL_IPS_MAX) return list;
+  const age = (e: IpEntry) => (e.address === newest ? Infinity : e.updatedAt ?? e.createdAt);
+  const drop = new Set(same.sort((a, b) => age(b) - age(a)).slice(LABEL_IPS_MAX).map((e) => e.address));
+  return list.filter((e) => !drop.has(e.address));
+}
+
 /** Sets, changes or (with an empty label) removes the label saved for an address. Returns the new list. */
 export async function setName(address: string, name: string): Promise<IpEntry[]> {
   const list = await loadEntries(); // read fresh, so a change made on the IP Storage page is never overwritten
@@ -89,5 +101,6 @@ export async function setName(address: string, name: string): Promise<IpEntry[]>
   if (clean === "") next = at === -1 ? list : list.filter((_, i) => i !== at);
   else if (at === -1) next = [...list, { id: newEntryId(), address, note: clean, createdAt: Date.now() }];
   else next = list.map((e, i) => (i === at ? { ...e, note: clean } : e));
+  if (clean !== "") next = capLabel(next, clean, address);
   return saveEntries(next, list);
 }

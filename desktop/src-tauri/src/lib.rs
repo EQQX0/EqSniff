@@ -8,6 +8,9 @@ mod updatever;
 mod pcapfile;
 mod filters;
 mod geo;
+mod ipinfo;
+#[cfg(feature = "cli")]
+pub mod cli;
 mod update;
 mod settings;
 mod scan;
@@ -17,13 +20,18 @@ pub mod hotspot;
 pub mod vpnengine;
 pub mod killswitch;
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    tauri::Builder::default()
-        .manage(capture::CaptureState::default())
+#[cfg_attr(not(feature = "cli"), allow(dead_code))]
+/// The shared state every command reads. The window and the command line both use it.
+pub(crate) fn manage_state(b: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
+    b.manage(capture::CaptureState::default())
         .manage(scan::ScanState::default())
         .manage(vpn::VpnState::default())
         .manage(hotspot::HotspotState::default())
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    manage_state(tauri::Builder::default())
         .invoke_handler(tauri::generate_handler![
             capture::list_adapters,
             capture::start_capture,
@@ -37,6 +45,7 @@ pub fn run() {
             filters::get_store,
             filters::save_store,
             geo::geo_lookup,
+            ipinfo::ip_details,
             update::check_update,
             update::install_update,
             scan::scan_start,

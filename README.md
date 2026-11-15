@@ -78,3 +78,7 @@ The app can fetch one small file, `update.json`, from `https://updates.eqqx2.com
 ## Data sources and licences
 
 - Country lookup uses the DB-IP Lite country database (CC BY 4.0). See `desktop/src-tauri/resources/DB-IP-LICENSE.txt`.
+
+## Command line
+
+`desktop/cli` builds `eqnet.exe`, the app without a window. See `docs/AI-GUIDE.md`.

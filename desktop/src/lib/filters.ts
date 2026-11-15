@@ -22,8 +22,19 @@ export interface Filter {
   address: string; // empty = any. A full address matches exactly; anything shorter matches the start.
   minBytes: string; // empty = any
   maxBytes: string; // empty = any
-  hex: string; // empty = any. Bytes that must appear in the first 32 bytes of the payload.
+  hex: string; // empty = any. Comma-separated byte patterns; a packet matches when any one appears in the first 32 bytes of the payload.
+  countries: string; // empty = any. Comma-separated 2-letter country codes.
+  isps: string; // empty = any. Comma-separated ISP names; part of a name is enough, capitals do not matter.
 }
+
+/** What the filters can ask about an address besides its digits. Unknown (not looked up yet) never matches. */
+export interface Lookup {
+  country: (ip: string) => string | undefined;
+  isp: (ip: string) => string | undefined;
+}
+
+/** A comma-separated box as a list. */
+export const splitList = (t: string) => t.split(",").map((x) => x.trim()).filter((x) => x !== "");
 
 export const PROTOCOLS: Proto[] = ["any", "TCP", "UDP", "ICMP"];
 export const DIRECTIONS: { id: Direction; label: string }[] = [
@@ -32,7 +43,7 @@ export const DIRECTIONS: { id: Direction; label: string }[] = [
   { id: "to", label: "Destination (receiver) only" },
 ];
 
-const base = { enabled: false, mode: "show" as Mode, direction: "any" as Direction, port: "", address: "", minBytes: "", maxBytes: "", hex: "" };
+const base = { enabled: false, mode: "show" as Mode, direction: "any" as Direction, port: "", address: "", minBytes: "", maxBytes: "", hex: "", countries: "", isps: "" };
 
 export function blankFilter(id: string): Filter {
   return { ...base, id, name: "", protocol: "any" };
@@ -90,6 +101,42 @@ const sameAddress = (filter: string, ip: string) => {
   return x.startsWith(f);
 };
 
+/** Checks a CIDR such as 10.0.0.0/24 or fe80::/10. Returns the base groups and prefix length, or null. */
+function parseCidr(text: string): { v6: boolean; groups: number[]; bits: number } | null {
+  const m = /^([^/]+)\/(\d{1,3})$/.exec(text.trim());
+  if (!m) return null;
+  const bits = Number(m[2]);
+  if (m[1].includes(":")) {
+    const g = v6Groups(m[1]);
+    return g && bits <= 128 ? { v6: true, groups: g, bits } : null;
+  }
+  if (!V4_FULL.test(m[1]) || m[1].split(".").some((n) => Number(n) > 255) || bits > 32) return null;
+  return { v6: false, groups: m[1].split(".").map(Number), bits };
+}
+
+function inCidr(c: { v6: boolean; groups: number[]; bits: number }, ip: string): boolean {
+  const x = c.v6 ? v6Groups(ip.toLowerCase()) : V4_FULL.test(ip) ? ip.split(".").map(Number) : null;
+  if (!x) return false;
+  const width = c.v6 ? 16 : 8;
+  let left = c.bits;
+  for (let i = 0; i < c.groups.length && left > 0; i++) {
+    const take = Math.min(left, width);
+    const shift = width - take;
+    if (c.groups[i] >> shift !== x[i] >> shift) return false;
+    left -= take;
+  }
+  return true;
+}
+
+/** One entry of the address box: a CIDR range, a full address, or the start of an address. */
+const matchAddress = (entry: string, ip: string) => {
+  if (entry.includes("/")) {
+    const c = parseCidr(entry);
+    return c !== null && inCidr(c, ip);
+  }
+  return sameAddress(entry, ip);
+};
+
 export function normalizeHex(text: string): string {
   return text.replace(/[\s:,-]/g, "").toLowerCase();
 }
@@ -100,20 +147,58 @@ function headHas(head: string, needle: string): boolean {
   return false;
 }
 
-export function matches(f: Filter, r: PacketRow): boolean {
+/** Reads a port list such as "80, 60, 90, 100-200, 65". Returns the ranges, or null when something is not a port from 1 to 65535. */
+export function parsePorts(text: string): [number, number][] | null {
+  const out: [number, number][] = [];
+  const parts = text.split(/[\s,;]+/).filter((t) => t !== "");
+  for (const t of parts) {
+    const m = /^(\d{1,5})(?:\s*-\s*(\d{1,5}))?$/.exec(t);
+    if (!m) return null;
+    const a = Number(m[1]), b = m[2] === undefined ? a : Number(m[2]);
+    if (a < 1 || b < 1 || a > 65535 || b > 65535 || a > b) return null;
+    out.push([a, b]);
+  }
+  return out.length > 0 ? out : null;
+}
+
+/** The ports in the list text, as a BPF clause. */
+export function portsToBpf(text: string): string {
+  const r = parsePorts(text) ?? [];
+  const bits = r.map(([a, b]) => (a === b ? `port ${a}` : `portrange ${a}-${b}`));
+  return bits.length === 1 ? bits[0] : `(${bits.join(" or ")})`;
+}
+
+export function matches(f: Filter, r: PacketRow, look?: Lookup): boolean {
   // The ICMP filter covers both the IPv4 and IPv6 flavours.
   if (f.protocol !== "any" && r.protocol !== f.protocol && !(f.protocol === "ICMP" && r.protocol === "ICMPv6")) return false;
   const side = (src: boolean, dst: boolean) => (f.direction === "from" ? src : f.direction === "to" ? dst : src || dst);
   if (f.port.trim() !== "") {
-    const p = Number(f.port);
-    if (!side(r.srcPort === p, r.dstPort === p)) return false;
+    const ranges = parsePorts(f.port) ?? [];
+    const inList = (p: number | null) => p !== null && ranges.some(([a, b]) => p >= a && p <= b);
+    if (!side(inList(r.srcPort), inList(r.dstPort))) return false;
   }
-  const a = f.address.trim();
-  if (a !== "" && !side(sameAddress(a, r.src), sameAddress(a, r.dst))) return false;
+  const addrs = splitList(f.address);
+  if (addrs.length > 0 && !side(addrs.some((a) => matchAddress(a, r.src)), addrs.some((a) => matchAddress(a, r.dst)))) return false;
+  const codes = splitList(f.countries).map((c) => c.toUpperCase());
+  if (codes.length > 0) {
+    const has = (ip: string) => {
+      const c = look?.country(ip);
+      return !!c && codes.includes(c.toUpperCase());
+    };
+    if (!side(has(r.src), has(r.dst))) return false;
+  }
+  const names = splitList(f.isps).map((n) => n.toLowerCase());
+  if (names.length > 0) {
+    const has = (ip: string) => {
+      const n = look?.isp(ip)?.toLowerCase();
+      return !!n && names.some((w) => n.includes(w));
+    };
+    if (!side(has(r.src), has(r.dst))) return false;
+  }
   if (f.minBytes.trim() !== "" && r.length < Number(f.minBytes)) return false;
   if (f.maxBytes.trim() !== "" && r.length > Number(f.maxBytes)) return false;
-  const h = normalizeHex(f.hex);
-  if (h !== "" && !headHas(r.head ?? "", h)) return false;
+  const patterns = splitList(f.hex).map(normalizeHex).filter((h) => h !== "");
+  if (patterns.length > 0 && !patterns.some((h) => headHas(r.head ?? "", h))) return false;
   return true;
 }
 
@@ -121,16 +206,18 @@ export function matches(f: Filter, r: PacketRow): boolean {
  * Hide filters remove what they match. Show filters, when any are on, keep only what they match.
  * With nothing switched on, every packet shows.
  */
-export function matchesAny(filters: Filter[], r: PacketRow): boolean {
+export function matchesAny(filters: Filter[], r: PacketRow, look?: Lookup): boolean {
   const on = filters.filter((f) => f.enabled);
-  if (on.some((f) => f.mode === "hide" && matches(f, r))) return false;
+  if (on.some((f) => f.mode === "hide" && matches(f, r, look))) return false;
   const show = on.filter((f) => f.mode !== "hide");
-  return show.length === 0 || show.some((f) => matches(f, r));
+  return show.length === 0 || show.some((f) => matches(f, r, look));
 }
 
 export interface Problems {
   name?: string;
   port?: string;
+  address?: string;
+  countries?: string;
   minBytes?: string;
   maxBytes?: string;
   hex?: string;
@@ -140,14 +227,17 @@ export interface Problems {
 export function problems(f: Filter): Problems {
   const out: Problems = {};
   if (f.name.trim() === "") out.name = "Give the filter a name.";
-  if (f.port.trim() !== "" && !(/^\d+$/.test(f.port.trim()) && Number(f.port) >= 1 && Number(f.port) <= 65535))
-    out.port = "Use a port from 1 to 65535, or leave it empty.";
+  if (f.port.trim() !== "" && parsePorts(f.port) === null)
+    out.port = "Use ports from 1 to 65535 separated by commas, ranges like 100-200 allowed (80, 443, 100-200), or leave it empty.";
   if (f.minBytes.trim() !== "" && !/^\d+$/.test(f.minBytes.trim())) out.minBytes = "Use a whole number, or leave it empty.";
   if (f.maxBytes.trim() !== "" && !/^\d+$/.test(f.maxBytes.trim())) out.maxBytes = "Use a whole number, or leave it empty.";
   if (!out.minBytes && !out.maxBytes && f.minBytes.trim() !== "" && f.maxBytes.trim() !== "" && Number(f.minBytes) > Number(f.maxBytes))
     out.maxBytes = "The largest size must not be smaller than the smallest.";
-  const h = normalizeHex(f.hex);
-  if (h !== "" && (!/^([0-9a-f]{2})+$/.test(h) || h.length > 64)) out.hex = "Use hex bytes such as 47 45 54 (at most 32 bytes), or leave it empty.";
+  if (splitList(f.address).some((a) => (a.includes("/") ? parseCidr(a) === null : !/^[0-9a-fA-F:.]+$/.test(a))))
+    out.address = "Use addresses like 8.8.8.8, ranges like 192.168.1.0/24, or the start of an address like 192.168.";
+  if (splitList(f.countries).some((c) => !/^[A-Za-z]{2}$/.test(c))) out.countries = "Use 2-letter country codes such as US, DE, CA.";
+  if (splitList(f.hex).some((x) => { const h = normalizeHex(x); return !/^([0-9a-f]{2})+$/.test(h) || h.length > 64; }))
+    out.hex = "Use hex bytes such as 47 45 54 (at most 32 bytes each), separated by commas, or leave it empty.";
   return out;
 }
 
@@ -160,10 +250,12 @@ export function describe(f: Filter): string {
     [
       f.protocol !== "any" && f.protocol,
       f.port && `${side}port ${f.port}`,
-      f.address && `${side}address ${f.address}${isFullAddress(f.address.trim()) ? "" : "…"}`,
+      f.address && `${side}address ${splitList(f.address).map((a) => a + (a.includes("/") || isFullAddress(a) ? "" : "…")).join(", ")}`,
+      f.countries && `country ${splitList(f.countries).map((c) => c.toUpperCase()).join(", ")}`,
+      f.isps && `ISP ${splitList(f.isps).join(", ")}`,
       f.minBytes && `${f.minBytes}+ bytes`,
       f.maxBytes && `up to ${f.maxBytes} bytes`,
-      f.hex && `contains ${normalizeHex(f.hex)}`,
+      f.hex && `contains ${splitList(f.hex).map(normalizeHex).join(" or ")}`,
     ]
       .filter(Boolean)
       .join(" · ") || "Matches everything"
@@ -173,7 +265,7 @@ export function describe(f: Filter): string {
 const FILE_KIND = "network-toolkit-filters";
 
 export function toFile(filters: Filter[]): string {
-  return JSON.stringify({ kind: FILE_KIND, version: 3, filters }, null, 2);
+  return JSON.stringify({ kind: FILE_KIND, version: 4, filters }, null, 2);
 }
 
 function clean(raw: Record<string, unknown>, keepId: boolean): Filter {
@@ -185,11 +277,13 @@ function clean(raw: Record<string, unknown>, keepId: boolean): Filter {
     mode: raw?.mode === "hide" ? "hide" : "show", // older files and saved filters are show filters
     protocol: PROTOCOLS.includes(raw?.protocol as Proto) ? (raw.protocol as Proto) : "any",
     direction: ["any", "from", "to"].includes(raw?.direction as string) ? (raw.direction as Direction) : "any",
-    port: text(raw?.port, 5),
-    address: text(raw?.address, 45),
+    port: text(raw?.port, 200),
+    address: text(raw?.address, 600),
+    countries: text(raw?.countries, 120),
+    isps: text(raw?.isps, 600),
     minBytes: text(raw?.minBytes, 7),
     maxBytes: text(raw?.maxBytes, 7),
-    hex: text(raw?.hex, 100),
+    hex: text(raw?.hex, 600),
   };
 }
 

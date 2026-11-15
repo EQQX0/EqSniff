@@ -1,0 +1,22 @@
+[package]
+name = "eqnet"
+version = "0.2.9"
+edition = "2021"
+description = "EqNetwork command line: the same features as the app, without a window."
+
+[[bin]]
+name = "eqnet"
+path = "src/main.rs"
+
+[dependencies]
+network-toolkit = { path = "../src-tauri", features = ["cli"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = "s"
+strip = true
+
+# Same patch as the app: see ../src-tauri/vendor/windows_x86_64_msvc/README.md.
+[patch.crates-io]
+windows_x86_64_msvc = { path = "../src-tauri/vendor/windows_x86_64_msvc" }

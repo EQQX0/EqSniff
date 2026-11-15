@@ -45,6 +45,17 @@ ok(f.problems(mk({ hex: "00".repeat(33) })).hex, "over 32 bytes rejected");
 ok(!f.problems(mk({ hex: "47 45" })).hex, "hex ok");
 ok(f.problems(mk({ minBytes: "10", maxBytes: "5" })).maxBytes, "min > max rejected");
 ok(f.problems(mk({ port: "70000" })).port, "port range");
+ok(f.matches(mk({ port: "80, 60, 90, 100-200, 53" }), row()) && f.matches(mk({ port: "4000-6000" }), row()) && !f.matches(mk({ port: "80, 100-200" }), row()), "port list and ranges");
+ok(!f.problems(mk({ port: "80, 60, 90, 100-200, 65" })).port && f.problems(mk({ port: "80,,x" })).port && f.problems(mk({ port: "200-100" })).port, "port list validation");
+ok(f.portsToBpf("80, 100-200") === "(port 80 or portrange 100-200)" && f.portsToBpf("53") === "port 53", "port list as BPF");
+const look = { country: (ip) => ({ "8.8.8.8": "US", "1.1.1.1": "AU" })[ip], isp: (ip) => ({ "8.8.8.8": "Google LLC", "1.1.1.1": "Cloudflare, Inc." })[ip] };
+const pk = (src, dst, extra = {}) => ({ ...row(), src, dst, ...extra });
+ok(f.matches(mk({ address: "9.9.9.9, 10.0.0.0/8" }), pk("10.5.6.7", "8.8.8.8")) && !f.matches(mk({ address: "9.9.9.9, 192.168.0.0/16" }), pk("10.5.6.7", "8.8.8.4")), "several addresses and CIDR");
+ok(f.matches(mk({ address: "192.168.1.0/24" }), pk("192.168.1.77", "8.8.8.8")) && !f.matches(mk({ address: "192.168.1.0/24" }), pk("192.168.2.1", "8.8.8.8")), "CIDR /24 edges");
+ok(f.matches(mk({ countries: "de, us" }), pk("1.2.3.4", "8.8.8.8"), look) && !f.matches(mk({ countries: "DE" }), pk("1.2.3.4", "8.8.8.8"), look) && !f.matches(mk({ countries: "US" }), pk("1.2.3.4", "8.8.8.8")), "country list, unknown never matches");
+ok(f.matches(mk({ isps: "amazon, cloud" }), pk("1.1.1.1", "5.5.5.5"), look) && f.matches(mk({ isps: "GOOGLE" }), pk("5.5.5.5", "8.8.8.8"), look) && !f.matches(mk({ isps: "google", direction: "from" }), pk("5.5.5.5", "8.8.8.8"), look), "isp partial, case, direction");
+ok(f.matches(mk({ hex: "AA BB, 47 45" }), pk("1.1.1.1", "2.2.2.2", { head: "47455420" })) && !f.matches(mk({ hex: "AA BB, CC" }), pk("1.1.1.1", "2.2.2.2", { head: "47455420" })), "hex patterns, any one");
+ok(f.problems(mk({ address: "10.0.0.0/33" })).address && f.problems(mk({ countries: "USA" })).countries && !f.problems(mk({ address: "10.0.0.0/8, fe80::/10, 192.168." })).address, "new box validation");
 ok(f.problems(mk({ name: " " })).name, "name needed");
 // files
 const out = f.fromFile(f.toFile([mk({ id: "keep", name: "one", enabled: true, direction: "to", hex: "47" })]));

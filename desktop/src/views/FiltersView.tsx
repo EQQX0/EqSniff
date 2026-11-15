@@ -1,24 +1,11 @@
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { Input } from "@/components/ui/Input";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Switch } from "@/components/ui/Switch";
 import { NetworkIcon } from "@/components/ui/icons";
-import {
-  DIRECTIONS,
-  PROTOCOLS,
-  blankFilter,
-  describe,
-  fromFile,
-  newId,
-  problems,
-  toFile,
-  type Direction,
-  type Filter,
-  type Mode,
-  type Proto,
-} from "@/lib/filters";
+import { FilterWizard } from "@/components/FilterWizard";
+import { blankFilter, describe, fromFile, newId, toFile, type Filter } from "@/lib/filters";
 import { download } from "@/lib/export";
 
 interface Props {
@@ -27,16 +14,10 @@ interface Props {
   /** Switch on only this filter and go to the capture table. */
 }
 
-const selectClass =
-  "h-10 w-full rounded-pill border border-border-input bg-white/[0.06] px-4 text-sm text-text transition-all duration-base ease-brand hover:bg-white/[0.09] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft";
-
 export function FiltersView({ filters, onChange }: Props) {
   const [draft, setDraft] = useState<Filter | null>(null);
-  const [showErrors, setShowErrors] = useState(false);
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
-
-  const errors = draft ? problems(draft) : {};
 
   async function run(work: () => Promise<void>, ok: string) {
     try {
@@ -45,17 +26,6 @@ export function FiltersView({ filters, onChange }: Props) {
     } catch (e) {
       setMessage({ kind: "error", text: e instanceof Error ? e.message : String(e) });
     }
-  }
-
-  async function save() {
-    if (!draft) return;
-    if (Object.keys(errors).length > 0) return setShowErrors(true);
-    const exists = filters.some((f) => f.id === draft.id);
-    await run(async () => {
-      await onChange(exists ? filters.map((f) => (f.id === draft.id ? draft : f)) : [...filters, draft]);
-      setDraft(null);
-      setShowErrors(false);
-    }, `Saved “${draft.name.trim()}”.`);
   }
 
   const remove = (f: Filter) => run(() => onChange(filters.filter((x) => x.id !== f.id)), `Deleted “${f.name}”.`);
@@ -83,7 +53,6 @@ export function FiltersView({ filters, onChange }: Props) {
   const onCount = filters.filter((f) => f.enabled).length;
   const closeDraft = () => {
     setDraft(null);
-    setShowErrors(false);
   };
 
   return (
@@ -98,7 +67,7 @@ export function FiltersView({ filters, onChange }: Props) {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button onClick={() => { setDraft(blankFilter(newId())); setShowErrors(false); }}>New filter</Button>
+        <Button onClick={() => { setDraft(blankFilter(newId())); }}>New filter</Button>
         <span className="mx-1 hidden h-6 w-px bg-border sm:block" aria-hidden="true" />
         <Button variant="ghost" onClick={() => fileInput.current?.click()}>Import</Button>
         <Button variant="ghost" onClick={exportFile} disabled={filters.length === 0}>Export</Button>
@@ -125,113 +94,19 @@ export function FiltersView({ filters, onChange }: Props) {
       )}
 
       {draft && (
-        <Card className="anim-pop flex flex-col gap-6">
-          <h2 className="text-lg font-semibold text-text">{filters.some((f) => f.id === draft.id) ? "Edit filter" : "New filter"}</h2>
-
-          <fieldset>
-            <legend className="mb-2 text-sm font-semibold text-text">What this filter does</legend>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {([
-                ["show", "Show only matches", "Packets that do not match disappear from the table."],
-                ["hide", "Hide matches", "Packets that match disappear from the table."],
-              ] as [Mode, string, string][]).map(([id, title, text]) => (
-                <label
-                  key={id}
-                  className={`flex cursor-pointer flex-col gap-0.5 rounded-lg border px-4 py-3 text-sm transition-all duration-base ease-brand focus-within:ring-2 focus-within:ring-accent-soft ${
-                    draft.mode === id ? "border-accent bg-accent/15" : "border-border-input bg-white/[0.04] hover:bg-white/[0.08]"
-                  }`}
-                >
-                  <input type="radio" name="filter-mode" className="sr-only" checked={draft.mode === id} onChange={() => setDraft({ ...draft, mode: id })} />
-                  <span className="font-semibold text-text">{title}</span>
-                  <span className="text-xs text-muted">{text}</span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
-
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="sm:col-span-2">
-              <Input
-                label="Name"
-                value={draft.name}
-                maxLength={80}
-                error={showErrors ? errors.name : undefined}
-                onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-              />
-            </div>
-            <label className="flex flex-col gap-1.5 text-sm">
-              <span className="font-medium text-text">Protocol</span>
-              <select value={draft.protocol} onChange={(e) => setDraft({ ...draft, protocol: e.target.value as Proto })} className={selectClass}>
-                {PROTOCOLS.map((p) => (
-                  <option key={p} value={p}>{p === "any" ? "Any protocol" : p}</option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          <fieldset>
-            <legend className="mb-3 text-sm font-semibold text-text">Who is talking</legend>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <label className="flex flex-col gap-1.5 text-sm">
-                <span className="font-medium text-text">Direction</span>
-                <select value={draft.direction} onChange={(e) => setDraft({ ...draft, direction: e.target.value as Direction })} className={selectClass}>
-                  {DIRECTIONS.map((d) => (
-                    <option key={d.id} value={d.id}>{d.label}</option>
-                  ))}
-                </select>
-                <span className="text-xs text-muted">Which side Port and Address check.</span>
-              </label>
-              <Input
-                label="Port"
-                hint="Empty means any."
-                inputMode="numeric"
-                value={draft.port}
-                error={showErrors ? errors.port : undefined}
-                onChange={(e) => setDraft({ ...draft, port: e.target.value })}
-              />
-              <Input
-                label="Address"
-                hint="192.168.0.20 matches one device. 192.168. matches everything starting with it."
-                value={draft.address}
-                onChange={(e) => setDraft({ ...draft, address: e.target.value })}
-              />
-            </div>
-          </fieldset>
-
-          <fieldset>
-            <legend className="mb-3 text-sm font-semibold text-text">Size and content</legend>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <Input
-                label="Smallest packet (bytes)"
-                hint="Empty means any size."
-                inputMode="numeric"
-                value={draft.minBytes}
-                error={showErrors ? errors.minBytes : undefined}
-                onChange={(e) => setDraft({ ...draft, minBytes: e.target.value })}
-              />
-              <Input
-                label="Largest packet (bytes)"
-                hint="Empty means any size."
-                inputMode="numeric"
-                value={draft.maxBytes}
-                error={showErrors ? errors.maxBytes : undefined}
-                onChange={(e) => setDraft({ ...draft, maxBytes: e.target.value })}
-              />
-              <Input
-                label="Contains bytes (hex)"
-                hint="47 45 54 20 finds “GET ”. Checks the first 32 payload bytes of TCP and UDP."
-                value={draft.hex}
-                error={showErrors ? errors.hex : undefined}
-                onChange={(e) => setDraft({ ...draft, hex: e.target.value })}
-              />
-            </div>
-          </fieldset>
-
-          <div className="flex gap-2">
-            <Button onClick={save}>Save filter</Button>
-            <Button variant="ghost" onClick={closeDraft}>Cancel</Button>
-          </div>
-        </Card>
+        <FilterWizard
+          key={draft.id}
+          initial={draft}
+          isNew={!filters.some((f) => f.id === draft.id)}
+          onCancel={closeDraft}
+          onSave={(f) =>
+            run(async () => {
+              const exists = filters.some((x) => x.id === f.id);
+              await onChange(exists ? filters.map((x) => (x.id === f.id ? f : x)) : [...filters, f]);
+              closeDraft();
+            }, `Saved “${f.name}”.`)
+          }
+        />
       )}
 
       <Card className="p-0">
@@ -270,7 +145,7 @@ export function FiltersView({ filters, onChange }: Props) {
                     <p className="truncate text-xs text-muted">{describe(f)}</p>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
-                    <Button size="sm" variant="ghost" onClick={() => { setDraft({ ...f }); setShowErrors(false); }} aria-label={`Edit ${f.name}`}>Edit</Button>
+                    <Button size="sm" variant="ghost" onClick={() => { setDraft({ ...f }); }} aria-label={`Edit ${f.name}`}>Edit</Button>
                     <Button size="sm" variant="ghost" onClick={() => remove(f)} aria-label={`Delete ${f.name}`}>Delete</Button>
                   </div>
                 </li>

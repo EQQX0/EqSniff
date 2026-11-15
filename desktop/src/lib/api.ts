@@ -94,6 +94,16 @@ export interface Country {
   name: string;
 }
 
+/** City, ISP and VPN flag from an online lookup the user asked for. */
+export interface IpDetails {
+  address: string;
+  city: string;
+  region: string;
+  isp: string;
+  vpn: boolean;
+  mobile: boolean;
+}
+
 export interface UpdateInfo {
   status: "disabled" | "up-to-date" | "available" | "unreachable";
   current: string;
@@ -184,6 +194,7 @@ export const api = {
     invoke<void>("sharing_apply", { public: publicName, private: privateName }),
   sharingReset: () => invoke<void>("sharing_reset"),
   geoLookup: (ips: string[]) => invoke<Record<string, Country>>("geo_lookup", { ips }),
+  ipDetails: (ips: string[]) => invoke<IpDetails[]>("ip_details", { ips }),
   checkUpdate: () => invoke<UpdateInfo>("check_update"),
   installUpdate: () => invoke<string>("install_update"),
   dataFolder: () => invoke<string>("data_folder"),
