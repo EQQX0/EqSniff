@@ -83,23 +83,26 @@ Everything asked for is built and tested. The Ember glass redesign (top nav, gla
 ## Git state
 Branch `main`, origin https://github.com/EQQX0/EqSniff (private). Work through a648940 is committed (not pushed); the redesign and review fixes are uncommitted. Stashes: none.
 
-## Release 0.2.2 (latest)
+## Release 0.2.2
 - App renamed EqNetwork (productName, window title, top bar); icons regenerated from `desktop/src-tauri/icons/brand/eq-10-ember.png`. Bundle identifier is unchanged so saved data stays; the installer installs next to an old "Network Toolkit" install.
 - Filters are Show or Hide (`mode`), one filter system: the separate capture filter box was removed (`capturefilter.ts` is now unused). Capture table keeps the latest 3,000 packets.
 - Capture table: sticky heading bar above the list, sortable headings, Label column saved in IP Storage (`lib/ipstore.ts`, stored in the entry's `note` field), flags via bundled `flag-icons`, time without milliseconds, Copy/Replay row buttons removed (the `replay_packet` command still exists).
 - In-app update: "Update now" downloads the installer from the feed host, checks the SHA-256 in `update.json`, starts it. Feed and installer are at https://updates.eqqx2.com (`update.json`, `EqNetwork-setup.exe`), deployed from the Vercel project `eqsniff-updates`.
 - Live-tested: capture only from the chosen adapter, Show/Hide filters, sorting, labels. NOT live-tested: Hotspot start/stop and sharing (unit tests only). Live test scripts drive the window and can steal focus; do not run them while the user is gaming.
 
-## Optional IP Storage sync (not released yet)
+## Optional IP Storage sync (shipped in 0.2.3)
 - Supabase project `eqnetwork` (ref bswzptrmeeobbnthjioz, eu-central-1). Table `ip_entries` with row-level rules from `desktop/supabase/migrations/0001_ip_storage.sql` (applied).
 - App side: `src/lib/cloud.ts` (email+password auth, merge sync, background sync after edits), `src/lib/ipmerge.ts` (pure two-way merge, newest label wins, deletions tracked in store `ip-storage-deleted`), `src/components/CloudSync.tsx` (Settings card). All IP Storage writes go through `saveEntries` in `ipstore.ts`.
 - Only the public publishable key is in the app. Session (email + tokens, never the password) is in store `cloud-session`. CSP `connect-src` allows the project URL only.
 - Tests: `npm test` (includes `tests/ipmerge.test.mjs`). Checked live: signed-out requests read nothing and cannot write. Not yet done: a real sign-up/sign-in round trip in the app, and a release build. New accounts must confirm their email (project default).
 
-### Account sync now covers filters and VPN tunnels (not released, not committed)
+### Release 0.2.3 (latest, published 2026-11-15): account sync for IP Storage, filters and VPN tunnels
 - Migration `0002_sync_items.sql` (applied): `ip_entries.deleted` soft-delete column and a `sync_items` table (kind `tunnel` or `filters`), same own-rows-only rules. Everything is private to the account; there is no sharing between users (the user chose private-only).
 - Tunnels: `src-tauri/src/vpnseal.rs` locks the .conf with a passphrase (PBKDF2-SHA256 300k + AES-256-GCM) before upload; commands `vpn_sync_list/seal/check/open` in `vpn.rs`. The passphrase is kept in memory only. A tunnel deleted on another computer is left alone here and not synced.
 - Filters sync as one list, 3-way by fingerprint; if both sides changed, filters are unioned by id.
 - Store whitelist in `filters.rs` now includes `ip-storage-deleted`, `vpn-deleted`, `cloud-session` (the first commit of sync was missing these, so saving those stores failed).
 - Removed the built-in starter filters and the "Use alone" button; the filter list starts empty.
 - Checked: `npm test`, `npm run build`, `cargo test` pass; signed-out requests read nothing. Not run: a real sign-in, tunnel upload/download round trip, or a release build.
+
+Release steps used for 0.2.3: `npm run tauri build` (env `CARGO_TARGET_DIR=C:/nt-target`, `LIBPCAP_LIBDIR=C:
+t-libs`), copy the NSIS installer to `EqNetwork-setup.exe` in the linked `updates-site` folder, write `update.json` with the SHA-256, `vercel deploy --prod --yes`. The user's rule: saying "commit" means do this whole release.
