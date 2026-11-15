@@ -1,0 +1,38 @@
+EqSniff: where everything is
+============================
+
+THIS FOLDER (C:\Users\Admin\Desktop\EqSniff)
+  desktop\          the app (Tauri + Rust + React). Run commands from here.
+    src\            screens and code (React)
+    src-tauri\      Windows side (Rust): capture, scan, filters, VPN
+    tests\          filter tests         (npm test)
+    src-tauri\tests Rust tests           (cargo test --tests)
+  replica\          notes on the feature plan
+    scope.md        what the app is and is not
+    features.csv    every feature and whether it is built
+    unbuilt.md      what is missing and why
+    build-log.md    what was done, round by round
+    octosniff-ui-notes.md   what the OctoSniff screens showed
+  release\          installer, portable zip, certificate (not in git)
+  README.md         overview
+  update.json       the file the update check reads
+  _archive\         the old dropped web dashboard
+  .git\             history. Remote: https://github.com/EQQX0/EqSniff (private)
+
+NOT IN THIS FOLDER
+  C:\nt-target                      build output (can be deleted, rebuilds)
+  C:\nt-libs                        Npcap libraries the build needs. Keep.
+  %APPDATA%\app.networktoolkit.desktop
+                                    your saved filters, labels, settings and
+                                    VPN tunnels (includes tunnel private keys)
+  Vercel project "eqsniff-updates"  hosts update.json for the update check
+  Cloudflare DNS for eqqx2.com      needs a CNAME "updates" ->
+                                    cname.vercel-dns.com (DNS only)
+
+NEEDED TO BUILD AGAIN
+  Node.js, Rust (cargo), Npcap (WireGuard is built in; nothing else for the VPN page)
+  1. cd desktop
+  2. npm install
+  3. set LIBPCAP_LIBDIR=C:\nt-libs
+  4. npx tauri build
+  The folder has no node_modules yet, so step 2 is needed once.

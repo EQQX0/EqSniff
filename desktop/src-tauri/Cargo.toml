@@ -19,9 +19,16 @@ etherparse = "0.17"
 maxminddb = "0.24"
 ureq = "2"
 base64 = "0.22"
+boringtun = { version = "0.6", default-features = false }
+wintun = "0.5"
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_NetworkManagement_IpHelper", "Win32_Networking_WinSock", "Win32_System_Threading", "Win32_System_ProcessStatus"] }
 
 [profile.release]
 lto = true
 codegen-units = 1
 opt-level = "s"
 strip = true
+
+# Replaces windows_x86_64_msvc 0.36.1 (pulled in by pcap) with an empty crate. See vendor/windows_x86_64_msvc/README.md.
+[patch.crates-io]
+windows_x86_64_msvc = { path = "vendor/windows_x86_64_msvc" }

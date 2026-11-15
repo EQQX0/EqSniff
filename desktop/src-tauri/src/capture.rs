@@ -145,7 +145,7 @@ pub fn start_capture(state: State<CaptureState>, adapter: String, filter: Option
         .map_err(explain)?;
     // A capture filter makes the driver drop everything else before this app ever sees it.
     if let Some(f) = filter.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
-        if f.len() > 300 || !f.chars().all(|c| c.is_ascii_alphanumeric() || " .:()".contains(c)) {
+        if f.len() > 600 || !f.chars().all(|c| c.is_ascii_alphanumeric() || " .:()[]+&>=".contains(c)) {
             return Err("That capture filter is not valid.".into());
         }
         cap.filter(f, true).map_err(|_| "That capture filter was refused by the network driver. Check the address and port.".to_string())?;

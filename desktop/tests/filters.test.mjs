@@ -46,4 +46,19 @@ assert.throws(() => f.fromFile(JSON.stringify({ kind: "x" })), /not a Network To
 const stored = f.fromStored([{ id: "z", name: "legacy", protocol: "UDP", port: "53", address: "", minBytes: "" }, { bad: 1 }]);
 ok(stored.length === 1 && stored[0].enabled === false && stored[0].id === "z", "stored legacy filters get defaults");
 ok(f.STARTERS.every((s) => Object.keys(f.problems(s)).length === 0), "starters are valid");
+
+// Capture-level payload bytes
+const cf = await import("../src/lib/capturefilter.ts");
+const cfo = (o) => ({ ...cf.NO_CAPTURE_FILTER, ...o });
+ok(cf.toBpf(cfo({})) === "", "no capture filter");
+ok(cf.toBpf(cfo({ protocol: "TCP", hex: "47 45 54 20" })) === "tcp and ip and tcp[((tcp[12] & 0xf0) >> 2) + 0:4] = 0x47455420", "tcp 4 bytes");
+ok(cf.toBpf(cfo({ protocol: "UDP", hex: "ab" })) === "udp and ip and udp[8 + 0:1] = 0xab", "udp 1 byte");
+ok(cf.toBpf(cfo({ protocol: "UDP", hex: "0102030405060708" })).includes("udp[8 + 4:4] = 0x05060708"), "8 bytes = two chunks");
+ok(cf.toBpf(cfo({ protocol: "UDP", hex: "010203" })).includes("udp[8 + 0:2] = 0x0102") && cf.toBpf(cfo({ protocol: "UDP", hex: "010203" })).includes("udp[8 + 2:1] = 0x03"), "3 bytes = 2 + 1");
+const any = cf.toBpf(cfo({ hex: "4745", port: "80" }));
+ok(any.startsWith("((ip and tcp[") && any.includes(") or (ip and udp[") && any.endsWith("and port 80"), "any protocol checks both", any);
+ok(cf.captureProblems(cfo({ hex: "zz" })).hex && cf.captureProblems(cfo({ hex: "123" })).hex && cf.captureProblems(cfo({ hex: "00".repeat(9) })).hex, "bad hex flagged");
+ok(cf.captureProblems(cfo({ protocol: "ICMP", hex: "47" })).hex, "hex with ICMP flagged");
+ok(cf.toBpf(cfo({ hex: "zz" })) === "", "bad boxes give an empty filter");
+ok(cf.fromStoredCapture({ protocol: "TCP", hex: "47 45" }).hex === "47 45" && cf.fromStoredCapture({ protocol: "TCP" }).hex === "", "stored filter reads hex, old files default");
 console.log(`${n} checks passed`);

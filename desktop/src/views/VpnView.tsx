@@ -95,17 +95,12 @@ export function VpnView() {
       <div>
         <h1 className="text-xl font-bold text-text">VPN</h1>
         <p className="mt-1 text-sm text-muted">
-          Keep your WireGuard tunnels here and switch them on and off. This app does not carry the traffic. It starts the tunnel
-          through WireGuard for Windows, and Windows asks you to allow each change.
+          Keep your WireGuard tunnels here and switch them on and off. The app has its own WireGuard engine, so you do not
+          need to install anything else. Windows asks you to allow each start, because creating the network adapter needs
+          administrator rights.
         </p>
       </div>
 
-      {status && !status.installed && (
-        <p role="alert" className="rounded-md border border-danger px-3 py-2 text-sm text-danger">
-          WireGuard for Windows is not installed, so tunnels can be saved but not started. Install it from wireguard.com, then
-          come back.
-        </p>
-      )}
       {error && (
         <p role="alert" className="rounded-md border border-danger px-3 py-2 text-sm text-danger">
           {error}
@@ -181,7 +176,7 @@ export function VpnView() {
                       <Badge tone={tunnel.active ? "success" : "neutral"}>{tunnel.active ? "Active" : "Inactive"}</Badge>
                     </span>
                   </Row>
-                  <Row label="Public key">{tunnel.publicKey ?? "Shown once WireGuard is installed"}</Row>
+                  <Row label="Public key">{tunnel.publicKey ?? "Not available"}</Row>
                   {tunnel.listenPort && <Row label="Listen port">{tunnel.listenPort}</Row>}
                   {tunnel.mtu && <Row label="MTU">{tunnel.mtu}</Row>}
                   <Row label="Addresses">{tunnel.addresses.join(", ")}</Row>
@@ -192,7 +187,6 @@ export function VpnView() {
                     size="sm"
                     variant={tunnel.active ? "secondary" : "primary"}
                     loading={busy}
-                    disabled={!status?.installed}
                     onClick={() => run(() => switchTunnel(tunnel.name, !tunnel.active))}
                   >
                     {tunnel.active ? "Deactivate" : "Activate"}

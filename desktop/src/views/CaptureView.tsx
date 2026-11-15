@@ -321,13 +321,14 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
               ["Port", "port", "Either side. Empty = any."],
               ["Device address", "address", "One full address, such as 192.168.0.20."],
               ["Smallest packet (bytes)", "minBytes", "Empty = any size."],
+              ["Payload starts with (hex)", "hex", "Up to 8 bytes, such as 47 45 54 20. IPv4 TCP and UDP only; other packets are not recorded."],
             ] as const).map(([label, key, hint]) => (
               <label key={key} className="flex flex-col gap-1.5 text-sm">
                 <span className="font-medium text-text">{label}</span>
                 <input
                   value={cf[key]}
                   disabled={running}
-                  inputMode={key === "address" ? "text" : "numeric"}
+                  inputMode={key === "address" || key === "hex" ? "text" : "numeric"}
                   aria-invalid={cfProblems[key] ? true : undefined}
                   onChange={(e) => setCf({ ...cf, [key]: e.target.value })}
                   className={`h-10 rounded-md border bg-surface px-3 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50

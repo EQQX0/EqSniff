@@ -6,7 +6,7 @@ Select a discovered device and monitor its traffic,discovery,should,yes,yes,"Wat
 Custom packet filter editor (protocol/direction/port/length/hex/title ID),filtering,must,yes,yes,"Protocol, direction (source/destination/either), port, address (exact or prefix), size range, and hex bytes in the first 32 payload bytes. Not built: matching deeper than 32 bytes."
 Enable/disable individual filters,filtering,must,yes,yes,Chips on Capture and checkboxes on Filters. Several on = a packet shows if it matches any; none on = everything. Tested with real clicks.
 "Starter filters (DNS, web, NTP, voice and video)",filtering,must,yes,yes,"Five generic filters written fresh (web, DNS, ping, local network, large packets). No NTP or voice set."
-Global capture-level filter (protocol/length/port/hex),filtering,should,yes,partial,"Built: protocol, port, one device address, smallest packet size, applied by the network driver so other packets are never recorded. Tested live (tcp/port, udp, host, size) and through the UI. Not built: hex matching at capture level (the view filter has hex)."
+Global capture-level filter (protocol/length/port/hex),filtering,should,yes,yes,"Built: protocol, port, one device address, smallest packet size, applied by the network driver so other packets are never recorded. Tested live (tcp/port, udp, host, size) and through the UI. Hex matching at capture level built (up to 8 bytes, IPv4 TCP and UDP)."
 Export captures to CSV/JSON/TXT,export,should,yes,yes,"CSV, JSON, TXT and PCAP. Verified: files save straight to Downloads with no dialog, and the app now says so."
 Copy row/cell/table to clipboard,export,should,yes,yes,"Copy button per row, double-click a cell, Copy table (tab-separated, with header). Verified with real clicks and the Windows clipboard."
 Traffic Control: drop/lag/throttle/reorder/duplicate rules on own device traffic,traffic-control,must,yes,skip,Dropped by decision 2026-11-15. No traffic control of any kind in the app.
@@ -52,7 +52,7 @@ ISP filter (hide or dim hosting providers),filters,could,yes,no,Seen in OctoSnif
 Add a device by IP by hand,devices,could,yes,no,Seen.
 Process filters (beta),filters,could,yes,no,Not opened.
 Windows hotspot and connection sharing,tools,could,yes,no,"Seen. SSID, password, public and private adapter."
-WireGuard-style VPN tunnel manager,vpn,should,no,partial,"Built: tunnel list, import .conf (checked and rewritten, command settings refused), details with public key, activate/deactivate through WireGuard for Windows with the Windows permission prompt, delete. Tested live except activate/deactivate. Not built: edit tunnel, make new keys, log tab."
+WireGuard-style VPN tunnel manager,vpn,should,no,partial,"Built: tunnel list, import .conf (checked and rewritten, command settings refused), details with public key, activate/deactivate with a built-in WireGuard engine (Wintun + boringtun) and the Windows admin prompt, delete. Tested live with a real server: traffic and public IP changed, clean stop. Not built: kill switch, edit tunnel, make new keys, log tab."
 Built-in VPN with vendor servers (OctoVPN),vpn,could,yes,skip,Needs the vendor's servers and accounts.
 Auto-remove inactive IPs,settings,could,yes,no,Seen.
 Max packets and capture buffer settings,settings,could,yes,partial,"EqSniff keeps 20,000 frames, fixed."

@@ -23,7 +23,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "How does the VPN page work?",
-    a: "It keeps your WireGuard tunnels in one list, like the WireGuard app. Add a tunnel with a .conf file from your VPN provider, pick it, and press Activate. This app does not carry the traffic itself. It starts the tunnel through WireGuard for Windows, which has to be installed, and Windows asks you to allow each start and stop. The private key stays in the saved file and is never shown. Files that try to run commands (PostUp and similar) are refused.",
+    a: "It keeps your WireGuard tunnels in one list, like the WireGuard app. Add a tunnel with a .conf file from your VPN provider, pick it, and press Activate. The app carries the traffic itself with a built-in WireGuard engine, so nothing else needs installing. Windows asks you to allow each start, because the virtual network adapter needs administrator rights. Traffic that your tunnel's allowed addresses cover goes through the VPN. If the app closes while a tunnel is on, the adapter disappears and traffic goes back to your normal connection. There is no kill switch yet. The private key stays in the saved file and is never shown. Files that try to run commands (PostUp and similar) are refused.",
   },
   {
     q: "How do filters work?",

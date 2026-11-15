@@ -7,6 +7,7 @@ mod settings;
 mod scan;
 mod vpn;
 mod vpnconf;
+pub mod vpnengine;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
