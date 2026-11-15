@@ -57,7 +57,7 @@ export function TopNav({
     <nav aria-label="Main" className="glass glass-blur anim-drop flex items-center gap-3 rounded-pill py-2 pl-3 pr-2">
       <div className="flex shrink-0 items-center gap-2.5 pr-1">
         <img src={logo} alt="" width={34} height={34} className="h-[34px] w-[34px] rounded-pill" />
-        <span className="hidden whitespace-nowrap text-sm font-bold tracking-tight text-text xl:inline">Network Toolkit</span>
+        <span className="hidden whitespace-nowrap text-sm font-bold tracking-tight text-text xl:inline">EqNetwork</span>
       </div>
       <div ref={track} className="no-scrollbar relative flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
         {pill && (

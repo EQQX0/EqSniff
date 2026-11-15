@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type Adapter, type Country, type PacketRow } from "@/lib/api";
-import { PROTOCOLS, matchesAny, type Filter, type Proto } from "@/lib/filters";
-import { NO_CAPTURE_FILTER, captureProblems, fromStoredCapture, toBpf, type CaptureFilter } from "@/lib/capturefilter";
+import { matchesAny, type Filter } from "@/lib/filters";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { Modal } from "@/components/ui/Modal";
 import {
   base64ToBytes,
   bytesToBase64,
@@ -12,7 +10,6 @@ import {
   download,
   downloadBlob,
   isLocalAddress,
-  rowToTsv,
   tableToTsv,
   toCsv,
   toJson,
@@ -21,18 +18,24 @@ import {
 import { EmptyState } from "@/components/ui/EmptyState";
 import { NetworkIcon } from "@/components/ui/icons";
 import { Checkbox } from "@/components/ui/Checkbox";
+import { NAME_MAX, loadEntries, onChange as onIpStoreChange, setName } from "@/lib/ipstore";
 import "flag-icons/css/flag-icons.min.css";
 
-type ColumnId = "time" | "source" | "destination" | "country" | "protocol" | "bytes";
-const COLUMNS: { id: ColumnId; label: string }[] = [
-  { id: "time", label: "Time" },
-  { id: "source", label: "Source" },
-  { id: "destination", label: "Destination" },
+type ColumnId = "name" | "srcIp" | "srcPort" | "dstIp" | "dstPort" | "country" | "protocol" | "bytes" | "time";
+const COLUMNS: { id: ColumnId; label: string; right?: boolean }[] = [
+  { id: "name", label: "Label" },
+  { id: "srcIp", label: "Source IP" },
+  { id: "srcPort", label: "Source port" },
+  { id: "dstIp", label: "Destination IP" },
+  { id: "dstPort", label: "Destination port" },
   { id: "country", label: "Country" },
   { id: "protocol", label: "Protocol" },
-  { id: "bytes", label: "Bytes" },
+  { id: "bytes", label: "Bytes", right: true },
+  { id: "time", label: "Time", right: true },
 ];
-const COLUMNS_KEY = "capture-columns";
+const COLUMNS_KEY = "capture-columns-v2";
+/** Relative column widths. The header bar and the list use the same ones so they line up. */
+const COL_WIDTH: Record<ColumnId, number> = { name: 14, srcIp: 13, srcPort: 10, dstIp: 13, dstPort: 12, country: 14, protocol: 8, bytes: 7, time: 10 };
 
 function loadColumns(): ColumnId[] {
   try {
@@ -53,7 +56,7 @@ function Flag({ code }: { code: string }) {
   return <span className={`fi fi-${code.toLowerCase()} inline-block h-3.5 w-5 rounded-sm bg-cover shadow-[0_0_0_1px_rgba(255,255,255,.18)]`} aria-hidden="true" />;
 }
 
-const MAX_ROWS = 1000;
+const MAX_ROWS = 3000;
 /** The window reads at most this much of a capture file. */
 const MAX_FILE_BYTES = 32 * 1024 * 1024;
 /** The app side looks up at most this many addresses per request. */
@@ -63,11 +66,17 @@ const GEO_REMEMBER = 20000;
 
 function clock(t: number) {
   const d = new Date(t * 1000);
-  const p = (n: number, w = 2) => String(n).padStart(w, "0");
-  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`;
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
-const endpoint = (ip: string, port: number | null) => (port === null ? ip : ip.includes(":") ? `[${ip}]:${port}` : `${ip}:${port}`);
+/** Sort key for an address: IPv4 compares as numbers, anything else as text after the IPv4 ones. */
+function ipKey(ip: string): string {
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip);
+  return v4 ? "0" + v4.slice(1).map((n) => n.padStart(3, "0")).join(".") : "1" + ip.toLowerCase();
+}
+
+type SortState = { key: ColumnId; dir: "asc" | "desc" } | null;
 
 interface Props {
   filters: Filter[];
@@ -83,25 +92,23 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<PacketRow[]>([]);
   const [total, setTotal] = useState(0);
-  const [cf, setCf] = useState<CaptureFilter>(NO_CAPTURE_FILTER);
-  const [cfOpen, setCfOpen] = useState(false);
   const [fromFile, setFromFile] = useState<string | null>(null);
-  const [replayRow, setReplayRow] = useState<PacketRow | null>(null);
-  const [replayBusy, setReplayBusy] = useState(false);
-  const [replayError, setReplayError] = useState<string | null>(null);
+  const [names, setNames] = useState<Record<string, string>>({});
+  const [editing, setEditing] = useState<number | null>(null); // the row whose label is being typed
+  const [sort, setSort] = useState<SortState>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [geo, setGeo] = useState<Record<string, Country>>({});
   const [cols, setCols] = useState<ColumnId[]>(loadColumns);
   const [colsOpen, setColsOpen] = useState(false);
   const colsBox = useRef<HTMLDivElement>(null);
   const show = (id: ColumnId) => cols.includes(id);
+  const visibleWidth = COLUMNS.filter((c) => cols.includes(c.id)).reduce((n, c) => n + COL_WIDTH[c.id], 0) || 1;
   const asked = useRef(new Set<string>());
   const tableEnd = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
-  const cfProblems = captureProblems(cf);
-  const bpf = toBpf(cf);
   const anyOn = filters.some((f) => f.enabled);
-  const shown = useMemo(() => rows.filter((r) => matchesAny(filters, r)), [rows, filters]);
+  /** The address on the other end of a packet, which is the one a label and a country belong to. */
+  const farOf = (r: PacketRow) => (isLocalAddress(r.src) ? r.dst : r.src);
 
   const countryOf = useCallback(
     (r: PacketRow) => {
@@ -110,6 +117,65 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
     },
     [geo]
   );
+
+  const shown = useMemo(() => {
+    const kept = rows.filter((r) => matchesAny(filters, r));
+    if (!sort) return kept;
+    const far = (r: PacketRow) => (isLocalAddress(r.src) ? r.dst : r.src);
+    const value = (r: PacketRow): string | number => {
+      switch (sort.key) {
+        case "name": return (names[far(r)] ?? "").toLowerCase();
+        case "srcIp": return ipKey(r.src);
+        case "dstIp": return ipKey(r.dst);
+        case "srcPort": return r.srcPort ?? -1;
+        case "dstPort": return r.dstPort ?? -1;
+        case "country": return (geo[far(r)]?.name ?? "").toLowerCase();
+        case "protocol": return r.protocol;
+        case "bytes": return r.length;
+        default: return r.time;
+      }
+    };
+    const sign = sort.dir === "asc" ? 1 : -1;
+    // Empty names and countries always go last, so the useful rows stay on top.
+    return [...kept].sort((a, b) => {
+      const x = value(a), y = value(b);
+      if (x === "" && y !== "") return 1;
+      if (y === "" && x !== "") return -1;
+      if (x === y) return a.id - b.id;
+      return (x < y ? -1 : 1) * sign;
+    });
+  }, [rows, filters, sort, names, geo]);
+
+  function clickHeader(key: ColumnId) {
+    setSort((s) => (s?.key !== key ? { key, dir: "asc" } : s.dir === "asc" ? { key, dir: "desc" } : null));
+  }
+
+  useEffect(() => {
+    const load = () =>
+      loadEntries()
+        .then((list) => setNames(Object.fromEntries(list.filter((e) => e.note).map((e) => [e.address, e.note]))))
+        .catch(() => {});
+    load();
+    return onIpStoreChange(load); // keeps names in step with the IP Storage page
+  }, []);
+
+  async function saveName(address: string, value: string) {
+    setEditing(null);
+    const clean = value.trim().slice(0, NAME_MAX);
+    if (clean === (names[address] ?? "")) return;
+    setNames((n) => {
+      const next = { ...n };
+      if (clean) next[address] = clean;
+      else delete next[address];
+      return next;
+    });
+    try {
+      await setName(address, clean);
+      setNotice(clean ? `Saved the label for ${address} in IP Storage.` : `Removed the label for ${address} from IP Storage.`);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
 
   const askGeo = useCallback((list: PacketRow[]) => {
     const fresh = new Set<string>();
@@ -193,17 +259,6 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
     };
   }, []);
 
-  useEffect(() => {
-    api
-      .getStore("capture-filter")
-      .then((v) => {
-        const f = fromStoredCapture(v);
-        setCf(f);
-        setCfOpen(toBpf(f) !== "");
-      })
-      .catch(() => {});
-  }, []);
-
   // The app side collects packets; this asks for them a few times a second while capturing.
   useEffect(() => {
     if (!running) return;
@@ -243,20 +298,14 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
     return () => scroller.removeEventListener("scroll", onScroll);
   }, []);
   useEffect(() => {
-    if (stick.current) tableEnd.current?.scrollIntoView({ block: "end" });
-  }, [shown]);
+    if (stick.current && !sort) tableEnd.current?.scrollIntoView({ block: "end" });
+  }, [shown, sort]);
 
   const start = useCallback(async () => {
-    if (Object.keys(captureProblems(cf)).length > 0) {
-      setCfOpen(true);
-      setError("Fix the capture filter first. The boxes marked in red need a different value.");
-      return;
-    }
     setBusy(true);
     setError(null);
     try {
-      await api.startCapture(adapter, toBpf(cf));
-      api.saveStore("capture-filter", cf).catch(() => {});
+      await api.startCapture(adapter, "");
       setRows([]);
       setTotal(0);
       resetGeo();
@@ -270,7 +319,7 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
     } finally {
       setBusy(false);
     }
-  }, [adapter, cf, resetGeo]);
+  }, [adapter, resetGeo]);
 
   const stop = useCallback(async () => {
     setBusy(true);
@@ -378,66 +427,6 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
         </p>
       </Card>
 
-      <Card className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            aria-expanded={cfOpen}
-            onClick={() => setCfOpen((o) => !o)}
-            className="rounded-md text-sm font-medium text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
-          >
-            {cfOpen ? "▾" : "▸"} Capture filter
-          </button>
-          <span className="text-sm text-muted">
-            {bpf === "" ? "Recording everything on the adapter." : `Recording only: ${bpf}. Other packets are never saved.`}
-          </span>
-          {bpf !== "" && !running && (
-            <Button size="sm" variant="ghost" onClick={() => setCf(NO_CAPTURE_FILTER)}>Clear</Button>
-          )}
-        </div>
-        {cfOpen && (
-          <div className="grid gap-3 sm:grid-cols-4">
-            <label className="flex flex-col gap-1.5 text-sm">
-              <span className="font-medium text-text">Protocol</span>
-              <select
-                value={cf.protocol}
-                disabled={running}
-                onChange={(e) => setCf({ ...cf, protocol: e.target.value as Proto })}
-                className="h-10 rounded-md border border-border-input bg-surface px-3 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft disabled:opacity-50"
-              >
-                {PROTOCOLS.map((p) => (
-                  <option key={p} value={p}>{p === "any" ? "Any protocol" : p}</option>
-                ))}
-              </select>
-            </label>
-            {([
-              ["Port", "port", "Either side. Empty = any."],
-              ["Device address", "address", "One full address, such as 192.168.0.20."],
-              ["Smallest packet (bytes)", "minBytes", "Empty = any size."],
-              ["Payload starts with (hex)", "hex", "Up to 8 bytes, such as 47 45 54 20. IPv4 TCP and UDP only; other packets are not recorded."],
-            ] as const).map(([label, key, hint]) => (
-              <label key={key} className="flex flex-col gap-1.5 text-sm">
-                <span className="font-medium text-text">{label}</span>
-                <input
-                  value={cf[key]}
-                  disabled={running}
-                  inputMode={key === "address" || key === "hex" ? "text" : "numeric"}
-                  aria-invalid={cfProblems[key] ? true : undefined}
-                  onChange={(e) => setCf({ ...cf, [key]: e.target.value })}
-                  className={`h-10 rounded-md border bg-surface px-3 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft disabled:opacity-50
-                    ${cfProblems[key] ? "border-danger" : "border-border-input"}`}
-                />
-                <span className={`text-xs ${cfProblems[key] ? "text-danger" : "text-muted"}`}>{cfProblems[key] ?? hint}</span>
-              </label>
-            ))}
-            <p className="text-xs text-muted sm:col-span-4">
-              Unlike the filters below, a capture filter decides what gets recorded. Packets it rejects cannot be shown, exported or
-              replayed later. Changes apply the next time you press Start capture.
-            </p>
-          </div>
-        )}
-      </Card>
-
       <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filters">
         <span className="text-sm text-muted">Filters:</span>
         {filters.length === 0 && <span className="text-sm text-muted">none yet. Add some on the Filters page.</span>}
@@ -451,7 +440,7 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
               focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft
               ${f.enabled ? "border-accent bg-surface text-text" : "border-border text-muted hover:text-text"}`}
           >
-            {f.enabled ? "✓ " : ""}{f.name}
+            {f.enabled ? "✓ " : ""}{f.mode === "hide" ? "Hide: " : ""}{f.name}
           </button>
         ))}
         {!anyOn && filters.length > 0 && <span className="text-xs text-muted">None switched on, so everything shows.</span>}
@@ -517,8 +506,50 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
         </p>
       )}
 
-      <Card className="min-h-0 flex-1 overflow-auto p-0">
-        {shown.length === 0 ? (
+      <Card className="flex min-h-0 flex-1 flex-col overflow-hidden !p-0">
+        <div className="flex min-h-0 flex-1 flex-col overflow-x-auto">
+          <div className="flex h-full min-w-[64rem] flex-col">
+            {/* The heading bar sits above the list and never scrolls with it. */}
+            <div className="shrink-0 overflow-y-hidden border-b border-accent/40 bg-[linear-gradient(180deg,#4a1621,#33101a)] text-text shadow-[0_6px_14px_-8px_rgba(0,0,0,.6)] [scrollbar-gutter:stable]">
+              <table className="w-full table-fixed text-left text-xs">
+                <colgroup>
+                  {COLUMNS.filter((c) => show(c.id)).map((c) => (
+                    <col key={c.id} style={{ width: `${(COL_WIDTH[c.id] / visibleWidth) * 100}%` }} />
+                  ))}
+                </colgroup>
+                <thead>
+                  <tr>
+                    {COLUMNS.filter((c) => show(c.id)).map((c) => {
+                      const active = sort?.key === c.id;
+                      return (
+                        <th
+                          key={c.id}
+                          scope="col"
+                          aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
+                          className={`whitespace-nowrap p-0 text-[11px] font-bold uppercase tracking-wider ${c.right ? "text-right" : ""}`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => clickHeader(c.id)}
+                            title={active ? (sort.dir === "asc" ? "Sorted A to Z. Click for Z to A." : "Sorted Z to A. Click to clear.") : `Sort by ${c.label.toLowerCase()}`}
+                            className={`flex w-full items-center gap-1.5 px-3 py-3 transition-colors duration-fast hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-soft ${
+                              c.right ? "justify-end" : ""
+                            } ${active ? "text-accent-soft" : ""}`}
+                          >
+                            {c.label}
+                            <span aria-hidden="true" className={`text-[10px] ${active ? "opacity-100" : "opacity-30"}`}>
+                              {active ? (sort.dir === "asc" ? "\u25B2" : "\u25BC") : "\u2195"}
+                            </span>
+                          </button>
+                        </th>
+                      );
+                    })}
+                  </tr>
+                </thead>
+              </table>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
+              {shown.length === 0 ? (
           <EmptyState
             icon={<NetworkIcon className="h-6 w-6" />}
             title={rows.length > 0 ? "Nothing matches these filters" : running ? "Waiting for traffic" : "No capture yet"}
@@ -530,40 +561,70 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
                 : "Pick an adapter and press Start capture, or open a .pcap file. Nothing leaves your computer."
             }
           />
-        ) : (
-          <table className="w-full min-w-[32rem] text-left font-mono text-xs">
-            <thead className="sticky top-0 bg-surface-strong text-muted">
-              <tr className="border-b border-border">
-                {show("time") && <th scope="col" className="px-3 py-2 font-semibold">Time</th>}
-                {show("source") && <th scope="col" className="px-3 py-2 font-semibold">Source</th>}
-                {show("destination") && <th scope="col" className="px-3 py-2 font-semibold">Destination</th>}
-                {show("country") && <th scope="col" className="px-3 py-2 font-semibold">Country</th>}
-                {show("protocol") && <th scope="col" className="px-3 py-2 font-semibold">Protocol</th>}
-                {show("bytes") && <th scope="col" className="px-3 py-2 text-right font-semibold">Bytes</th>}
-                <th scope="col" className="px-3 py-2"><span className="sr-only">Actions</span></th>
-              </tr>
-            </thead>
+              ) : (
+                <table className="w-full table-fixed text-left text-xs">
+                  <colgroup>
+                  {COLUMNS.filter((c) => show(c.id)).map((c) => (
+                    <col key={c.id} style={{ width: `${(COL_WIDTH[c.id] / visibleWidth) * 100}%` }} />
+                  ))}
+                </colgroup>
             <tbody>
               {shown.map((r) => {
-                const local = isLocalAddress(r.src) && isLocalAddress(r.dst);
-                const replayable = local && !fromFile;
+                const far = farOf(r);
                 const cellCopy = (text: string, what: string) => ({
                   title: "Double-click to copy",
                   onDoubleClick: () => copy(text, what),
                 });
+                const port = (n: number | null) => (n === null ? "" : String(n));
                 return (
-                  <tr key={r.id} className="border-b border-border last:border-0">
-                    {show("time") && <td className="px-3 py-1.5 text-muted" {...cellCopy(clock(r.time), "the time")}>{clock(r.time)}</td>}
-                    {show("source") && <td className="px-3 py-1.5 text-text" {...cellCopy(endpoint(r.src, r.srcPort), "the source")}>{endpoint(r.src, r.srcPort)}</td>}
-                    {show("destination") && <td className="px-3 py-1.5 text-text" {...cellCopy(endpoint(r.dst, r.dstPort), "the destination")}>{endpoint(r.dst, r.dstPort)}</td>}
+                  <tr key={r.id} className="border-b border-border transition-colors duration-fast last:border-0 hover:bg-white/[0.05]">
+                    {show("name") && (
+                      <td className="max-w-[14rem] px-3 py-1.5">
+                        {editing === r.id ? (
+                          <input
+                            autoFocus
+                            defaultValue={names[far] ?? ""}
+                            maxLength={NAME_MAX}
+                            aria-label={`Label for ${far}`}
+                            placeholder="Type a label"
+                            onFocus={(e) => e.currentTarget.select()}
+                            onBlur={(e) => saveName(far, e.currentTarget.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") saveName(far, e.currentTarget.value);
+                              if (e.key === "Escape") {
+                                e.currentTarget.value = names[far] ?? "";
+                                e.currentTarget.blur();
+                              }
+                            }}
+                            className="h-7 w-full rounded-pill border border-accent-soft bg-white/[0.08] px-3 text-xs text-text focus-visible:outline-none"
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setEditing(r.id)}
+                            title={`${names[far] ? "Change the label for" : "Add a label for"} ${far}. Saved in IP Storage.`}
+                            aria-label={`${names[far] ? "Change the label for" : "Add a label for"} ${far}`}
+                            className={`max-w-full truncate rounded-pill px-2 py-0.5 text-left transition-colors duration-fast hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft ${
+                              names[far] ? "font-semibold text-text" : "text-muted/70"
+                            }`}
+                          >
+                            {names[far] ?? "+ Add label"}
+                          </button>
+                        )}
+                      </td>
+                    )}
+                    {show("srcIp") && <td className="px-3 py-1.5 font-mono text-text" {...cellCopy(r.src, "the source address")}>{r.src}</td>}
+                    {show("srcPort") && <td className="px-3 py-1.5 font-mono text-muted" {...cellCopy(port(r.srcPort), "the source port")}>{port(r.srcPort)}</td>}
+                    {show("dstIp") && <td className="px-3 py-1.5 font-mono text-text" {...cellCopy(r.dst, "the destination address")}>{r.dst}</td>}
+                    {show("dstPort") && <td className="px-3 py-1.5 font-mono text-muted" {...cellCopy(port(r.dstPort), "the destination port")}>{port(r.dstPort)}</td>}
                     {show("country") && (
                       <td className="px-3 py-1.5 text-text">
                         {(() => {
-                          const hit = geo[isLocalAddress(r.src) ? r.dst : r.src];
+                          const hit = geo[far];
                           return hit ? (
                             <span className="inline-flex items-center gap-2" title={hit.code}>
                               <Flag code={hit.code} />
-                              <span className="font-sans">{hit.name}</span>
+                              <span>{hit.name}</span>
                             </span>
                           ) : (
                             ""
@@ -571,74 +632,21 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
                         })()}
                       </td>
                     )}
-                    {show("protocol") && <td className="px-3 py-1.5 text-muted">{r.protocol}</td>}
-                    {show("bytes") && <td className="px-3 py-1.5 text-right text-muted" {...cellCopy(String(r.length), "the size")}>{r.length}</td>}
-                    <td className="whitespace-nowrap px-3 py-1 text-right">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        aria-label={`Copy row: ${r.src} to ${r.dst}`}
-                        onClick={() => copy(rowToTsv(r, countryOf(r)), "the row")}
-                      >
-                        Copy
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={!replayable}
-                        title={
-                          fromFile
-                            ? "Packets opened from a file cannot be sent again."
-                            : local
-                            ? undefined
-                            : "Replay works only for packets between two devices on your own network."
-                        }
-                        aria-label={`Replay packet from ${r.src} to ${r.dst}`}
-                        onClick={() => { setReplayRow(r); setReplayError(null); }}
-                      >
-                        Replay
-                      </Button>
-                    </td>
+                    {show("protocol") && <td className="px-3 py-1.5 font-mono text-muted">{r.protocol}</td>}
+                    {show("bytes") && <td className="px-3 py-1.5 text-right font-mono text-muted" {...cellCopy(String(r.length), "the size")}>{r.length}</td>}
+                    {show("time") && <td className="px-3 py-1.5 text-right font-mono text-muted" {...cellCopy(clock(r.time), "the time")}>{clock(r.time)}</td>}
                   </tr>
                 );
               })}
             </tbody>
-          </table>
-        )}
-        <div ref={tableEnd} />
-      </Card>
-
-      <Modal open={replayRow !== null} onClose={() => !replayBusy && setReplayRow(null)} title="Send this packet again?">
-        {replayRow && (
-          <div className="flex flex-col gap-3 text-sm">
-            <p className="text-muted">
-              This sends one {replayRow.protocol} packet ({replayRow.length} bytes) from {endpoint(replayRow.src, replayRow.srcPort)} to{" "}
-              {endpoint(replayRow.dst, replayRow.dstPort)} on your network, once. Use it only on your own devices.
-            </p>
-            {replayError && <p role="alert" className="text-danger">{replayError}</p>}
-            <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setReplayRow(null)} disabled={replayBusy}>Cancel</Button>
-              <Button
-                loading={replayBusy}
-                onClick={async () => {
-                  setReplayBusy(true);
-                  setReplayError(null);
-                  try {
-                    setNotice(await api.replayPacket(replayRow.id));
-                    setReplayRow(null);
-                  } catch (e) {
-                    setReplayError(String(e));
-                  } finally {
-                    setReplayBusy(false);
-                  }
-                }}
-              >
-                Send once
-              </Button>
+                </table>
+              )}
+              <div ref={tableEnd} />
             </div>
           </div>
-        )}
-      </Modal>
+        </div>
+      </Card>
+
     </div>
   );
 }

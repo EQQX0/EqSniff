@@ -61,7 +61,7 @@ The app has its own WireGuard engine (`src-tauri/src/vpnengine.rs`): `boringtun`
 
 ## IP Storage
 
-A plain address book for your own notes: an address (any text, up to 100 characters) and a comment (up to 500 characters) per row, searchable by either. Saved through the same key-value store as device labels and the capture filter (`get_store`/`save_store`, store name `ip-storage`). No username field and no link to a capture or scan; it is a notes list, not an identity lookup.
+A plain address book for your own labels: an address (any text, up to 100 characters) and a label (up to 500 characters) per row, searchable by either. The Capture table writes its Label column to the same list. Saved through the same key-value store as device labels and the capture filter (`get_store`/`save_store`, store name `ip-storage`). No username field and no link to a capture or scan; it is a notes list, not an identity lookup.
 
 ## Build notes
 

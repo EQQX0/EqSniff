@@ -7,23 +7,12 @@ import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { BookmarkIcon } from "@/components/ui/icons";
 
-export interface IpEntry {
-  id: string;
-  address: string;
-  note: string;
-  createdAt: number;
-}
+import { IP_STORE, announceChange, isEntryArray, newEntryId, onChange, type IpEntry } from "@/lib/ipstore";
+
+export type { IpEntry };
 
 const ADDRESS_MAX = 100;
 const NOTE_MAX = 500;
-
-function newId() {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function isEntryArray(v: unknown): v is IpEntry[] {
-  return Array.isArray(v) && v.every((e) => e && typeof e === "object" && typeof (e as IpEntry).address === "string");
-}
 
 export function IpStorageView() {
   const [entries, setEntries] = useState<IpEntry[]>([]);
@@ -33,16 +22,20 @@ export function IpStorageView() {
   const [deleteTarget, setDeleteTarget] = useState<IpEntry | null>(null);
 
   useEffect(() => {
-    api
-      .getStore("ip-storage")
-      .then((v) => isEntryArray(v) && setEntries(v))
-      .catch((e) => setError(String(e)));
+    const load = () =>
+      api
+        .getStore(IP_STORE)
+        .then((v) => isEntryArray(v) && setEntries(v))
+        .catch((e) => setError(String(e)));
+    load();
+    return onChange(load); // a label added on the Capture page appears here at once
   }, []);
 
   async function persist(next: IpEntry[]) {
     setEntries(next);
     try {
-      await api.saveStore("ip-storage", next);
+      await api.saveStore(IP_STORE, next);
+      announceChange();
       setError(null);
     } catch (e) {
       setError(String(e));
@@ -50,7 +43,7 @@ export function IpStorageView() {
   }
 
   function openAdd() {
-    setModal({ mode: "add", entry: { id: newId(), address: "", note: "", createdAt: Date.now() } });
+    setModal({ mode: "add", entry: { id: newEntryId(), address: "", note: "", createdAt: Date.now() } });
   }
 
   function openEdit(entry: IpEntry) {
@@ -87,15 +80,15 @@ export function IpStorageView() {
       <div>
         <h1 className="text-xl font-bold text-text">IP Storage</h1>
         <p className="mt-1 text-sm text-muted">
-          Your own saved addresses and notes. Jot down a router, a server, or any address you want to remember, with a
-          comment next to it. This list stays on this computer and is not used by any capture filter.
+          Your own saved addresses and labels. Jot down a router, a server, or any address you want to remember, with a
+          label next to it. This list stays on this computer and is not used by any capture filter.
         </p>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Input
           label="Search"
           hideLabel
-          placeholder="Search by address or note"
+          placeholder="Search by address or label"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="w-full max-w-xs"
@@ -118,7 +111,7 @@ export function IpStorageView() {
             <thead className="text-muted">
               <tr className="border-b border-border">
                 <th scope="col" className="px-3 py-2 font-semibold">Address</th>
-                <th scope="col" className="px-3 py-2 font-semibold">Note</th>
+                <th scope="col" className="px-3 py-2 font-semibold">Label</th>
                 <th scope="col" className="px-3 py-2 font-semibold">Added</th>
                 <th scope="col" className="px-3 py-2"><span className="sr-only">Actions</span></th>
               </tr>
@@ -127,7 +120,7 @@ export function IpStorageView() {
               {filtered.map((e) => (
                 <tr key={e.id} className="border-b border-border last:border-0">
                   <td className="px-3 py-2 font-mono text-xs text-text">{e.address}</td>
-                  <td className="max-w-sm px-3 py-2 text-sm text-muted">{e.note || <span className="italic">No note</span>}</td>
+                  <td className="max-w-sm px-3 py-2 text-sm text-muted">{e.note || <span className="italic">No label</span>}</td>
                   <td className="px-3 py-2 text-xs text-muted">{new Date(e.createdAt).toLocaleDateString()}</td>
                   <td className="px-3 py-1.5 text-right">
                     <div className="flex justify-end gap-2">
@@ -214,14 +207,14 @@ function EntryForm({
         hint="Any text, not only an IP, up to 100 characters."
       />
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="ip-note" className="text-sm font-medium text-text">
-          Note
+        <label htmlFor="ip-label" className="text-sm font-medium text-text">
+          Label
         </label>
         <textarea
-          id="ip-note"
+          id="ip-label"
           value={note}
           maxLength={NOTE_MAX}
-          placeholder="Add a comment"
+          placeholder="Add a label"
           onChange={(e) => setNote(e.target.value)}
           rows={3}
           className="rounded-md border border-border-input bg-surface px-3 py-2 text-sm text-text placeholder:text-muted

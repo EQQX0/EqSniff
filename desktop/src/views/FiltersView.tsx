@@ -17,6 +17,7 @@ import {
   toFile,
   type Direction,
   type Filter,
+  type Mode,
   type Proto,
 } from "@/lib/filters";
 import { download } from "@/lib/export";
@@ -99,8 +100,9 @@ export function FiltersView({ filters, onChange, onUse }: Props) {
       <div>
         <h1 className="text-xl font-bold text-text">Filters</h1>
         <p className="mt-1 text-sm text-muted">
-          A filter picks which packets the Capture table shows. A packet must match every box you fill in. With several filters on, a packet
-          that matches any of them is shown. With none on, everything is shown.
+          A filter is either a <strong className="font-semibold text-text">Show</strong> filter, which keeps only the packets it matches, or a{" "}
+          <strong className="font-semibold text-text">Hide</strong> filter, which removes them. A packet must match every box you fill in. With
+          several Show filters on, a packet that matches any of them stays. A Hide filter always wins. With none on, everything is shown.
         </p>
       </div>
 
@@ -135,6 +137,27 @@ export function FiltersView({ filters, onChange, onUse }: Props) {
       {draft && (
         <Card className="anim-pop flex flex-col gap-6">
           <h2 className="text-lg font-semibold text-text">{filters.some((f) => f.id === draft.id) ? "Edit filter" : "New filter"}</h2>
+
+          <fieldset>
+            <legend className="mb-2 text-sm font-semibold text-text">What this filter does</legend>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {([
+                ["show", "Show only matches", "Packets that do not match disappear from the table."],
+                ["hide", "Hide matches", "Packets that match disappear from the table."],
+              ] as [Mode, string, string][]).map(([id, title, text]) => (
+                <label
+                  key={id}
+                  className={`flex cursor-pointer flex-col gap-0.5 rounded-lg border px-4 py-3 text-sm transition-all duration-base ease-brand focus-within:ring-2 focus-within:ring-accent-soft ${
+                    draft.mode === id ? "border-accent bg-accent/15" : "border-border-input bg-white/[0.04] hover:bg-white/[0.08]"
+                  }`}
+                >
+                  <input type="radio" name="filter-mode" className="sr-only" checked={draft.mode === id} onChange={() => setDraft({ ...draft, mode: id })} />
+                  <span className="font-semibold text-text">{title}</span>
+                  <span className="text-xs text-muted">{text}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
 
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="sm:col-span-2">
@@ -244,7 +267,16 @@ export function FiltersView({ filters, onChange, onUse }: Props) {
                 >
                   <Switch checked={f.enabled} label={`Switch ${f.name} on`} onChange={() => toggle(f)} />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-text">{f.name}</p>
+                    <p className="flex items-center gap-2 truncate text-sm font-semibold text-text">
+                      <span
+                        className={`shrink-0 rounded-pill border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                          f.mode === "hide" ? "border-danger/40 bg-danger-solid/20 text-danger" : "border-success/40 bg-success/10 text-success"
+                        }`}
+                      >
+                        {f.mode === "hide" ? "Hide" : "Show"}
+                      </span>
+                      <span className="truncate">{f.name}</span>
+                    </p>
                     <p className="truncate text-xs text-muted">{describe(f)}</p>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">

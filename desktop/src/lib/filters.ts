@@ -3,15 +3,19 @@ import type { PacketRow } from "@/lib/api";
 export type Proto = "any" | "TCP" | "UDP" | "ICMP";
 /** Which side of the packet the port and address boxes look at. */
 export type Direction = "any" | "from" | "to";
+/** What a switched-on filter does: keep only the packets it matches, or drop them. */
+export type Mode = "show" | "hide";
 
 /**
  * A display filter: a packet matches when it passes every box that is filled in.
- * With several filters switched on, the table shows packets that match any of them.
+ * A "show" filter keeps only matching packets (with several on, a packet that matches any is kept).
+ * A "hide" filter removes matching packets. Hide wins over show.
  */
 export interface Filter {
   id: string;
   name: string;
   enabled: boolean;
+  mode: Mode;
   protocol: Proto;
   direction: Direction;
   port: string; // empty = any
@@ -28,7 +32,7 @@ export const DIRECTIONS: { id: Direction; label: string }[] = [
   { id: "to", label: "Destination (receiver) only" },
 ];
 
-const base = { enabled: false, direction: "any" as Direction, port: "", address: "", minBytes: "", maxBytes: "", hex: "" };
+const base = { enabled: false, mode: "show" as Mode, direction: "any" as Direction, port: "", address: "", minBytes: "", maxBytes: "", hex: "" };
 
 export const STARTERS: Filter[] = [
   { ...base, id: "starter-web", name: "Secure web traffic (port 443)", protocol: "TCP", port: "443" },
@@ -122,10 +126,15 @@ export function matches(f: Filter, r: PacketRow): boolean {
   return true;
 }
 
-/** Shows everything when no filter is switched on; otherwise packets that match any switched-on filter. */
+/**
+ * Hide filters remove what they match. Show filters, when any are on, keep only what they match.
+ * With nothing switched on, every packet shows.
+ */
 export function matchesAny(filters: Filter[], r: PacketRow): boolean {
   const on = filters.filter((f) => f.enabled);
-  return on.length === 0 || on.some((f) => matches(f, r));
+  if (on.some((f) => f.mode === "hide" && matches(f, r))) return false;
+  const show = on.filter((f) => f.mode !== "hide");
+  return show.length === 0 || show.some((f) => matches(f, r));
 }
 
 export interface Problems {
@@ -173,7 +182,7 @@ export function describe(f: Filter): string {
 const FILE_KIND = "network-toolkit-filters";
 
 export function toFile(filters: Filter[]): string {
-  return JSON.stringify({ kind: FILE_KIND, version: 2, filters }, null, 2);
+  return JSON.stringify({ kind: FILE_KIND, version: 3, filters }, null, 2);
 }
 
 function clean(raw: Record<string, unknown>, keepId: boolean): Filter {
@@ -182,6 +191,7 @@ function clean(raw: Record<string, unknown>, keepId: boolean): Filter {
     id: keepId && typeof raw?.id === "string" ? raw.id : newId(), // ids from a file are never trusted
     name: text(raw?.name, 80),
     enabled: keepId ? raw?.enabled === true : false, // imported filters start switched off
+    mode: raw?.mode === "hide" ? "hide" : "show", // older files and saved filters are show filters
     protocol: PROTOCOLS.includes(raw?.protocol as Proto) ? (raw.protocol as Proto) : "any",
     direction: ["any", "from", "to"].includes(raw?.direction as string) ? (raw.direction as Direction) : "any",
     port: text(raw?.port, 5),
@@ -201,7 +211,7 @@ export function fromFile(text: string): Filter[] {
     throw new Error("That file is not a filter file (it is not valid JSON).");
   }
   const d = data as { kind?: string; filters?: unknown };
-  if (d?.kind !== FILE_KIND || !Array.isArray(d.filters)) throw new Error("That file is not a Network Toolkit filter file.");
+  if (d?.kind !== FILE_KIND || !Array.isArray(d.filters)) throw new Error("That file is not an EqNetwork filter file.");
   const list = (d.filters as Record<string, unknown>[]).map((raw) => clean(raw, false)).filter((f) => Object.keys(problems(f)).length === 0);
   if (list.length === 0) throw new Error("No usable filters were found in that file.");
   return list;

@@ -28,6 +28,16 @@ const a = mk({ id: "a", protocol: "TCP", enabled: true }), b = mk({ id: "b", pro
 ok(f.matchesAny([a, b, c], row()), "any of the enabled");
 ok(!f.matchesAny([a, c], row()), "enabled ones do not match");
 ok(f.matchesAny([c], row({ protocol: "TCP" })), "none enabled shows everything");
+// hide filters
+const hideTcp = mk({ id: "h", protocol: "TCP", enabled: true, mode: "hide" });
+ok(!f.matchesAny([hideTcp], row({ protocol: "TCP" })), "hide removes what it matches");
+ok(f.matchesAny([hideTcp], row({ protocol: "UDP" })), "hide alone keeps everything else");
+ok(!f.matchesAny([hideTcp, mk({ id: "s", protocol: "TCP", enabled: true })], row({ protocol: "TCP" })), "hide wins over show");
+ok(f.matchesAny([hideTcp, mk({ id: "u", protocol: "UDP", enabled: true })], row({ protocol: "UDP" })), "show still limits when a hide is on too");
+ok(!f.matchesAny([hideTcp, mk({ id: "u2", protocol: "UDP", enabled: true })], row({ protocol: "ICMP" })), "packets outside the show filter stay hidden");
+ok(f.matchesAny([{ ...hideTcp, enabled: false }], row({ protocol: "TCP" })), "switched-off hide does nothing");
+ok(f.fromStored([{ id: "x", name: "n" }])[0].mode === "show", "legacy filters are show filters");
+ok(f.fromFile(f.toFile([mk({ id: "q", name: "h", mode: "hide" })]))[0].mode === "hide", "mode survives export and import");
 // problems
 ok(f.problems(mk({ hex: "4" })).hex, "odd hex rejected");
 ok(f.problems(mk({ hex: "zz" })).hex, "non hex rejected");
@@ -42,7 +52,7 @@ ok(out.length === 1 && out[0].id !== "keep" && out[0].enabled === false && out[0
 const old = JSON.stringify({ kind: "network-toolkit-filters", version: 1, filters: [{ id: "q", name: "old", protocol: "TCP", port: "80", address: "", minBytes: "" }] });
 ok(f.fromFile(old)[0].direction === "any" && f.fromFile(old)[0].maxBytes === "", "version 1 files still open");
 assert.throws(() => f.fromFile("nope"), /not valid JSON/); n++;
-assert.throws(() => f.fromFile(JSON.stringify({ kind: "x" })), /not a Network Toolkit/); n++;
+assert.throws(() => f.fromFile(JSON.stringify({ kind: "x" })), /not an EqNetwork/); n++;
 const stored = f.fromStored([{ id: "z", name: "legacy", protocol: "UDP", port: "53", address: "", minBytes: "" }, { bad: 1 }]);
 ok(stored.length === 1 && stored[0].enabled === false && stored[0].id === "z", "stored legacy filters get defaults");
 ok(f.STARTERS.every((s) => Object.keys(f.problems(s)).length === 0), "starters are valid");

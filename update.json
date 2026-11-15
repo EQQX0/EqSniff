@@ -1,6 +1,6 @@
 {
-  "version": "0.2.1",
-  "url": "https://updates.eqqx2.com/NetworkToolkit-setup.exe",
-  "sha256": "c5b9452219528a82a9144731745c3ca06d0c3e386604c3c29e9e9712919bd87d",
-  "notes": "Update now button: the app downloads the installer, checks its checksum and opens it. Also in 0.2: new look, country flags and a column picker in Capture, whole-network scan in Devices, Hotspot with automatic sharing."
+  "version": "0.2.2",
+  "url": "https://updates.eqqx2.com/EqNetwork-setup.exe",
+  "sha256": "72a42f90d9a8b7a90949f4e49603b95a714c0bb00fa257d0c05accbbd42ce4a9",
+  "notes": "Now called EqNetwork, with the Eq logo. Capture table: labels saved to IP Storage, sort by any heading, flags, no Copy or Replay buttons. Filters are Show or Hide, and one filter system replaces the separate capture filter."
 }

@@ -17,10 +17,7 @@ const FAQ: { q: string; a: string }[] = [
     q: "Why do I see only my own computer's traffic?",
     a: "Capture shows what crosses the selected adapter. On a normal switched network that is your computer's traffic plus broadcasts. Seeing other devices' private traffic would need special equipment, and this app does not try to do it.",
   },
-  {
-    q: "What is the Capture filter, and how is it different from Filters?",
-    a: "The Capture filter (on the Capture page) decides what gets recorded. The network driver drops everything else, so those packets cannot be shown, exported or replayed later. It takes a protocol, a port, one device address and a smallest packet size, and applies the next time you press Start capture. The Filters page only changes which recorded packets the table shows, and you can change it any time.",
-  },
+  
   {
     q: "How does the VPN page work?",
     a: "It keeps your WireGuard tunnels in one list, like the WireGuard app. Add a tunnel with a .conf file from your VPN provider, pick it, and press Activate. The app carries the traffic itself with a built-in WireGuard engine, so nothing else needs installing. Windows asks you to allow each start, because the virtual network adapter needs administrator rights. Traffic that your tunnel's allowed addresses cover goes through the VPN. If the app closes while a tunnel is on, the adapter disappears and traffic goes back to your normal connection. You can edit a tunnel that is off with the Edit button, and the Log tab shows what the engine did. The kill switch checkbox blocks all traffic outside the VPN while the tunnel is active, except the VPN server and your local network; if the tunnel drops, traffic stays blocked until you press Deactivate. It is off by default. The private key stays in the saved file and is never shown. Files that try to run commands (PostUp and similar) are refused.",
@@ -31,12 +28,13 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "How do filters work?",
-    a: "A filter picks which packets the table shows. A packet must match every box that is filled in: protocol, port, address, packet size, and bytes in the payload (hex). Direction says whether the port and address boxes check the sender, the receiver or either. Switch filters on and off with the chips above the table or the checkboxes on the Filters page. With several on, a packet shows if it matches any of them; with none on, everything shows. Filters change the view only; the capture keeps running underneath. Export and import filters as files from the Filters page.",
+    a: "A filter is either a Show filter (keeps only the packets it matches) or a Hide filter (removes them). There is one filter system for everything: the capture records all traffic on the adapter, and filters only change what the table shows, so you can switch them off to bring hidden packets back. A packet must match every box that is filled in: protocol, port, address, packet size, and bytes in the payload (hex). Direction says whether the port and address boxes check the sender, the receiver or either. Switch filters on and off with the chips above the table or the checkboxes on the Filters page. With several Show filters on, a packet stays if it matches any of them. A Hide filter always wins. With none on, everything shows. The table keeps the latest 3,000 packets. Filters change the view only; the capture keeps running underneath. Export and import filters as files from the Filters page.",
   },
   {
-    q: "What does Replay do?",
-    a: "It sends one saved packet again, once, from the adapter it was captured on. It only works for packets between two devices on your own network (neither end can be an internet address), and it asks you to confirm first. The app keeps the most recent 20,000 packets. Packets opened from a file cannot be replayed. Packets larger than the saved size cannot be replayed.",
+    q: "How do I label an address, and how do I sort the table?",
+    a: "Click + Add label in the Label column of any row and type a label. It is saved in IP Storage as the label for the address on the other end of that packet, so every row with that address shows it, and you can edit it on the IP Storage page too. Clear the box to remove it. Click a column heading to sort by it (Label, IP, port, country, protocol, bytes or time). Click again to reverse, and a third time to go back to arrival order. The Columns button chooses which columns show. Double-click a cell to copy it.",
   },
+
   {
     q: "What does the scan on the Devices page do?",
     a: "It finds the devices on your own network and checks 22 common ports on each, using ordinary connections like a browser makes. It scans only the network this computer is on, up to 256 addresses,. Devices that block every connection may show up only by their MAC address, or not at all. Found devices appear in the Devices table.",
@@ -59,7 +57,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "What is IP Storage for?",
-    a: "A plain address book for your own notes: an address and a comment, nothing more. Save a router address, a server, or anything else you want to remember, then search, edit or delete it later. It is not tied to a capture and does not feed into any filter.",
+    a: "A plain address book for your own labels: an address and a label, nothing more. Save a router address, a server, or anything else you want to remember, then search, edit or delete it later. It is not tied to a capture and does not feed into any filter.",
   },
   {
     q: "Where are my files?",

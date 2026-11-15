@@ -82,3 +82,10 @@ Everything asked for is built and tested. The Ember glass redesign (top nav, gla
 
 ## Git state
 Branch `main`, origin https://github.com/EQQX0/EqSniff (private). Work through a648940 is committed (not pushed); the redesign and review fixes are uncommitted. Stashes: none.
+
+## Release 0.2.2 (latest)
+- App renamed EqNetwork (productName, window title, top bar); icons regenerated from `desktop/src-tauri/icons/brand/eq-10-ember.png`. Bundle identifier is unchanged so saved data stays; the installer installs next to an old "Network Toolkit" install.
+- Filters are Show or Hide (`mode`), one filter system: the separate capture filter box was removed (`capturefilter.ts` is now unused). Capture table keeps the latest 3,000 packets.
+- Capture table: sticky heading bar above the list, sortable headings, Label column saved in IP Storage (`lib/ipstore.ts`, stored in the entry's `note` field), flags via bundled `flag-icons`, time without milliseconds, Copy/Replay row buttons removed (the `replay_packet` command still exists).
+- In-app update: "Update now" downloads the installer from the feed host, checks the SHA-256 in `update.json`, starts it. Feed and installer are at https://updates.eqqx2.com (`update.json`, `EqNetwork-setup.exe`), deployed from the Vercel project `eqsniff-updates`.
+- Live-tested: capture only from the chosen adapter, Show/Hide filters, sorting, labels. NOT live-tested: Hotspot start/stop and sharing (unit tests only). Live test scripts drive the window and can steal focus; do not run them while the user is gaming.
