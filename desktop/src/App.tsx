@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type PacketRow, type ScanHost, type UpdateInfo } from "@/lib/api";
 import { isLocalAddress } from "@/lib/export";
 import { DevicesView, type Seen } from "@/views/DevicesView";
+import { IpStorageView } from "@/views/IpStorageView";
 import { ScanView } from "@/views/ScanView";
 import { HelpView } from "@/views/HelpView";
 import { blankFilter, fromStored, newId, type Filter } from "@/lib/filters";
@@ -15,6 +16,7 @@ const NAV = [
   { id: "capture", label: "Capture" },
   { id: "filters", label: "Filters" },
   { id: "devices", label: "Devices" },
+  { id: "ip-storage", label: "IP Storage" },
   { id: "scan", label: "Network scan" },
   { id: "vpn", label: "VPN" },
   { id: "hotspot", label: "Hotspot" },
@@ -170,6 +172,9 @@ export default function App() {
         </div>
         <div className={view === "devices" ? "" : "hidden"}>
           <DevicesView seen={devices} onWatch={watchDevice} onScan={() => setView("scan")} />
+        </div>
+        <div className={view === "ip-storage" ? "" : "hidden"}>
+          <IpStorageView />
         </div>
         <div className={view === "scan" ? "" : "hidden"}>
           <ScanView onHosts={setScanHosts} />

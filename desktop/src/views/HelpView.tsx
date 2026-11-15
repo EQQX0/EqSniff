@@ -58,6 +58,10 @@ const FAQ: { q: string; a: string }[] = [
     a: "The country of the computer on the other end of a connection, looked up in a database built into the app. Nothing is sent anywhere, and it shows the country only. Many sites use servers in other countries, so treat it as a rough guide.",
   },
   {
+    q: "What is IP Storage for?",
+    a: "A plain address book for your own notes: an address and a comment, nothing more. Save a router address, a server, or anything else you want to remember, then search, edit or delete it later. It is not tied to a capture and does not feed into any filter.",
+  },
+  {
     q: "Where are my files?",
     a: "Settings shows the data folder. Deleting that folder removes everything the app saved.",
   },

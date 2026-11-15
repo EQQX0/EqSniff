@@ -28,6 +28,12 @@ Everything asked for is built, tested and committed. The built-in VPN engine pas
 - NOT verified live: Start/Stop Hotspot, Share internet, Reset, the elevated result-file round trip. The sharing read returned no connections without admin; it may under-report, so check the ON chip against Windows.
 - Names in the devices table are placeholders ("Unnamed device"); no vendor lookup exists in the repo.
 
+## IP Storage page (added later)
+- New `desktop/src/views/IpStorageView.tsx`, nav entry on App.tsx (next to Devices), Help FAQ entry. Reused the existing generic store (`filters.rs` `get_store`/`save_store`), adding `"ip-storage"` to the allowed store names; no new Tauri commands or `api.ts` changes needed since `getStore`/`saveStore` already take a store name.
+- A plain address book: address (free text, up to 100 characters) and note (up to 500 characters) per row, search by either, add/edit through a modal form, delete with a confirm modal. Empty state: "No saved addresses yet." No username field, no link to captures or scans.
+- Added `BookmarkIcon` to `icons.tsx` for the empty state.
+- Verified: `npx tsc --noEmit` clean, `npm test` still 45 checks, `cargo test --tests` still 27 Rust tests (6 hotspot, 5 pcap, 6 VPN parser, 3 VPN engine, 7 VPN extras), `cargo build` clean. Live-tested with the debug exe plus `npm run dev` and a CDP script driving the real window: add, a second add, search (matches narrowed correctly), edit, and delete all round-tripped through `get_store`/`save_store` (checked the stored JSON directly before and after each step). 8 of 8 checks passed.
+
 ## Features added or updated
 - VPN page: runs tunnels itself. Windows shows its admin prompt on every Activate; Deactivate needs none.
 - Capture filter: "Payload starts with (hex)", up to 8 bytes, IPv4 TCP and UDP.

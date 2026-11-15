@@ -61,4 +61,5 @@ Encrypted support log and export bundle,settings,could,yes,no,Seen.
 In-app changelog,settings,could,yes,no,Seen.
 Guided tutorial,help,could,yes,no,"Seen: wired or hotspot paths, chapters."
 Player IP storage with usernames,tools,could,yes,skip,Tracks other people's addresses. Own-address labels exist instead.
+"IP Storage: plain address book (address + note, search, add/edit/delete)",tools,should,yes,yes,"New IP Storage page. An address field (free text, up to 100 characters) and a note (up to 500 characters) per row, searchable by either. No username field and no link to captures or scans, so it carries none of the identity data in the row above."
 "Community filter library, party chat, traffic control, ARP spoofing",other,could,yes,skip,"Disrupt or identify other people, or need the vendor's cloud."

@@ -58,6 +58,10 @@ The app has its own WireGuard engine (`src-tauri/src/vpnengine.rs`): `boringtun`
 - **Sharing / Bridge**: Windows internet connection sharing (`HNetCfg.HNetShare`) between a public and a private adapter. Changing it runs an elevated PowerShell (Windows admin prompt) and reads the result from `hotspot/sharing-result.json`. The script travels on the command line, adapter names as base64. The app refuses to apply while sharing is already on; Reset or Disable Sharing turns it off.
 - **Connected devices**: read from `arp -a` for the private subnet only (default 192.168.137.1). Nothing is sent.
 
+## IP Storage
+
+A plain address book for your own notes: an address (any text, up to 100 characters) and a comment (up to 500 characters) per row, searchable by either. Saved through the same key-value store as device labels and the capture filter (`get_store`/`save_store`, store name `ip-storage`). No username field and no link to a capture or scan; it is a notes list, not an identity lookup.
+
 ## Build notes
 
 `vendor/windows_x86_64_msvc` is a stand-in crate with no code, replacing the crate of the same name. Without it, `pcap` links a Windows import library that sends `WaitOnAddress` to `vertdll.dll` and crashes async code. Its README has the details. Check with `dumpbin /imports` after dependency changes.

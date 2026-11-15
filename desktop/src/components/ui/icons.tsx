@@ -79,3 +79,11 @@ export function EyeOffIcon(props: SVGProps<SVGSVGElement>) {
     </Base>
   );
 }
+
+export function BookmarkIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <path d="M5.5 3.5h9a1 1 0 0 1 1 1V17l-5.5-3.5L4.5 17V4.5a1 1 0 0 1 1-1Z" />
+    </Base>
+  );
+}
