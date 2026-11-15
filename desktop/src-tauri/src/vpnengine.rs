@@ -265,11 +265,14 @@ fn send_net(p: &PeerRun, data: &[u8]) {
 
 fn netsh(args: &[&str]) -> Result<(), String> {
     let out = Command::new("netsh.exe").args(args).creation_flags(NO_WINDOW).output().map_err(|e| e.to_string())?;
-    if out.status.success() {
-        Ok(())
-    } else {
-        let text = String::from_utf8_lossy(&out.stdout);
+    let text = String::from_utf8_lossy(&out.stdout);
+    // netsh sometimes exits 0 even when it rejected the command (e.g. an unknown parameter name), so the
+    // text is checked either way.
+    let bad = !out.status.success() || text.contains("is not a valid argument") || text.contains("The following command was not found");
+    if bad {
         Err(format!("netsh {}: {}", args.join(" "), text.trim()))
+    } else {
+        Ok(())
     }
 }
 
@@ -304,7 +307,7 @@ fn configure(ifc: u32, cfg: &Config, endpoints: &[IpAddr], log: &Log) -> Result<
             IpAddr::V4(v) => {
                 let (verb, extra) = if first_v4 { ("set", "source=static") } else { ("add", "") };
                 first_v4 = false;
-                let mut args = vec!["interface".to_string(), "ipv4".into(), verb.into(), "address".into(), format!("interface={ix}")];
+                let mut args = vec!["interface".to_string(), "ipv4".into(), verb.into(), "address".into(), format!("name={ix}")];
                 if !extra.is_empty() {
                     args.push(extra.into());
                 }
