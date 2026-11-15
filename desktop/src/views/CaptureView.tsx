@@ -18,8 +18,9 @@ import {
 import { EmptyState } from "@/components/ui/EmptyState";
 import { NetworkIcon } from "@/components/ui/icons";
 import { Checkbox } from "@/components/ui/Checkbox";
-import { NAME_MAX, loadEntries, onChange as onIpStoreChange, setName } from "@/lib/ipstore";
-import { IpList, summarize } from "@/views/CaptureIps";
+import { NAME_MAX, loadEntries, newEntryId, onChange as onIpStoreChange, saveEntries, setName } from "@/lib/ipstore";
+import { labelFor, parseMinecraftLog } from "@/lib/mclog";
+import { ACTIVE_EACH_WAY, IpList, absorb, listBook, type IpBook } from "@/views/CaptureIps";
 import "flag-icons/css/flag-icons.min.css";
 
 type ColumnId = "name" | "srcIp" | "srcPort" | "dstIp" | "dstPort" | "country" | "protocol" | "bytes" | "time";
@@ -103,6 +104,34 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
   const [colsOpen, setColsOpen] = useState(false);
   const [tab, setTab] = useState<"all" | "filtered">("filtered");
   const [ipsOpen, setIpsOpen] = useState(false);
+  const [serverPort, setServerPort] = useState(() => {
+    try {
+      return localStorage.getItem("capture-server-port") ?? "";
+    } catch {
+      return "";
+    }
+  });
+  const changePort = (v: string) => {
+    setServerPort(v);
+    try {
+      localStorage.setItem("capture-server-port", v);
+    } catch {
+      /* remembering the port is a convenience only */
+    }
+  };
+  const [publicOnly, setPublicOnly] = useState(true);
+  const [activeOnly, setActiveOnly] = useState(true);
+  const [dropIdle, setDropIdle] = useState(true);
+  const [clockNow, setClockNow] = useState(() => Date.now() / 1000);
+  const ipBook = useRef<IpBook>(new Map());
+  useEffect(() => {
+    if (!running) return;
+    const t = setInterval(() => setClockNow(Date.now() / 1000), 1000);
+    return () => clearInterval(t);
+  }, [running]);
+  const [ipVersion, setIpVersion] = useState(0);
+  const filtersNow = useRef(filters);
+  filtersNow.current = filters;
   const colsBox = useRef<HTMLDivElement>(null);
   const show = (id: ColumnId) => cols.includes(id);
   const visibleWidth = COLUMNS.filter((c) => cols.includes(c.id)).reduce((n, c) => n + COL_WIDTH[c.id], 0) || 1;
@@ -122,9 +151,21 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
   );
 
   /** What is left after the filters. The All Traffic tab ignores them, so hidden addresses still show up there. */
-  const filteredRows = useMemo(() => rows.filter((r) => matchesAny(filters, r)), [rows, filters]);
-  const allIps = useMemo(() => summarize(rows, farOf), [rows]);
-  const filteredIps = useMemo(() => summarize(filteredRows, farOf), [filteredRows]);
+  const filteredRows = useMemo(() => {
+    const kept = rows.filter((r) => matchesAny(filters, r));
+    if (!dropIdle) return kept;
+    // Drop packets from addresses that are not holding a real conversation: local ones, and ones that only probe or ping.
+    const book = ipBook.current;
+    return kept.filter((r) => {
+      const far = farOf(r);
+      if (isLocalAddress(far)) return false;
+      const e = book.get(far);
+      return !!e && e.inbound >= ACTIVE_EACH_WAY && e.outbound >= ACTIVE_EACH_WAY;
+    });
+  }, [rows, filters, dropIdle, ipVersion]);
+  const portNum = serverPort ? Number(serverPort) : null;
+  const allIps = useMemo(() => listBook(ipBook.current, false, portNum, publicOnly, activeOnly), [ipVersion, portNum, publicOnly, activeOnly]);
+  const filteredIps = useMemo(() => listBook(ipBook.current, true, portNum, publicOnly, activeOnly), [ipVersion, portNum, publicOnly, activeOnly]);
 
   const shown = useMemo(() => {
     const kept = tab === "all" ? rows : filteredRows;
@@ -180,6 +221,46 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
     try {
       await setName(address, clean);
       setNotice(clean ? `Saved the label for ${address} in IP Storage.` : `Removed the label for ${address} from IP Storage.`);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  /** Reads Minecraft logs and saves each player's name as the label of the address they joined from. */
+  async function importMinecraftLogs(files: File[]) {
+    if (files.length === 0) return;
+    setError(null);
+    try {
+      const merged = new Map<string, Set<string>>();
+      for (const f of files) {
+        for (const seen of parseMinecraftLog(await f.text())) {
+          const set = merged.get(seen.address) ?? new Set<string>();
+          seen.names.forEach((n) => set.add(n));
+          merged.set(seen.address, set);
+        }
+      }
+      if (merged.size === 0) {
+        setNotice("No player logins found. Pick the server's logs\\latest.log (lines like Steve[/1.2.3.4:5555] logged in).");
+        return;
+      }
+      const list = await loadEntries();
+      const byAddress = new Map(list.map((e) => [e.address, e]));
+      let added = 0, labelled = 0, kept = 0;
+      const next = [...list];
+      for (const [address, set] of merged) {
+        const label = labelFor([...set]);
+        const have = byAddress.get(address);
+        if (!have) {
+          next.push({ id: newEntryId(), address, note: label, createdAt: Date.now() });
+          added++;
+        } else if (!have.note) {
+          const i = next.findIndex((e) => e.address === address);
+          next[i] = { ...have, note: label };
+          labelled++;
+        } else kept++;
+      }
+      await saveEntries(next, list);
+      setNotice(`Read ${merged.size} address${merged.size === 1 ? "" : "es"} from the log: ${added} added, ${labelled} labelled${kept ? `, ${kept} already had a label and were left alone` : ""}.`);
     } catch (e) {
       setError(String(e));
     }
@@ -243,6 +324,8 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
       if (fresh.length === 0) return;
       onSeen(fresh);
       askGeo(fresh);
+      absorb(ipBook.current, fresh, farOf, (r) => matchesAny(filtersNow.current, r));
+      setIpVersion((v) => v + 1);
       setTotal((n) => n + fresh.length);
       setRows((prev) => {
         const next = prev.concat(fresh);
@@ -315,6 +398,8 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
     try {
       await api.startCapture(adapter, "");
       setRows([]);
+      ipBook.current = new Map();
+      setIpVersion((v) => v + 1);
       setTotal(0);
       resetGeo();
       setFromFile(null);
@@ -365,6 +450,9 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
       const part = file.size > MAX_FILE_BYTES ? file.slice(0, MAX_FILE_BYTES) : file;
       const res = await api.importPcap(bytesToBase64(new Uint8Array(await part.arrayBuffer())));
       setRows(res.rows);
+      ipBook.current = new Map();
+      absorb(ipBook.current, res.rows, farOf, (r) => matchesAny(filtersNow.current, r));
+      setIpVersion((v) => v + 1);
       setTotal(res.rows.length);
       setFromFile(file.name);
       resetGeo();
@@ -547,6 +635,13 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
           <NetworkIcon className="h-4 w-4" />
           {(tab === "all" ? allIps : filteredIps).length.toLocaleString()} IPs
         </button>
+        <label
+          className="inline-flex cursor-pointer items-center gap-2 text-xs text-muted"
+          title={`On Filtered Traffic, hide packets from addresses that are not really connected: local addresses, and ones that sent or received fewer than ${ACTIVE_EACH_WAY} packets. Cuts out port scanners and bots.`}
+        >
+          <input type="checkbox" checked={dropIdle} onChange={(e) => setDropIdle(e.target.checked)} />
+          Drop idle IPs
+        </label>
         {ipsOpen && <span className="text-xs text-muted">Click a label to edit it. Labels are saved in IP Storage.</span>}
       </div>
 
@@ -558,6 +653,14 @@ export function CaptureView({ filters, onToggle, onSeen }: Props) {
             geo={geo}
             hidden={tab === "all" ? new Set(allIps.map((i) => i.address).filter((a) => !filteredIps.some((f) => f.address === a))) : undefined}
             onSave={saveName}
+            onImportLog={importMinecraftLogs}
+            port={serverPort}
+            publicOnly={publicOnly}
+            onPublicOnly={setPublicOnly}
+            activeOnly={activeOnly}
+            now={running ? clockNow : allIps.reduce((m, i) => Math.max(m, i.last), 0)}
+            onActiveOnly={setActiveOnly}
+            onPort={changePort}
           />
         </Card>
       ) : (
