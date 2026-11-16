@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Download EqNetwork</title>
+  <meta name="description" content="Download EqNetwork for Windows: a network toolkit for telling real players from noise on your own network." />
+  <link rel="stylesheet" href="/home/styles.css" />
+  <style>
+    .download-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 32px;
+      max-width: 480px;
+      margin: 0 auto;
+      text-align: center;
+    }
+    .download-card .version {
+      color: var(--muted);
+      font-size: 14px;
+      margin: 0 0 20px;
+    }
+    .download-card .hash {
+      color: var(--muted);
+      font-size: 12px;
+      margin: 20px 0 0;
+      word-break: break-all;
+    }
+    .download-card .hash code {
+      color: var(--text);
+    }
+    .reqs {
+      color: var(--muted);
+      font-size: 13px;
+      margin: 16px 0 0;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand"><span class="dot" aria-hidden="true"></span> EqNetwork</div>
+    <nav>
+      <a href="/download">Download</a>
+      <a href="/account">Account</a>
+    </nav>
+  </header>
+  <main>
+    <section class="hero" style="padding-bottom: 32px;">
+      <h1>Download EqNetwork</h1>
+      <p>A Windows network toolkit for telling real players from noise &mdash; all on your own computer, nothing leaves it.</p>
+    </section>
+    <div class="download-card">
+      <p class="version" id="version">Checking latest version&hellip;</p>
+      <a class="btn primary" id="download-link" href="/updates/EqNetwork-setup.exe" style="width: 100%;">Download for Windows</a>
+      <p class="reqs">Windows 10 or later, 64-bit.</p>
+      <p class="hash" id="hash" hidden>SHA-256: <code></code></p>
+    </div>
+  </main>
+  <footer>
+    &copy; EqNetwork
+  </footer>
+  <script>
+    fetch("/updates/update.json")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.version) {
+          document.getElementById("version").textContent = "Version " + data.version;
+        }
+        if (data.sha256) {
+          const hash = document.getElementById("hash");
+          hash.hidden = false;
+          hash.querySelector("code").textContent = data.sha256;
+        }
+      })
+      .catch(() => {
+        document.getElementById("version").textContent = "EqNetwork for Windows";
+      });
+  </script>
+</body>
+</html>

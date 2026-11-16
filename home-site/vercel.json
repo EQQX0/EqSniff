@@ -1,6 +1,8 @@
 {
   "rewrites": [
     { "source": "/", "destination": "/home/index.html" },
-    { "source": "/account", "destination": "/account/index.html" }
+    { "source": "/account", "destination": "/account/index.html" },
+    { "source": "/dashboard", "destination": "/account/index.html" },
+    { "source": "/download", "destination": "/download/index.html" }
   ]
 }
