@@ -265,6 +265,7 @@
       window.location.href = "/signin";
       return;
     }
+    $("app-shell").hidden = false;
     wireSignOut();
     wireTabs();
     setTab("ips");
