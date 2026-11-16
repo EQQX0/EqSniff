@@ -91,10 +91,14 @@ button { font-family: inherit; }
   padding: 28px var(--margin) 0;
 }
 .site-top .wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   font-weight: 600;
   letter-spacing: -0.02em;
   font-size: var(--step-lead);
 }
+.site-top .wordmark img { border-radius: 50%; }
 .site-top nav {
   display: flex;
   gap: 28px;

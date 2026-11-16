@@ -1,19 +1,39 @@
 /* Home — "Type and nothing else" direction. Charcoal/sage, Switzer. */
 
 .hero {
-  min-height: 92vh;
-  min-height: 92svh;
+  position: relative;
+  min-height: 78vh;
+  min-height: 78svh;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
-  padding: 0 var(--margin) 72px;
+  justify-content: center;
+  padding: 0 var(--margin);
+  overflow: hidden;
+}
+.hero-mark {
+  position: absolute;
+  right: clamp(20px, 6vw, 80px);
+  bottom: clamp(24px, 6vh, 64px);
+  width: clamp(140px, 16vw, 260px);
+  height: auto;
+  opacity: 0.85;
+  filter: drop-shadow(0 0 50px rgba(209, 73, 91, 0.3));
+  animation: hero-mark-float 9s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes hero-mark-float {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-12px) rotate(2deg); }
+}
+@media (max-width: 860px) {
+  .hero-mark { display: none; }
 }
 .hero-bottom {
   display: block;
 }
 .hero-statement h1 {
   margin: 0 0 28px;
-  font-size: clamp(2.5rem, 1rem + 9vw, 6.5rem);
+  font-size: clamp(2.5rem, 1rem + 13vw, 9.5rem);
   font-weight: 600;
   letter-spacing: -0.04em;
   line-height: 0.95;
