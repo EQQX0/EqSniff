@@ -1,6 +1,6 @@
 {
-  "version": "0.2.16",
+  "version": "0.2.17",
   "url": "https://updates.eqqx2.com/EqNetwork-setup.exe",
-  "sha256": "506ae371d885444b1b4086d98ff7340de11ade0214cf29b483122f36aa82d47a",
-  "notes": "Traffic table no longer auto-scrolls as new packets arrive. A connection now counts as active, and shows in the IP list and Filtered traffic, with 3+ packets in either direction instead of requiring replies both ways."
+  "sha256": "ca3180d4b444f0bf023a9778d08256cd59f2b8331ec9ec5a7ad580cbb5f0c2cd",
+  "notes": "Fixed Sharing / Bridge sometimes reporting failure (0x80040201) even though Windows actually turned sharing on."
 }

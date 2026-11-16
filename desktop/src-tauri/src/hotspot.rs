@@ -630,8 +630,15 @@ try{
     if($n -eq $priN){$pri=$cfg}
   }
   if(-not $pub -or -not $pri){throw 'One of the adapters was not found.'}
-  $pub.EnableSharing(0);$did=$pub
-  $pri.EnableSharing(1)
+  # EnableSharing fires a Windows notification event as a side effect. With no COM event sink
+  # registered (there is none here), Windows throws CONNECT_E_CANNOTCONNECT (0x80040201) even
+  # though sharing itself was turned on. That specific failure is harmless, so it is swallowed
+  # and the real outcome is checked afterward via SharingEnabled instead of the exception.
+  try{$pub.EnableSharing(0)}catch{if($_.Exception.Message -notmatch '0x80040201'){throw}}
+  $did=$pub
+  try{$pri.EnableSharing(1)}catch{if($_.Exception.Message -notmatch '0x80040201'){throw}}
+  Start-Sleep -Milliseconds 300
+  if(-not $pub.SharingEnabled -or -not $pri.SharingEnabled){throw 'Windows did not turn sharing on. Try again, or check both adapters are connected.'}
   Done @{ok=$true}
 }catch{
   $msg=$_.Exception.Message
@@ -645,7 +652,9 @@ try{
   $m=New-Object -ComObject HNetCfg.HNetShare
   foreach($c in $m.EnumEveryConnection){
     $cfg=$m.INetSharingConfigurationForINetConnection.Invoke($c)
-    if($cfg.SharingEnabled){$cfg.DisableSharing()}
+    if($cfg.SharingEnabled){
+      try{$cfg.DisableSharing()}catch{if($_.Exception.Message -notmatch '0x80040201'){throw}}
+    }
   }
   Done @{ok=$true}
 }catch{
