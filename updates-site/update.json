@@ -1,6 +1,6 @@
 {
-  "version": "0.2.25",
+  "version": "0.2.26",
   "url": "https://updates.eqqx2.com/EqNetwork-setup.exe",
-  "sha256": "1d559f5de8388a70f0b6d8a6c541f2070a03042ded31886c9ce6e22b782b9508",
-  "notes": "The host crown no longer flickers between players on a brief traffic spike. It only moves once a challenger has clearly led for 5 seconds straight."
+  "sha256": "6fbb5b116069e8f0ebf4f1a98f62aab7b5f13de7578f90850ba8bf663aea537c",
+  "notes": "Fixed the host crown sticking to a player who stopped hosting: it now judges recent traffic instead of the lifetime average, so it follows an actual host change."
 }

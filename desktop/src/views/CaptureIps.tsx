@@ -23,7 +23,18 @@ export interface IpSummary {
   ports: Set<number>;
   /** TCP, UDP and so on, as seen in this address's packets. */
   protocols: Set<string>;
+  /**
+   * Packets/sec, weighted toward recent traffic and fading out old traffic (see `absorb`'s EMA_TAU).
+   * Used instead of the all-time average so a host who stops hosting reads as quiet within seconds,
+   * not only once their lifetime average finally drags down to match.
+   */
+  recentRate: number;
+  /** The packet time `recentRate` was last updated against. */
+  rateAt: number;
 }
+
+/** How many seconds of packet history `recentRate` effectively remembers; older traffic fades out past this. */
+const EMA_TAU = 4;
 
 /** Every address seen since the capture started. It is not cut at the table's row limit, so busy traffic never pushes a server out. */
 export type IpBook = Map<string, IpSummary>;
@@ -38,7 +49,7 @@ export function absorb(book: IpBook, rows: PacketRow[], farOf: (r: PacketRow) =>
     let hit = book.get(a);
     if (!hit) {
       if (book.size >= limit) continue;
-      hit = { address: a, packets: 0, bytes: 0, last: r.time, first: r.time, lastOut: 0, passed: 0, inbound: 0, outbound: 0, ports: new Set(), protocols: new Set() };
+      hit = { address: a, packets: 0, bytes: 0, last: r.time, first: r.time, lastOut: 0, passed: 0, inbound: 0, outbound: 0, ports: new Set(), protocols: new Set(), recentRate: 0, rateAt: r.time };
       book.set(a, hit);
     }
     hit.packets++;
@@ -49,6 +60,15 @@ export function absorb(book: IpBook, rows: PacketRow[], farOf: (r: PacketRow) =>
     } else hit.inbound++;
     if (r.time > hit.last) hit.last = r.time;
     if (passes(r)) hit.passed++;
+    // EMA of packets/sec: each packet's own instantaneous rate (1 / gap since the last one) pulls the
+    // average toward it, by an amount that grows with the gap, so a burst keeps the average near its
+    // own pace instead of just nudging a years-old average a little.
+    const gap = r.time - hit.rateAt;
+    if (gap > 0) {
+      const weight = 1 - Math.exp(-gap / EMA_TAU);
+      hit.recentRate += weight * (1 / gap - hit.recentRate);
+      hit.rateAt = r.time;
+    }
     hit.protocols.add(r.protocol);
     for (const pt of [r.srcPort, r.dstPort]) if (pt !== null && pt < 49152 && hit.ports.size < 40) hit.ports.add(pt);
   }
@@ -101,7 +121,7 @@ export function pickHost(items: IpSummary[], now: number, state: HostState): str
     state.challengerSince = null;
     return null;
   }
-  const rate = (i: IpSummary) => i.packets / Math.max(1, now - i.first);
+  const rate = (i: IpSummary) => i.recentRate;
   const byRate = [...online].sort((a, b) => rate(b) - rate(a));
   const top = byRate[0];
   const current = state.address ? online.find((i) => i.address === state.address) : undefined;
