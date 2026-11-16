@@ -160,7 +160,17 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
   }, [rows, effectiveFilters, ipVersion, lookup]);
   const portNum = null;
   const allIps = useMemo(() => listBook(ipBook.current, false, portNum), [ipVersion, portNum]);
-  const filteredIps = useMemo(() => listBook(ipBook.current, true, portNum), [ipVersion, portNum]);
+  // `passed` was counted when each packet arrived, before the ISP/country lookup had answered, so it can still say "passed"
+  // for an address a Hide ISP filter now removes. Recheck with the filters and lookup as they are now: if the address still has
+  // packets in the table, at least one of them must pass; addresses whose packets were trimmed from the table keep the old count.
+  const filteredIps = useMemo(() => {
+    const inTable = new Set<string>();
+    for (const r of rows) inTable.add(farOf(r));
+    const passing = new Set<string>();
+    for (const r of filteredRows) passing.add(farOf(r));
+    return listBook(ipBook.current, true, portNum).filter((i) => passing.has(i.address) || !inTable.has(i.address));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ipVersion, portNum, rows, filteredRows]);
 
   const shown = useMemo(() => {
     const kept = tab === "all" ? rows : filteredRows;

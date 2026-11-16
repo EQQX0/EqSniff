@@ -191,13 +191,14 @@ export function IpList({ items, names, geo, hidden, onSave, onClear, onDelete, o
           <table className="w-full min-w-[64rem] table-fixed text-left text-xs">
             <thead className="sticky top-0 z-10 bg-[linear-gradient(180deg,#4a1621,#33101a)] text-text">
               <tr>
-                <th className="w-[15%] px-3 py-2 font-semibold">Label</th>
+                <th className="w-[14%] px-3 py-2 font-semibold">Label</th>
+                <th className="w-[3%] px-0 py-2 text-center font-semibold" title="Likely host"><span className="sr-only">Likely host</span></th>
                 <th className="w-[12%] px-3 py-2 font-semibold">IP address</th>
                 <th className="w-[6%] px-3 py-2 font-semibold">Type</th>
                 <th className="w-[7%] px-3 py-2 font-semibold">Port</th>
                 <th className="w-[11%] px-3 py-2 font-semibold">Country</th>
-                <th className="w-[11%] px-3 py-2 font-semibold">City</th>
-                <th className="w-[15%] px-3 py-2 font-semibold">ISP</th>
+                <th className="w-[10%] px-3 py-2 font-semibold">City</th>
+                <th className="w-[14%] px-3 py-2 font-semibold">ISP</th>
                 <th className="w-[7%] px-3 py-2 font-semibold" title="Known VPN, proxy or data-centre address (needs the lookup)">VPN</th>
                 <th className="w-[9%] px-3 py-2 text-right font-semibold" title="Packets in / out">In / out</th>
                 <th className="w-[7%] px-3 py-2 font-semibold">{hidden ? "Filter" : ""}</th>
@@ -260,16 +261,19 @@ export function IpList({ items, names, geo, hidden, onSave, onClear, onDelete, o
                       )}
                      </div>
                     </td>
-                    <td className="px-3 py-1.5 font-mono text-text">
-                      <span className="inline-flex items-center gap-1.5">
-                        {hostAddress === i.address && (
-                          <span title="Carrying far more traffic than the other online players right now — may be hosting, not just playing.">
-                            <CrownIcon className="h-3.5 w-3.5 shrink-0 text-[#ffd34d]" />
-                          </span>
-                        )}
-                        {i.address}
-                      </span>
+                    <td className="px-0 py-1.5 text-center">
+                      {hostAddress === i.address && (
+                        <span
+                          role="img"
+                          aria-label="Likely host"
+                          title="Carrying far more traffic than the other online players right now — may be hosting, not just playing."
+                          className="inline-flex"
+                        >
+                          <CrownIcon className="h-3.5 w-3.5 shrink-0 text-[#ffd34d]" />
+                        </span>
+                      )}
                     </td>
+                    <td className="px-3 py-1.5 font-mono text-text">{i.address}</td>
                     <td className="px-3 py-1.5 font-mono text-muted">{[...i.protocols].join(" / ")}</td>
                     <td className="px-3 py-1.5 font-mono text-muted" title="Service port seen on this connection">
                       {[...i.ports].sort((a, b) => a - b).slice(0, 2).join(", ")}

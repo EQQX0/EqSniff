@@ -1,6 +1,6 @@
 {
-  "version": "0.2.23",
+  "version": "0.2.24",
   "url": "https://updates.eqqx2.com/EqNetwork-setup.exe",
-  "sha256": "ccc479a986cb6d6ba426cfa98a8e4ddb0023a9065e268ef70d65775c0aa587eb",
-  "notes": "Capture: a crown icon marks the online address carrying far more traffic than the others, which can mean that player is hosting."
+  "sha256": "c32f3ec8fe7085e4909ab282acefd0fadf915e9dfc86a0884bdb37059526fa61",
+  "notes": "The crown icon gets its own column instead of crowding the IP address. Fixed Filtered IPs still showing addresses from an ISP you hid."
 }
