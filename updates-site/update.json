@@ -1,6 +1,6 @@
 {
-  "version": "0.2.29",
+  "version": "0.2.30",
   "url": "https://updates.eqqx2.com/EqNetwork-setup.exe",
-  "sha256": "220c4bdfc7a594862af04b698976c23e84151b3009c97bfe5ce01ae70b721bc7",
-  "notes": "Added an Export button to IP Storage: saves your addresses and labels as a CSV file."
+  "sha256": "e0067b9b37c2b77acad6bec9b8de9b63dce94a2f8b6c51602b15dc231a0eb266",
+  "notes": "The update check has moved to sniff.eqqx2.com. This is the last release published here; everything after this is on the new address."
 }

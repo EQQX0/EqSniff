@@ -1,0 +1,6 @@
+{
+  "version": "0.2.30",
+  "url": "https://sniff.eqqx2.com/updates/EqNetwork-setup.exe",
+  "sha256": "e0067b9b37c2b77acad6bec9b8de9b63dce94a2f8b6c51602b15dc231a0eb266",
+  "notes": "The app now checks for updates at sniff.eqqx2.com instead of updates.eqqx2.com."
+}

@@ -8,7 +8,7 @@ use std::sync::Mutex;
 use tauri::AppHandle;
 use sha2::{Digest, Sha256};
 
-const DEFAULT_URL: &str = "https://updates.eqqx2.com/update.json";
+const DEFAULT_URL: &str = "https://sniff.eqqx2.com/updates/update.json";
 const MAX_BYTES: u64 = 64 * 1024;
 /// Largest installer the app will download.
 const MAX_INSTALLER: u64 = 128 * 1024 * 1024;

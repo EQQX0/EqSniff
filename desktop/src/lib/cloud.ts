@@ -138,7 +138,7 @@ export async function signIn(username: string, password: string): Promise<CloudS
 /** Sends a password-reset email. The link opens a small page on the update site where the new password is typed. */
 export async function resetPassword(email: string): Promise<void> {
   await ok(
-    await call(`/auth/v1/recover?redirect_to=${encodeURIComponent("https://updates.eqqx2.com/reset")}`, {
+    await call(`/auth/v1/recover?redirect_to=${encodeURIComponent("https://sniff.eqqx2.com/updates/reset")}`, {
       method: "POST",
       body: JSON.stringify({ email }),
     })
