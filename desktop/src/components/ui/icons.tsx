@@ -80,6 +80,14 @@ export function EyeOffIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function CrownIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <path d="M4 15.5h12l-1-7.5-3 3-2-5-2 5-3-3-1 7.5Z" />
+    </Base>
+  );
+}
+
 export function BookmarkIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <Base {...props}>

@@ -3,6 +3,7 @@ import type { Country, IpDetails, PacketRow } from "@/lib/api";
 import { Flag } from "@/views/CaptureView";
 import { isLocalAddress } from "@/lib/export";
 import { NAME_MAX } from "@/lib/ipstore";
+import { CrownIcon } from "@/components/ui/icons";
 
 export interface IpSummary {
   address: string;
@@ -61,6 +62,29 @@ export const ONLINE_WITHIN = 15;
 
 /** Online means it sent to us and we answered, both within the last ONLINE_WITHIN seconds. */
 export const isOnline = (i: IpSummary, now: number) => now - i.last <= ONLINE_WITHIN && now - i.lastOut <= ONLINE_WITHIN;
+
+/** An address needs at least this many packets before its rate is trusted enough to flag. */
+const HOST_MIN_PACKETS = 60;
+/** How many times faster than the next-busiest online address counts as a gap worth flagging. */
+const HOST_RATE_RATIO = 5;
+
+/**
+ * The one online address carrying far more traffic than every other online address right now,
+ * which can mean its owner is hosting (their game has to simulate everything, on top of playing).
+ * Only flagged with 2+ players online, so a lone player (which includes a host playing solo) is
+ * never mistaken for a host, and only once the leader's own packet count is high enough that an
+ * early read or a quiet moment can't trip it.
+ */
+export function likelyHost(items: IpSummary[], now: number): string | null {
+  const online = items.filter((i) => isOnline(i, now));
+  if (online.length < 2) return null;
+  const rate = (i: IpSummary) => i.packets / Math.max(1, now - i.first);
+  const sorted = [...online].sort((a, b) => rate(b) - rate(a));
+  const top = sorted[0];
+  if (top.packets < HOST_MIN_PACKETS) return null;
+  if (rate(top) < rate(sorted[1]) * HOST_RATE_RATIO) return null;
+  return top.address;
+}
 
 /** The book as a list, newest first. `onlyFiltered` keeps the addresses that had at least one packet through the filters. */
 export function listBook(book: IpBook, onlyFiltered: boolean, serverPort: number | null = null): IpSummary[] {
@@ -127,6 +151,7 @@ export function IpList({ items, names, geo, hidden, onSave, onClear, onDelete, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, names, query, now, hiddenIps, onlyIsp, details]);
   const onlineCount = useMemo(() => items.filter((i) => isOnline(i, now)).length, [items, now]);
+  const hostAddress = useMemo(() => likelyHost(items, now), [items, now]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -235,7 +260,16 @@ export function IpList({ items, names, geo, hidden, onSave, onClear, onDelete, o
                       )}
                      </div>
                     </td>
-                    <td className="px-3 py-1.5 font-mono text-text">{i.address}</td>
+                    <td className="px-3 py-1.5 font-mono text-text">
+                      <span className="inline-flex items-center gap-1.5">
+                        {hostAddress === i.address && (
+                          <span title="Carrying far more traffic than the other online players right now — may be hosting, not just playing.">
+                            <CrownIcon className="h-3.5 w-3.5 shrink-0 text-[#ffd34d]" />
+                          </span>
+                        )}
+                        {i.address}
+                      </span>
+                    </td>
                     <td className="px-3 py-1.5 font-mono text-muted">{[...i.protocols].join(" / ")}</td>
                     <td className="px-3 py-1.5 font-mono text-muted" title="Service port seen on this connection">
                       {[...i.ports].sort((a, b) => a - b).slice(0, 2).join(", ")}

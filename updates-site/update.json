@@ -1,6 +1,6 @@
 {
-  "version": "0.2.22",
+  "version": "0.2.23",
   "url": "https://updates.eqqx2.com/EqNetwork-setup.exe",
-  "sha256": "c1f9d69a65d69dd8b89691b8914f819d51f50784d8bebc4ea7d2aa230e46fad8",
-  "notes": "IP Storage: a Sync button to pull in changes made elsewhere right away, and checkboxes to select and delete several addresses at once."
+  "sha256": "ccc479a986cb6d6ba426cfa98a8e4ddb0023a9065e268ef70d65775c0aa587eb",
+  "notes": "Capture: a crown icon marks the online address carrying far more traffic than the others, which can mean that player is hosting."
 }
