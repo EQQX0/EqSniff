@@ -1,5 +1,6 @@
-// EqNetwork Account dashboard: view-only. Signs in with the same account the desktop app uses,
-// then shows IP Storage, filters and basic account info. Nothing here writes anything back.
+// EqNetwork Account dashboard. Signing in happens on /signin; this page only reads the
+// session it left behind. Shows IP Storage, filters and account info; admins also get an
+// Admin tab to manage other accounts, mirroring the desktop app's own admin panel.
 (() => {
   "use strict";
 
@@ -8,14 +9,6 @@
   const SESSION_KEY = "eqnetwork-account-session";
 
   const $ = (id) => document.getElementById(id);
-
-  function saveSession(s) {
-    try {
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify(s));
-    } catch {
-      /* private window or storage blocked: the session just won't survive a reload */
-    }
-  }
 
   function loadSession() {
     try {
@@ -53,21 +46,6 @@
       throw new Error(body.error || body.msg || body.message || `The server answered with status ${res.status}.`);
     }
     return res;
-  }
-
-  async function login(username, password) {
-    const res = await fetch(`${CLOUD_URL}/functions/v1/account`, {
-      method: "POST",
-      headers: { apikey: CLOUD_KEY, Authorization: `Bearer ${CLOUD_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "login", username, password }),
-    });
-    const out = await res.json().catch(() => ({}));
-    if (!res.ok || out.error) throw new Error(out.error || "Wrong username or password.");
-    return {
-      accessToken: out.access_token,
-      username: out.username || username,
-      expiresAt: Date.now() + (out.expires_in ?? 3600) * 1000,
-    };
   }
 
   function escapeHtml(s) {
@@ -146,12 +124,6 @@
       </table>`;
   }
 
-  function maskEmail(email) {
-    const at = String(email || "").indexOf("@");
-    if (at <= 1) return email || "";
-    return `${email.slice(0, 2)}…${email.slice(at)}`;
-  }
-
   function renderAccount(profile) {
     const el = $("account-info");
     el.innerHTML = `
@@ -164,30 +136,71 @@
       </table>`;
   }
 
-  function showLogin(message) {
-    $("login-screen").hidden = false;
-    $("app-shell").hidden = true;
-    const err = $("login-error");
-    if (message) {
-      err.textContent = message;
-      err.hidden = false;
-    } else {
-      err.hidden = true;
-    }
-  }
-
-  function showApp() {
-    $("login-screen").hidden = true;
-    $("app-shell").hidden = false;
-  }
-
   function setTab(name) {
-    const tabs = { ips: $("tab-ips"), filters: $("tab-filters"), account: $("tab-account") };
-    const panels = { ips: $("panel-ips"), filters: $("panel-filters"), account: $("panel-account") };
+    const tabs = { ips: $("tab-ips"), filters: $("tab-filters"), account: $("tab-account"), admin: $("tab-admin") };
+    const panels = { ips: $("panel-ips"), filters: $("panel-filters"), account: $("panel-account"), admin: $("panel-admin") };
     for (const key of Object.keys(tabs)) {
       const active = key === name;
       tabs[key].setAttribute("aria-selected", String(active));
       panels[key].hidden = !active;
+    }
+  }
+
+  function renderAdminTable(profiles, token) {
+    const wrap = $("admin-table-wrap");
+    if (!profiles.length) {
+      wrap.innerHTML = '<p class="empty">No accounts found.</p>';
+      return;
+    }
+    const rows = profiles
+      .map(
+        (p) => `
+      <tr data-user-id="${escapeHtml(p.user_id)}">
+        <td data-label="Username">${escapeHtml(p.username)}</td>
+        <td data-label="Created">${fmtDate(p.created_at)}</td>
+        <td data-label="Admin"><button class="btn secondary admin-toggle" type="button" data-field="is_admin" data-value="${!p.is_admin}">${p.is_admin ? "Revoke admin" : "Make admin"}</button></td>
+        <td data-label="Access"><button class="btn secondary admin-toggle" type="button" data-field="disabled" data-value="${!p.disabled}">${p.disabled ? "Enable" : "Disable"}</button></td>
+      </tr>`
+      )
+      .join("");
+    wrap.innerHTML = `
+      <table>
+        <thead><tr><th>Username</th><th>Created</th><th>Admin</th><th>Access</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+
+    wrap.querySelectorAll(".admin-toggle").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const row = btn.closest("tr");
+        const userId = row.getAttribute("data-user-id");
+        const field = btn.getAttribute("data-field");
+        const value = btn.getAttribute("data-value") === "true";
+        const label = field === "is_admin" ? (value ? "make this account an admin" : "revoke admin from this account") : value ? "disable this account" : "re-enable this account";
+        if (!window.confirm(`Are you sure you want to ${label}?`)) return;
+        btn.disabled = true;
+        try {
+          await call(`/rest/v1/profiles?user_id=eq.${userId}`, token, {
+            method: "PATCH",
+            headers: { Prefer: "return=minimal" },
+            body: JSON.stringify({ [field]: value }),
+          });
+          await loadAdmin(token);
+        } catch (e) {
+          window.alert(e instanceof Error ? e.message : String(e));
+          btn.disabled = false;
+        }
+      });
+    });
+  }
+
+  async function loadAdmin(token) {
+    const wrap = $("admin-table-wrap");
+    wrap.innerHTML = '<p class="empty">Loading accounts…</p>';
+    try {
+      const res = await call("/rest/v1/profiles?select=user_id,username,is_admin,disabled,created_at&order=created_at.asc&limit=1000", token);
+      renderAdminTable(await res.json(), token);
+    } catch (e) {
+      wrap.innerHTML = `<p class="error-text">${escapeHtml(e instanceof Error ? e.message : String(e))}</p>`;
     }
   }
 
@@ -205,6 +218,8 @@
       const [profileRows, ips, filterRows] = await Promise.all([profileRes.json(), ipsRes.json(), filtersRes.json()]);
       const profile = profileRows[0] || { username: session.username, is_admin: false, created_at: null };
       $("who-admin").hidden = !profile.is_admin;
+      $("tab-admin").hidden = !profile.is_admin;
+      if (profile.is_admin) loadAdmin(session.accessToken);
 
       let filters = [];
       if (filterRows[0]?.body) {
@@ -234,55 +249,26 @@
     $("tab-ips").addEventListener("click", () => setTab("ips"));
     $("tab-filters").addEventListener("click", () => setTab("filters"));
     $("tab-account").addEventListener("click", () => setTab("account"));
+    $("tab-admin").addEventListener("click", () => setTab("admin"));
   }
 
   function wireSignOut() {
     $("sign-out").addEventListener("click", () => {
       clearSession();
-      showLogin();
-      $("login-form").reset();
-    });
-  }
-
-  function wireLogin() {
-    $("login-form").addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const username = $("login-username").value.trim();
-      const password = $("login-password").value;
-      const btn = $("login-submit");
-      const err = $("login-error");
-      err.hidden = true;
-      btn.disabled = true;
-      btn.textContent = "Signing in…";
-      try {
-        const session = await login(username, password);
-        if (!session.accessToken) throw new Error("Confirm your email first, then sign in again.");
-        saveSession(session);
-        showApp();
-        setTab("ips");
-        await loadDashboard(session);
-      } catch (ex) {
-        err.textContent = ex instanceof Error ? ex.message : String(ex);
-        err.hidden = false;
-      } finally {
-        btn.disabled = false;
-        btn.textContent = "Sign in";
-      }
+      window.location.href = "/signin";
     });
   }
 
   function init() {
-    wireLogin();
+    const session = loadSession();
+    if (!session) {
+      window.location.href = "/signin";
+      return;
+    }
     wireSignOut();
     wireTabs();
-    const existing = loadSession();
-    if (existing) {
-      showApp();
-      setTab("ips");
-      loadDashboard(existing);
-    } else {
-      showLogin();
-    }
+    setTab("ips");
+    loadDashboard(session);
   }
 
   init();
