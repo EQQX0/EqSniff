@@ -13,23 +13,36 @@
   <link rel="stylesheet" href="/account/styles.css" />
 </head>
 <body>
-  <div class="login-wrap" data-reveal>
-    <form class="login-card reveal" id="login-form" novalidate>
-      <h1>EqNetwork Account</h1>
-      <p class="sub">Sign in to view your IP Storage, filters and account. This page cannot change anything &mdash; edits still happen in the app.</p>
-      <p class="error-text" id="login-error" role="alert" hidden></p>
-      <div class="field">
-        <label for="login-username">Username</label>
-        <input id="login-username" name="username" type="text" autocomplete="username" required />
+  <div class="auth-shell" data-reveal>
+    <div class="auth-pitch reveal">
+      <h1 data-mask-lines>Same account.<br />Every computer.</h1>
+      <p class="auth-lead">Sign in to see the IP Storage and filters you saved in the app, from any browser.</p>
+      <div class="auth-points">
+        <div class="auth-point">
+          <strong>Synced</strong>
+          <span>IP Storage and filters follow your account, not the machine.</span>
+        </div>
+        <div class="auth-point">
+          <strong>Read-only here</strong>
+          <span>This page only shows your data &mdash; changes still happen in the app.</span>
+        </div>
       </div>
-      <div class="field">
-        <label for="login-password">Password</label>
-        <input id="login-password" name="password" type="password" autocomplete="current-password" required />
-      </div>
-      <button class="btn" type="submit" id="login-submit">Sign in</button>
-      <p class="hint">This is the same account you sign in with in the EqNetwork app.</p>
-      <p class="hint">New here? <a href="/signup">Create an account</a>.</p>
-    </form>
+    </div>
+    <div class="auth-card-wrap">
+      <form class="login-card reveal" id="login-form" novalidate>
+        <p class="error-text" id="login-error" role="alert" hidden></p>
+        <div class="field">
+          <label for="login-username">Username</label>
+          <input id="login-username" name="username" type="text" autocomplete="username" required />
+        </div>
+        <div class="field">
+          <label for="login-password">Password</label>
+          <input id="login-password" name="password" type="password" autocomplete="current-password" required />
+        </div>
+        <button class="btn" type="submit" id="login-submit">Sign in</button>
+        <p class="hint">New here? <a href="/signup">Create an account</a>.</p>
+      </form>
+    </div>
   </div>
   <script src="/reveal.js"></script>
   <script src="/signin/app.js"></script>

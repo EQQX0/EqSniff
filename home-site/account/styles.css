@@ -8,35 +8,75 @@
   clip: rect(0 0 0 0);
 }
 
-/* ---- sign-in / sign-up cards ---- */
+/* ---- sign-in / sign-up: split pitch + form ---- */
 
-.login-wrap {
-  display: flex;
+.auth-shell {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
   min-height: 100svh;
+}
+
+.auth-pitch {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 32px;
+  padding: clamp(32px, 6vw, 96px);
+}
+
+.auth-pitch h1 {
+  margin: 0;
+  font-size: clamp(2.25rem, 1.5rem + 3.2vw, 3.75rem);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 0.98;
+}
+
+.auth-lead {
+  max-width: 42ch;
+  font-size: var(--step-lead);
+  color: var(--muted);
+  margin: 0;
+}
+
+.auth-points {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 42ch;
+}
+
+.auth-point strong {
+  display: block;
+  font-size: var(--step-body);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.auth-point span {
+  display: block;
+  font-size: var(--step-body);
+  color: var(--muted);
+}
+
+.auth-card-wrap {
+  display: flex;
   align-items: center;
   justify-content: center;
+  background: var(--surface);
   padding: 24px;
 }
 
 .login-card {
   width: 100%;
-  max-width: 400px;
-  background: var(--surface);
-  border-radius: var(--radius);
-  padding: 40px 32px;
+  max-width: 360px;
+  padding: 0;
 }
 
-.login-card h1 {
-  font-size: clamp(1.75rem, 1.4rem + 1.6vw, 2.25rem);
-  font-weight: 600;
-  letter-spacing: -0.03em;
-  margin: 0 0 10px;
-}
-
-.login-card p.sub {
-  color: var(--muted);
-  margin: 0 0 28px;
-  font-size: var(--step-body);
+@media (max-width: 860px) {
+  .auth-shell { grid-template-columns: 1fr; }
+  .auth-pitch { padding: clamp(28px, 8vw, 48px) clamp(20px, 6vw, 48px) 8px; gap: 24px; }
+  .auth-card-wrap { padding: 8px clamp(20px, 6vw, 48px) clamp(32px, 8vw, 56px); background: transparent; }
 }
 
 .field {

@@ -13,27 +13,41 @@
   <link rel="stylesheet" href="/account/styles.css" />
 </head>
 <body>
-  <div class="login-wrap" data-reveal>
-    <form class="login-card reveal" id="signup-form" novalidate>
-      <h1>Create your EqNetwork account</h1>
-      <p class="sub">One account syncs your IP Storage and filters across computers. Use it to sign in here and in the app.</p>
-      <p class="error-text" id="signup-error" role="alert" hidden></p>
-      <p class="notice" id="signup-notice" hidden></p>
-      <div class="field">
-        <label for="signup-username">Username</label>
-        <input id="signup-username" name="username" type="text" autocomplete="username" required minlength="3" maxlength="32" />
+  <div class="auth-shell" data-reveal>
+    <div class="auth-pitch reveal">
+      <h1 data-mask-lines>One account.<br />Every computer.</h1>
+      <p class="auth-lead">Create the account you&rsquo;ll sign in with here and in the EqNetwork app.</p>
+      <div class="auth-points">
+        <div class="auth-point">
+          <strong>One password</strong>
+          <span>The same username and password work in the app and here.</span>
+        </div>
+        <div class="auth-point">
+          <strong>Nothing extra</strong>
+          <span>No payment, no setup &mdash; just a username, email and password.</span>
+        </div>
       </div>
-      <div class="field">
-        <label for="signup-email">Email</label>
-        <input id="signup-email" name="email" type="email" autocomplete="email" required />
-      </div>
-      <div class="field">
-        <label for="signup-password">Password</label>
-        <input id="signup-password" name="password" type="password" autocomplete="new-password" required minlength="8" />
-      </div>
-      <button class="btn" type="submit" id="signup-submit">Create account</button>
-      <p class="hint">Already have an account? <a href="/signin">Sign in</a>.</p>
-    </form>
+    </div>
+    <div class="auth-card-wrap">
+      <form class="login-card reveal" id="signup-form" novalidate>
+        <p class="error-text" id="signup-error" role="alert" hidden></p>
+        <p class="notice" id="signup-notice" hidden></p>
+        <div class="field">
+          <label for="signup-username">Username</label>
+          <input id="signup-username" name="username" type="text" autocomplete="username" required minlength="3" maxlength="32" />
+        </div>
+        <div class="field">
+          <label for="signup-email">Email</label>
+          <input id="signup-email" name="email" type="email" autocomplete="email" required />
+        </div>
+        <div class="field">
+          <label for="signup-password">Password</label>
+          <input id="signup-password" name="password" type="password" autocomplete="new-password" required minlength="8" />
+        </div>
+        <button class="btn" type="submit" id="signup-submit">Create account</button>
+        <p class="hint">Already have an account? <a href="/signin">Sign in</a>.</p>
+      </form>
+    </div>
   </div>
   <script src="/reveal.js"></script>
   <script src="/signup/app.js"></script>

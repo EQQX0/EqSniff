@@ -158,8 +158,8 @@
       <tr data-user-id="${escapeHtml(p.user_id)}">
         <td data-label="Username">${escapeHtml(p.username)}</td>
         <td data-label="Created">${fmtDate(p.created_at)}</td>
-        <td data-label="Admin"><button class="btn secondary admin-toggle" type="button" data-field="is_admin" data-value="${!p.is_admin}">${p.is_admin ? "Revoke admin" : "Make admin"}</button></td>
-        <td data-label="Access"><button class="btn secondary admin-toggle" type="button" data-field="disabled" data-value="${!p.disabled}">${p.disabled ? "Enable" : "Disable"}</button></td>
+        <td data-label="Admin"><button class="btn ghost admin-toggle" type="button" data-field="is_admin" data-value="${!p.is_admin}">${p.is_admin ? "Revoke admin" : "Make admin"}</button></td>
+        <td data-label="Access"><button class="btn ghost admin-toggle" type="button" data-field="disabled" data-value="${!p.disabled}">${p.disabled ? "Enable" : "Disable"}</button></td>
       </tr>`
       )
       .join("");
