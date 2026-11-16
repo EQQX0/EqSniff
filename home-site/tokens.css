@@ -101,13 +101,30 @@ button { font-family: inherit; }
 .site-top .wordmark img { border-radius: 50%; }
 .site-top nav {
   display: flex;
-  gap: 28px;
+  align-items: center;
+  gap: 12px;
   font-size: var(--step-small);
-  color: var(--muted);
 }
-.site-top nav a { transition: color 160ms var(--ease-out); }
-.site-top nav a:hover,
-.site-top nav a:focus-visible { color: var(--ink); }
+.site-top nav a {
+  display: inline-flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 20px;
+  border-radius: var(--radius);
+  font-weight: 600;
+  transition: transform 160ms var(--ease-out), background 160ms var(--ease-out), color 160ms var(--ease-out);
+}
+.site-top nav a:first-child {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.site-top nav a:first-child:hover { transform: translateY(-1px); }
+.site-top nav a:not(:first-child) {
+  color: var(--muted);
+  border: 1.5px solid var(--muted);
+}
+.site-top nav a:not(:first-child):hover,
+.site-top nav a:not(:first-child):focus-visible { color: var(--ink); border-color: var(--ink); }
 
 .site-foot {
   padding: 56px var(--margin) 48px;

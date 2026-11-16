@@ -12,21 +12,22 @@
 }
 .hero-mark {
   position: absolute;
-  right: clamp(20px, 6vw, 80px);
-  bottom: clamp(24px, 6vh, 64px);
-  width: clamp(140px, 16vw, 260px);
+  top: 50%;
+  right: clamp(-60px, 4vw, 40px);
+  width: clamp(280px, 34vw, 560px);
   height: auto;
-  opacity: 0.85;
-  filter: drop-shadow(0 0 50px rgba(209, 73, 91, 0.3));
+  transform: translateY(-50%);
+  opacity: 0.9;
+  filter: drop-shadow(0 0 60px rgba(209, 73, 91, 0.35));
   animation: hero-mark-float 9s ease-in-out infinite;
   pointer-events: none;
 }
 @keyframes hero-mark-float {
-  0%, 100% { transform: translateY(0) rotate(0deg); }
-  50% { transform: translateY(-12px) rotate(2deg); }
+  0%, 100% { transform: translateY(-50%) rotate(0deg); }
+  50% { transform: translateY(calc(-50% - 14px)) rotate(2deg); }
 }
 @media (max-width: 860px) {
-  .hero-mark { display: none; }
+  .hero-mark { opacity: 0.5; width: clamp(200px, 60vw, 320px); right: -40px; }
 }
 .hero-bottom {
   display: block;
