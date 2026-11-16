@@ -270,6 +270,13 @@ export function CaptureView({ filters, onToggle, onHideIsp, onSeen }: Props) {
     setNotice("Cleared the captured addresses and packets. Saved labels were kept.");
   }
 
+  /** Forgets only the packet table shown here. The IP list keeps its addresses. */
+  function clearPackets() {
+    setRows([]);
+    setTotal(0);
+    setNotice("Cleared the traffic table. The IP list was kept.");
+  }
+
   const askGeo = useCallback((list: PacketRow[]) => {
     const fresh = new Set<string>();
     for (const r of list) {
@@ -580,6 +587,16 @@ export function CaptureView({ filters, onToggle, onHideIsp, onSeen }: Props) {
           onClick={() => copy(tableToTsv(shown, countryOf), `${shown.length.toLocaleString()} rows`)}
         >
           Copy table
+        </Button>
+        <span className="mx-1 text-sm text-muted">·</span>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={rows.length === 0}
+          title="Forget the traffic table so far. The IP list keeps its addresses."
+          onClick={clearPackets}
+        >
+          Clear
         </Button>
         <span role="status" className="text-sm text-muted">{notice}</span>
         <div ref={colsBox} className="relative ml-auto">
