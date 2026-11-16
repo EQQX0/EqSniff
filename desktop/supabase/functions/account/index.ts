@@ -19,7 +19,6 @@ const json = (body: unknown, status = 200) =>
 const USERNAME = /^[A-Za-z0-9_.-]{3,24}$/;
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const WRONG = "Wrong username or password.";
-const DEVICE_SWITCH_DAYS = 30;
 
 const admin = (path: string, init: RequestInit = {}) =>
   fetch(`${URL_}${path}`, {
@@ -28,11 +27,11 @@ const admin = (path: string, init: RequestInit = {}) =>
   });
 
 /** The profile row for a username, matched without regard to case. */
-async function findProfile(username: string): Promise<{ user_id: string; username: string; disabled: boolean; active_device: string | null; device_changed_at: string | null } | null> {
+async function findProfile(username: string): Promise<{ user_id: string; username: string; disabled: boolean } | null> {
   const pattern = username.replace(/[\\%_]/g, (c) => `\\${c}`);
-  const res = await admin(`/rest/v1/profiles?select=user_id,username,disabled,active_device,device_changed_at&username=ilike.${encodeURIComponent(pattern)}&limit=5`);
+  const res = await admin(`/rest/v1/profiles?select=user_id,username,disabled&username=ilike.${encodeURIComponent(pattern)}&limit=5`);
   if (!res.ok) return null;
-  const rows = (await res.json()) as { user_id: string; username: string; disabled: boolean; active_device: string | null; device_changed_at: string | null }[];
+  const rows = (await res.json()) as { user_id: string; username: string; disabled: boolean }[];
   return rows.find((r) => r.username.toLowerCase() === username.toLowerCase()) ?? null;
 }
 
@@ -62,22 +61,17 @@ async function signUp(body: Record<string, unknown>) {
     body: JSON.stringify({ user_id: user.id, username }),
   });
   if (!made.ok) return json({ error: "That username is taken." }, 409);
-  // New accounts are disabled until an admin enables them. Sign-up never hands back a working
-  // session: even if Supabase auto-confirmed the email, the account still needs approval, so the
-  // only path to a session is login(), which is also where the device lock gets set.
-  if (out.access_token) await fetch(`${URL_}/auth/v1/logout`, { method: "POST", headers: { apikey: ANON, Authorization: `Bearer ${out.access_token}` } }).catch(() => {});
-  return json({ pending: true });
+  if (!out.access_token) return json({ confirmEmail: true });
+  return json({ ...out, username });
 }
 
 async function login(body: Record<string, unknown>) {
   const username = String(body.username ?? "").trim();
   const password = String(body.password ?? "");
-  const deviceId = String(body.deviceId ?? "").trim().slice(0, 100);
   if (!USERNAME.test(username) || !password) return json({ error: WRONG }, 401);
-  if (!deviceId) return json({ error: "Update the app to sign in." }, 400);
   const profile = await findProfile(username);
   if (!profile) return json({ error: WRONG }, 401);
-  if (profile.disabled) return json({ error: "This account is disabled, or still waiting for an admin to approve it." }, 403);
+  if (profile.disabled) return json({ error: "This account has been disabled." }, 403);
   const who = await admin(`/auth/v1/admin/users/${profile.user_id}`);
   const email = who.ok ? ((await who.json()) as { email?: string }).email : undefined;
   if (!email) return json({ error: WRONG }, 401);
@@ -91,29 +85,7 @@ async function login(body: Record<string, unknown>) {
     const m = String(out.msg || out.error_description || out.message || "");
     return json({ error: /confirm/i.test(m) ? "Confirm your email first: open the message we sent you." : WRONG }, res.status === 400 ? 401 : res.status);
   }
-
-  // Password confirmed. Now decide if this device is allowed: the account's first device is free,
-  // the same device signing in again is always free, and switching to a different device is allowed
-  // once every 30 days unless an admin reset the lock (cleared active_device/device_changed_at).
-  const sameDevice = profile.active_device === deviceId;
-  if (!sameDevice && profile.active_device) {
-    const last = profile.device_changed_at ? Date.parse(profile.device_changed_at) : 0;
-    const windowMs = DEVICE_SWITCH_DAYS * 24 * 60 * 60 * 1000;
-    const elapsed = Date.now() - last;
-    if (elapsed < windowMs) {
-      await fetch(`${URL_}/auth/v1/logout`, { method: "POST", headers: { apikey: ANON, Authorization: `Bearer ${out.access_token}` } }).catch(() => {});
-      const daysLeft = Math.ceil((windowMs - elapsed) / (24 * 60 * 60 * 1000));
-      return json({ error: `This account is signed in on another device. You can switch once every ${DEVICE_SWITCH_DAYS} days (${daysLeft} day${daysLeft === 1 ? "" : "s"} left) — or ask an admin to reset it sooner.` }, 403);
-    }
-  }
-  if (!sameDevice) {
-    await admin(`/rest/v1/profiles?user_id=eq.${profile.user_id}`, {
-      method: "PATCH",
-      headers: { Prefer: "return=minimal" },
-      body: JSON.stringify({ active_device: deviceId, device_changed_at: new Date().toISOString() }),
-    });
-  }
-  return json({ ...out, username: profile.username, deviceId });
+  return json({ ...out, username: profile.username });
 }
 
 /** Changes the signed-in user's username. The caller proves who they are with their own access token. */

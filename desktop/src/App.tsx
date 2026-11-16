@@ -14,7 +14,6 @@ import { SettingsView } from "@/views/SettingsView";
 import { AdminView } from "@/views/AdminView";
 import { UpdateNow } from "@/components/UpdateNow";
 import { TopNav } from "@/components/TopNav";
-import { AuthGate } from "@/components/AuthGate";
 
 const NAV = [
   { id: "capture", label: "Capture" },
@@ -185,7 +184,6 @@ export default function App() {
   const pane = (id: ViewId, fill = "") => (view === id ? `view-enter page ${fill}` : "hidden");
 
   return (
-    <AuthGate>
     <div className="relative flex h-screen flex-col">
       <div className="ember-bg" aria-hidden="true">
         <span className="ember-orb a" />
@@ -249,6 +247,5 @@ export default function App() {
         </div>
       </main>
     </div>
-    </AuthGate>
   );
 }

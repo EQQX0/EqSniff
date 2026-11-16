@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Switch } from "@/components/ui/Switch";
-import { adminRemoveShared, adminResetDevice, CloudError, listProfiles, listShared, setProfileFlags, type AdminProfile, type SharedItem } from "@/lib/cloud";
+import { adminRemoveShared, CloudError, listProfiles, listShared, setProfileFlags, type AdminProfile, type SharedItem } from "@/lib/cloud";
 
 const when = (t: number) => (t ? new Date(t).toLocaleDateString() : "unknown");
 
@@ -56,7 +56,6 @@ export function AdminView() {
 
   const toggleDisabled = (p: AdminProfile) => act(`d:${p.userId}`, () => setProfileFlags(p.userId, { disabled: !p.disabled }));
   const toggleAdmin = (p: AdminProfile) => act(`a:${p.userId}`, () => setProfileFlags(p.userId, { isAdmin: !p.isAdmin }));
-  const resetDevice = (p: AdminProfile) => act(`v:${p.userId}`, () => adminResetDevice(p.userId));
   const removeShared = (s: SharedItem) => act(`r:${s.id}`, () => adminRemoveShared(s.id));
 
   return (
@@ -65,10 +64,8 @@ export function AdminView() {
         <div>
           <h2 className="text-sm font-semibold text-text">Accounts</h2>
           <p className="mt-1 text-xs text-muted">
-            Every signed-up account. New accounts are disabled until you enable them here. Disabling one blocks it everywhere:
-            it can&apos;t sign in again, and the database refuses its reads and writes on any computer it&apos;s already signed
-            in on. Each account is also locked to one device; it can switch to a different one every 30 days on its own, or
-            you can reset the lock below to let it switch sooner.
+            Every signed-up account. Disabling one blocks it everywhere: it can&apos;t sign in again, and the database refuses its
+            reads and writes on any computer it&apos;s already signed in on.
           </p>
         </div>
 
@@ -90,18 +87,12 @@ export function AdminView() {
                   <span className="font-semibold">{p.username}</span>
                   <span className="text-xs text-muted"> · joined {when(p.createdAt)}</span>
                   {p.disabled && <span className="text-xs text-danger"> · disabled</span>}
-                  <span className="text-xs text-muted"> · {p.hasDevice ? `device locked since ${when(p.deviceChangedAt ?? 0)}` : "no device yet"}</span>
                 </span>
                 <div className="flex items-center gap-4">
                   <label className="flex items-center gap-2 text-xs text-muted">
                     Admin
                     <Switch label={`Admin: ${p.username}`} checked={p.isAdmin} disabled={busy === `a:${p.userId}`} onChange={() => toggleAdmin(p)} />
                   </label>
-                  {p.hasDevice && (
-                    <Button size="sm" variant="secondary" loading={busy === `v:${p.userId}`} onClick={() => resetDevice(p)}>
-                      Reset device
-                    </Button>
-                  )}
                   <Button size="sm" variant={p.disabled ? "secondary" : "danger"} loading={busy === `d:${p.userId}`} onClick={() => toggleDisabled(p)}>
                     {p.disabled ? "Enable" : "Disable"}
                   </Button>
