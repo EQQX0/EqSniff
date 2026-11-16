@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
-import { CloudError, loadSession, renameUser, resetPassword, signIn, signOut, signUp, syncNow, type CloudSession } from "@/lib/cloud";
+import { CloudError, GLOBAL_FILTERS_SYNCED, loadSession, renameUser, resetPassword, signIn, signOut, signUp, syncNow, type CloudSession } from "@/lib/cloud";
 import { SharedLibrary } from "@/components/SharedLibrary";
 import { BackupCard } from "@/components/BackupCard";
 
@@ -62,6 +62,7 @@ export function CloudSync() {
         if (!username.trim() || !password) throw new CloudError("Enter your username and password.");
         setSession(await signIn(username.trim(), password));
         setPassword("");
+        window.dispatchEvent(new Event(GLOBAL_FILTERS_SYNCED));
       } else if (mode === "create") {
         if (!USERNAME.test(username.trim())) throw new CloudError(`Username: ${USERNAME_HINT}`);
         if (!email.includes("@")) throw new CloudError("Enter a valid email address.");
@@ -70,8 +71,10 @@ export function CloudSync() {
         const r = await signUp(username.trim(), email.trim(), password);
         setPassword("");
         setConfirm("");
-        if ("session" in r) setSession(r.session);
-        else {
+        if ("session" in r) {
+          setSession(r.session);
+          window.dispatchEvent(new Event(GLOBAL_FILTERS_SYNCED));
+        } else {
           setNote("Account created. Open the email we sent you and confirm the address, then sign in with your username.");
           setMode("signin");
         }
@@ -105,6 +108,7 @@ export function CloudSync() {
     run(async () => {
       await signOut();
       setSession(null);
+      window.dispatchEvent(new Event(GLOBAL_FILTERS_SYNCED));
     });
 
   return (

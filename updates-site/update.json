@@ -1,6 +1,6 @@
 {
-  "version": "0.2.15",
+  "version": "0.2.16",
   "url": "https://updates.eqqx2.com/EqNetwork-setup.exe",
-  "sha256": "f8dfd67f3f2e6afa580e0f369c823ab88bc42d68fbee6792ea06089d605b3f4a",
-  "notes": "Added a Clear button to the traffic table in Capture, so you can empty the packet list without losing the IP list."
+  "sha256": "506ae371d885444b1b4086d98ff7340de11ade0214cf29b483122f36aa82d47a",
+  "notes": "Traffic table no longer auto-scrolls as new packets arrive. A connection now counts as active, and shows in the IP list and Filtered traffic, with 3+ packets in either direction instead of requiring replies both ways."
 }

@@ -1,6 +1,7 @@
 import { api } from "@/lib/api";
 import { IP_DELETED, IP_STORE, announceChange, isEntryArray, loadDeleted, newEntryId, onEdited, type IpEntry } from "@/lib/ipstore";
 import { mergeSync, type RemoteEntry } from "@/lib/ipmerge";
+import { bodyForGlobal, filterFromGlobal, type Filter } from "@/lib/filters";
 
 /**
  * Optional account that keeps IP Storage, filters and VPN tunnels the same on every computer you sign in on.
@@ -13,6 +14,7 @@ const CLOUD_KEY = "sb_publishable_efMWSpsdDD8crieaCVSlow_PGXONxdi";
 const SESSION_STORE = "cloud-session";
 const VPN_DELETED = "vpn-deleted";
 export const FILTERS_SYNCED = "filters-synced";
+export const GLOBAL_FILTERS_SYNCED = "global-filters-synced";
 
 export interface CloudSession {
   email: string;
@@ -475,4 +477,84 @@ export async function unshareItem(kind: "tunnel" | "filter" | "ip", name: string
       token,
     })
   );
+}
+
+// ---- global filters: admin-published filters every signed-in account gets, on by default ----
+
+interface GlobalFilterRow {
+  id: string;
+  name: string;
+  body: string;
+  enabled: boolean;
+}
+
+/** True only for the account(s) marked `is_admin` in the `profiles` table. */
+export async function isAdmin(): Promise<boolean> {
+  const { token } = await freshToken();
+  const res = await ok(await call("/rest/v1/profiles?select=is_admin&limit=1", { token }));
+  const rows = (await res.json()) as { is_admin: boolean }[];
+  return rows[0]?.is_admin === true;
+}
+
+/** The published filters, as runtime `Filter`s with each user's own on/off choice already applied. */
+export async function getGlobalFilters(): Promise<{ filters: Filter[]; admin: boolean }> {
+  const { token } = await freshToken();
+  const [rowsRes, overridesRes, admin] = await Promise.all([
+    ok(await call("/rest/v1/global_filters?deleted=eq.false&select=id,name,body,enabled&order=created_at.asc&limit=200", { token })),
+    ok(await call("/rest/v1/global_filter_overrides?select=filter_id,enabled&limit=1000", { token })),
+    isAdmin(),
+  ]);
+  const rows = (await rowsRes.json()) as GlobalFilterRow[];
+  const overrides = new Map((await overridesRes.json() as { filter_id: string; enabled: boolean }[]).map((o) => [o.filter_id, o.enabled]));
+  const filters = rows.map((r) => filterFromGlobal(r.id, r.name, overrides.get(r.id) ?? r.enabled, r.body));
+  return { filters, admin };
+}
+
+/** Turns one global filter on or off for the signed-in account only. Nobody else is affected. */
+export async function setGlobalOverride(filterId: string, enabled: boolean): Promise<void> {
+  const { token, session } = await freshToken();
+  await ok(
+    await call("/rest/v1/global_filter_overrides?on_conflict=user_id,filter_id", {
+      method: "POST",
+      token,
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({ user_id: session.userId, filter_id: filterId, enabled }),
+    })
+  );
+  window.dispatchEvent(new Event(GLOBAL_FILTERS_SYNCED));
+}
+
+/** Admin only (enforced by the database): publishes a new global filter, switched on by default for everyone. */
+export async function publishGlobalFilter(f: Filter): Promise<void> {
+  const { token } = await freshToken();
+  await ok(
+    await call("/rest/v1/global_filters", {
+      method: "POST",
+      token,
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({ name: f.name, body: bodyForGlobal(f), enabled: f.enabled }),
+    })
+  );
+  window.dispatchEvent(new Event(GLOBAL_FILTERS_SYNCED));
+}
+
+/** Admin only: edits a global filter's shared definition and/or its default on/off state. */
+export async function editGlobalFilter(id: string, f: Filter): Promise<void> {
+  const { token } = await freshToken();
+  await ok(
+    await call(`/rest/v1/global_filters?id=eq.${id}`, {
+      method: "PATCH",
+      token,
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({ name: f.name, body: bodyForGlobal(f), enabled: f.enabled }),
+    })
+  );
+  window.dispatchEvent(new Event(GLOBAL_FILTERS_SYNCED));
+}
+
+/** Admin only: retires a global filter. It disappears for everyone; personal overrides for it are left alone. */
+export async function retireGlobalFilter(id: string): Promise<void> {
+  const { token } = await freshToken();
+  await ok(await call(`/rest/v1/global_filters?id=eq.${id}`, { method: "PATCH", token, headers: { Prefer: "return=minimal" }, body: JSON.stringify({ deleted: true }) }));
+  window.dispatchEvent(new Event(GLOBAL_FILTERS_SYNCED));
 }

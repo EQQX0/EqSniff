@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type PacketRow, type ScanHost, type UpdateInfo } from "@/lib/api";
-import { FILTERS_SYNCED, startAutoSync } from "@/lib/cloud";
+import { FILTERS_SYNCED, GLOBAL_FILTERS_SYNCED, editGlobalFilter, getGlobalFilters, loadSession, publishGlobalFilter, retireGlobalFilter, setGlobalOverride, startAutoSync } from "@/lib/cloud";
 import { isLocalAddress } from "@/lib/export";
 import { DevicesView, type Seen } from "@/views/DevicesView";
 import { IpStorageView } from "@/views/IpStorageView";
@@ -33,6 +33,8 @@ type ViewId = (typeof NAV)[number]["id"] | (typeof NAV_END)[number]["id"];
 export default function App() {
   const [view, setView] = useState<ViewId>("capture");
   const [filters, setFilters] = useState<Filter[]>([]);
+  const [globalFilters, setGlobalFilters] = useState<Filter[]>([]);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [scanHosts, setScanHosts] = useState<ScanHost[]>([]);
 
   const [seen, setSeen] = useState<Record<string, Seen>>({});
@@ -59,6 +61,25 @@ export default function App() {
 
   // Optional account sync. Does nothing unless the user signed in and turned it on.
   useEffect(() => startAutoSync(), []);
+
+  // The filters an admin published for every signed-in account, and whether this account is the admin.
+  // Empty and false while signed out; a sync refreshes this list the same way it refreshes your own filters.
+  useEffect(() => {
+    const reload = () =>
+      loadSession()
+        .then((s) => (s ? getGlobalFilters() : null))
+        .then((r) => {
+          setGlobalFilters(r?.filters ?? []);
+          setIsAdmin(r?.admin ?? false);
+        })
+        .catch(() => {
+          setGlobalFilters([]);
+          setIsAdmin(false);
+        });
+    reload();
+    window.addEventListener(GLOBAL_FILTERS_SYNCED, reload);
+    return () => window.removeEventListener(GLOBAL_FILTERS_SYNCED, reload);
+  }, []);
 
   const onSeen = useCallback((rows: PacketRow[]) => {
     setSeen((prev) => {
@@ -128,6 +149,11 @@ export default function App() {
     [saveFilters]
   );
 
+  const toggleGlobalFilter = useCallback((f: Filter) => setGlobalOverride(f.globalId!, !f.enabled), []);
+  const publishGlobal = useCallback((f: Filter) => publishGlobalFilter(f), []);
+  const editGlobal = useCallback((id: string, f: Filter) => editGlobalFilter(id, f), []);
+  const retireGlobal = useCallback((id: string) => retireGlobalFilter(id), []);
+
   // Devices from captures, with anything the network scan found added on top.
   const devices = useMemo(() => {
     const merged: Record<string, Seen> = { ...seen };
@@ -182,10 +208,19 @@ export default function App() {
         <div className="mx-auto h-full w-full max-w-[1400px]">
           {/* Every view stays mounted so a running capture keeps its table while Settings is open. */}
           <div className={pane("capture", "h-full")}>
-            <CaptureView filters={filters} onToggle={toggleFilter} onHideIsp={hideIsp} onSeen={onSeen} />
+            <CaptureView filters={filters} globalFilters={globalFilters} onToggle={toggleFilter} onHideIsp={hideIsp} onSeen={onSeen} />
           </div>
           <div className={pane("filters")}>
-            <FiltersView filters={filters} onChange={saveFilters} />
+            <FiltersView
+              filters={filters}
+              onChange={saveFilters}
+              globalFilters={globalFilters}
+              isAdmin={isAdmin}
+              onToggleGlobal={toggleGlobalFilter}
+              onPublishGlobal={publishGlobal}
+              onEditGlobal={editGlobal}
+              onRetireGlobal={retireGlobal}
+            />
           </div>
           <div className={pane("devices")}>
             <DevicesView seen={devices} onWatch={watchDevice} onHosts={setScanHosts} />

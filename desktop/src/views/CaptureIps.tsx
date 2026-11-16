@@ -53,7 +53,7 @@ export function absorb(book: IpBook, rows: PacketRow[], farOf: (r: PacketRow) =>
   }
 }
 
-/** An address counts as an active connection once it has sent and received at least this many packets. */
+/** An address counts as an active connection once it has sent or received at least this many packets. */
 export const ACTIVE_EACH_WAY = 3;
 
 /** An address is online while its last packet is newer than this many seconds. */
@@ -68,7 +68,7 @@ export function listBook(book: IpBook, onlyFiltered: boolean, serverPort: number
   // Only real connections from the internet: not local addresses, and not scanners that never really talk back.
   all = all.filter((i) => !isLocalAddress(i.address));
   if (serverPort !== null) all = all.filter((i) => i.ports.has(serverPort));
-  all = all.filter((i) => i.inbound >= ACTIVE_EACH_WAY && i.outbound >= ACTIVE_EACH_WAY);
+  all = all.filter((i) => i.inbound >= ACTIVE_EACH_WAY || i.outbound >= ACTIVE_EACH_WAY);
   return (onlyFiltered ? all.filter((i) => i.passed > 0) : all).sort((x, y) => y.packets - x.packets);
 }
 
@@ -183,6 +183,7 @@ export function IpList({ items, names, geo, hidden, onSave, onClear, onDelete, o
                 const label = names[i.address];
                 const hit = geo[i.address];
                 const online = isOnline(i, now);
+                const isHidden = hidden?.has(i.address) ?? false;
                 return (
                   <tr
                     key={i.address}
@@ -190,7 +191,8 @@ export function IpList({ items, names, geo, hidden, onSave, onClear, onDelete, o
                       e.preventDefault();
                       setMenu({ x: Math.min(e.clientX, window.innerWidth - 240), y: Math.min(e.clientY, window.innerHeight - 330), address: i.address });
                     }}
-                    className="border-b border-border last:border-0 hover:bg-white/[0.05]"
+                    title={isHidden ? "A Hide filter matches this row. It stays here, dimmed, but is left out of the Filtered IPs tab." : undefined}
+                    className={`border-b border-border last:border-0 hover:bg-white/[0.05] ${isHidden ? "opacity-40" : ""}`}
                   >
                     <td className="px-3 py-1.5">
                      <div className="flex items-center gap-2">
@@ -254,7 +256,7 @@ export function IpList({ items, names, geo, hidden, onSave, onClear, onDelete, o
                       )}
                     </td>
                     <td className="px-3 py-1.5 text-right font-mono text-muted">{i.inbound.toLocaleString()} / {i.outbound.toLocaleString()}</td>
-                    <td className="px-3 py-1.5 text-muted">{hidden?.has(i.address) ? "Hidden" : ""}</td>
+                    <td className="px-3 py-1.5 text-muted">{isHidden ? "Hidden" : ""}</td>
                   </tr>
                 );
               })}

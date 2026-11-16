@@ -25,6 +25,12 @@ export interface Filter {
   hex: string; // empty = any. Comma-separated byte patterns; a packet matches when any one appears in the first 32 bytes of the payload.
   countries: string; // empty = any. Comma-separated 2-letter country codes.
   isps: string; // empty = any. Comma-separated ISP names; part of a name is enough, capitals do not matter.
+  /**
+   * Set only at runtime for a filter an admin published for every signed-in account (never saved to disk).
+   * `id` is that shared filter's own id. Turning it on or off writes a personal override instead of an
+   * edit, so it never changes the filter for anyone else.
+   */
+  globalId?: string;
 }
 
 /** What the filters can ask about an address besides its digits. Unknown (not looked up yet) never matches. */
@@ -306,4 +312,26 @@ export function fromFile(text: string): Filter[] {
 export function fromStored(raw: unknown): Filter[] {
   if (!Array.isArray(raw)) return [];
   return (raw as Record<string, unknown>[]).filter((f) => f && typeof f.id === "string" && typeof f.name === "string").map((f) => clean(f, true));
+}
+
+/**
+ * Builds the runtime filter an admin published globally. `effectiveEnabled` is the user's own override
+ * if they have one, else the shared default. The id is the shared filter's id, so toggling it can be
+ * told apart from a normal local filter (see `Filter.globalId`).
+ */
+export function filterFromGlobal(id: string, name: string, effectiveEnabled: boolean, bodyJson: string): Filter {
+  let raw: Record<string, unknown> = {};
+  try {
+    const parsed = JSON.parse(bodyJson);
+    if (parsed && typeof parsed === "object") raw = parsed as Record<string, unknown>;
+  } catch {
+    /* a damaged body falls back to a blank filter */
+  }
+  return { ...clean({ ...raw, id, name, enabled: effectiveEnabled }, true), globalId: id };
+}
+
+/** Everything but id/name/enabled, for an admin to save as a global filter's shared definition. */
+export function bodyForGlobal(f: Filter): string {
+  const { id: _id, name: _name, enabled: _enabled, globalId: _globalId, ...rest } = f;
+  return JSON.stringify(rest);
 }

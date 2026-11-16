@@ -82,13 +82,19 @@ type SortState = { key: ColumnId; dir: "asc" | "desc" } | null;
 
 interface Props {
   filters: Filter[];
+  /** Filters an admin published for every signed-in account. They match packets the same as your own, but
+   * only the Filters page lets you turn one off for yourself; they are left out of the quick toggle row here. */
+  globalFilters?: Filter[];
   onToggle: (id: string) => void;
   /** Adds or switches on a Hide filter for an ISP. */
   onHideIsp: (isp: string) => Promise<void>;
   onSeen: (rows: PacketRow[]) => void;
 }
 
-export function CaptureView({ filters, onToggle, onHideIsp, onSeen }: Props) {
+export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, onSeen }: Props) {
+  /** Your own filters plus whatever global filters are in effect. Used for matching only; the quick toggle
+   * row below still lists your own filters alone. */
+  const effectiveFilters = useMemo(() => (globalFilters.length ? [...filters, ...globalFilters] : filters), [filters, globalFilters]);
   const [adapters, setAdapters] = useState<Adapter[]>([]);
   const [adapter, setAdapter] = useState("");
   const [running, setRunning] = useState(false);
@@ -118,8 +124,8 @@ export function CaptureView({ filters, onToggle, onHideIsp, onSeen }: Props) {
     return () => clearInterval(t);
   }, [fromFile]);
   const [ipVersion, setIpVersion] = useState(0);
-  const filtersNow = useRef(filters);
-  filtersNow.current = filters;
+  const filtersNow = useRef(effectiveFilters);
+  filtersNow.current = effectiveFilters;
   // Country and ISP filters ask what is known about an address so far.
   const lookup = useMemo<Lookup>(() => ({ country: (ip) => geo[ip]?.code, isp: (ip) => details[ip]?.isp }), [geo, details]);
   const lookupNow = useRef(lookup);
@@ -128,9 +134,8 @@ export function CaptureView({ filters, onToggle, onHideIsp, onSeen }: Props) {
   const show = (id: ColumnId) => cols.includes(id);
   const visibleWidth = COLUMNS.filter((c) => cols.includes(c.id)).reduce((n, c) => n + COL_WIDTH[c.id], 0) || 1;
   const asked = useRef(new Set<string>());
-  const tableEnd = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
-  const anyOn = filters.some((f) => f.enabled);
+  const anyOn = effectiveFilters.some((f) => f.enabled);
   /** The address on the other end of a packet, which is the one a label and a country belong to. */
   const farOf = (r: PacketRow) => (isLocalAddress(r.src) ? r.dst : r.src);
 
@@ -144,16 +149,16 @@ export function CaptureView({ filters, onToggle, onHideIsp, onSeen }: Props) {
 
   /** What is left after the filters. The All Traffic tab ignores them, so hidden addresses still show up there. */
   const filteredRows = useMemo(() => {
-    const kept = rows.filter((r) => matchesAny(filters, r, lookup));
+    const kept = rows.filter((r) => matchesAny(effectiveFilters, r, lookup));
     // Drop packets from addresses that are not holding a real conversation: local ones, and ones that only probe or ping.
     const book = ipBook.current;
     return kept.filter((r) => {
       const far = farOf(r);
       if (isLocalAddress(far)) return false;
       const e = book.get(far);
-      return !!e && e.inbound >= ACTIVE_EACH_WAY && e.outbound >= ACTIVE_EACH_WAY;
+      return !!e && (e.inbound >= ACTIVE_EACH_WAY || e.outbound >= ACTIVE_EACH_WAY);
     });
-  }, [rows, filters, ipVersion, lookup]);
+  }, [rows, effectiveFilters, ipVersion, lookup]);
   const portNum = null;
   const allIps = useMemo(() => listBook(ipBook.current, false, portNum), [ipVersion, portNum]);
   const filteredIps = useMemo(() => listBook(ipBook.current, true, portNum), [ipVersion, portNum]);
@@ -387,21 +392,6 @@ export function CaptureView({ filters, onToggle, onHideIsp, onSeen }: Props) {
       window.clearInterval(id);
     };
   }, [running, ingest]);
-
-  // Follow new packets only while the user is at the bottom, so they can scroll back and read.
-  const stick = useRef(true);
-  useEffect(() => {
-    const scroller = tableEnd.current?.parentElement;
-    if (!scroller) return;
-    const onScroll = () => {
-      stick.current = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 60;
-    };
-    scroller.addEventListener("scroll", onScroll);
-    return () => scroller.removeEventListener("scroll", onScroll);
-  }, []);
-  useEffect(() => {
-    if (stick.current && !sort) tableEnd.current?.scrollIntoView({ block: "end" });
-  }, [shown, sort]);
 
   const start = useCallback(async () => {
     setBusy(true);
@@ -814,7 +804,6 @@ export function CaptureView({ filters, onToggle, onHideIsp, onSeen }: Props) {
             </tbody>
                 </table>
               )}
-              <div ref={tableEnd} />
             </div>
           </div>
         </div>
