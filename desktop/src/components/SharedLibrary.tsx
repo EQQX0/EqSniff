@@ -8,6 +8,9 @@ import { loadEntries, newEntryId, saveEntries, type IpEntry } from "@/lib/ipstor
 
 type Kind = "tunnel" | "filter" | "ip";
 
+/** Fixed name under which the whole IP Storage list is shared as one item, instead of one per address. */
+const IP_STORAGE_SHARE_NAME = "IP Storage";
+
 /** A tunnel name that is free on this computer: the shared name, then the owner's name added, then a number. */
 function freeName(want: string, owner: string, taken: Set<string>): string {
   const clean = (s: string) => s.replace(/[^A-Za-z0-9_=+.-]/g, "-");
@@ -50,14 +53,15 @@ export function SharedLibrary({ session }: { session: CloudSession }) {
   }, [refresh]);
 
   const isShared = (kind: Kind, name: string) => shared.some((s) => s.ownerId === session.userId && s.kind === kind && s.name === name);
+  const ipStorageShared = isShared("ip", IP_STORAGE_SHARE_NAME);
 
-  async function act(key: string, task: () => Promise<void>, done: string) {
+  async function act(key: string, task: () => Promise<string | void>, done: string) {
     setBusy(key);
     setError(null);
     setNote(null);
     try {
-      await task();
-      setNote(done);
+      const result = await task();
+      setNote(result ?? done);
       await refresh();
     } catch (e) {
       setError(e instanceof CloudError ? e.message : String(e));
@@ -80,11 +84,18 @@ export function SharedLibrary({ session }: { session: CloudSession }) {
       isShared("filter", f.name) ? `Stopped sharing ${f.name}.` : `${f.name} is now shared with every account.`
     );
 
-  const toggleIp = (e: IpEntry) =>
+  const toggleIpStorage = () =>
     act(
-      `i:${e.address}`,
-      async () => (isShared("ip", e.address) ? unshareItem("ip", e.address) : shareItem("ip", e.address, JSON.stringify({ address: e.address, note: e.note }))),
-      isShared("ip", e.address) ? `Stopped sharing ${e.address}.` : `${e.address} and its label are now shared with every account.`
+      "i:all",
+      async () =>
+        ipStorageShared
+          ? unshareItem("ip", IP_STORAGE_SHARE_NAME)
+          : shareItem(
+              "ip",
+              IP_STORAGE_SHARE_NAME,
+              JSON.stringify(ips.map((e) => ({ address: e.address, note: e.note })))
+            ),
+      ipStorageShared ? "Stopped sharing your IP Storage." : `Your whole IP Storage (${ips.length} address${ips.length === 1 ? "" : "es"}) is now shared with every account.`
     );
 
   const add = (item: SharedItem) =>
@@ -92,11 +103,19 @@ export function SharedLibrary({ session }: { session: CloudSession }) {
       `a:${item.id}`,
       async () => {
         if (item.kind === "ip") {
-          const got = JSON.parse(item.body) as { address?: string; note?: string };
-          if (!got.address) throw new CloudError("That shared address is damaged.");
+          const parsed = JSON.parse(item.body) as unknown;
+          const incoming = Array.isArray(parsed) ? parsed : [parsed];
           const list = await loadEntries();
-          if (list.some((e) => e.address === got.address)) throw new CloudError(`${got.address} is already in your IP Storage.`);
-          await saveEntries([...list, { id: newEntryId(), address: got.address, note: String(got.note ?? "").slice(0, 500), createdAt: Date.now() }], list);
+          const already = new Set(list.map((e) => e.address));
+          const fresh = incoming.filter(
+            (got): got is { address: string; note?: string } => !!got && typeof got === "object" && typeof (got as { address?: unknown }).address === "string" && !already.has((got as { address: string }).address)
+          );
+          if (fresh.length === 0) throw new CloudError(incoming.length > 1 ? "Every address in that list is already in your IP Storage." : "That address is already in your IP Storage.");
+          await saveEntries(
+            [...list, ...fresh.map((got) => ({ id: newEntryId(), address: got.address, note: String(got.note ?? "").slice(0, 500), createdAt: Date.now() }))],
+            list
+          );
+          return `Added ${fresh.length} address${fresh.length === 1 ? "" : "es"} to your IP Storage.${fresh.length < incoming.length ? ` (${incoming.length - fresh.length} already there.)` : ""}`;
         } else if (item.kind === "tunnel") {
           const here = new Set((await api.vpnSyncList()).map((t) => t.name));
           await api.vpnSyncWrite(freeName(item.name, item.ownerName, here), item.body);
@@ -118,10 +137,10 @@ export function SharedLibrary({ session }: { session: CloudSession }) {
       <div>
         <h2 className="text-sm font-semibold text-text">Share with other accounts</h2>
         <p className="mt-1 text-xs text-muted">
-          Choose a tunnel, filter or IP address to make it visible to every signed-in account, so they can add their own copy. Stop sharing
+          Choose a tunnel, filter, or your whole IP Storage to make it visible to every signed-in account, so they can add their own copy. Stop sharing
           at any time (copies people already made stay with them). A shared tunnel includes its
-          private key, so share a config you made for other people to use. A shared IP shows its address and label to every
-          signed-in account, so share only addresses you are happy to publish. Nothing is shared unless you press Share.
+          private key, so share a config you made for other people to use. Sharing IP Storage shares every address and label in
+          it with every signed-in account, so share only a list you are happy to publish. Nothing is shared unless you press Share.
         </p>
       </div>
 
@@ -153,18 +172,17 @@ export function SharedLibrary({ session }: { session: CloudSession }) {
                 </Button>
               </li>
             ))}
-            {ips.map((e) => (
-              <li key={`i:${e.address}`} className="flex items-center justify-between gap-3 text-sm text-text">
+            {ips.length > 0 && (
+              <li key="i:all" className="flex items-center justify-between gap-3 text-sm text-text">
                 <span className="truncate">
-                  <span className="text-xs text-muted">IP · </span>
-                  {e.address}
-                  {e.note && <span className="text-xs text-muted"> ({e.note})</span>}
+                  <span className="text-xs text-muted">IP Storage · </span>
+                  {ips.length} address{ips.length === 1 ? "" : "es"}
                 </span>
-                <Button size="sm" variant="secondary" loading={busy === `i:${e.address}`} onClick={() => toggleIp(e)}>
-                  {isShared("ip", e.address) ? "Stop sharing" : "Share"}
+                <Button size="sm" variant="secondary" loading={busy === "i:all"} onClick={toggleIpStorage}>
+                  {ipStorageShared ? "Stop sharing" : "Share"}
                 </Button>
               </li>
-            ))}
+            )}
             {filters.map((f) => (
               <li key={`f:${f.id}`} className="flex items-center justify-between gap-3 text-sm text-text">
                 <span className="truncate">
@@ -189,9 +207,18 @@ export function SharedLibrary({ session }: { session: CloudSession }) {
             {others.map((s) => (
               <li key={s.id} className="flex items-center justify-between gap-3 text-sm text-text">
                 <span className="truncate">
-                  <span className="text-xs text-muted">{s.kind === "tunnel" ? "Tunnel" : s.kind === "ip" ? "IP" : "Filter"} · </span>
-                  {s.name}
-                  {s.kind === "ip" && (() => { try { const n = (JSON.parse(s.body) as { note?: string }).note; return n ? <span className="text-xs text-muted"> ({n})</span> : null; } catch { return null; } })()}
+                  <span className="text-xs text-muted">{s.kind === "tunnel" ? "Tunnel" : s.kind === "ip" ? "IP Storage" : "Filter"} · </span>
+                  {s.kind === "ip"
+                    ? (() => {
+                        try {
+                          const parsed = JSON.parse(s.body) as unknown;
+                          const count = Array.isArray(parsed) ? parsed.length : 1;
+                          return `${count} address${count === 1 ? "" : "es"}`;
+                        } catch {
+                          return s.name;
+                        }
+                      })()
+                    : s.name}
                   <span className="text-xs text-muted"> by {s.ownerName || "unknown"}</span>
                 </span>
                 <Button size="sm" variant="secondary" loading={busy === `a:${s.id}`} onClick={() => add(s)}>

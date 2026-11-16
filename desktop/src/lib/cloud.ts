@@ -479,6 +479,53 @@ export async function unshareItem(kind: "tunnel" | "filter" | "ip", name: string
   );
 }
 
+/** Admin only: removes anyone's shared tunnel, filter or IP Storage share by its row id. */
+export async function adminRemoveShared(id: string): Promise<void> {
+  const { token } = await freshToken();
+  await ok(await call(`/rest/v1/shared_items?id=eq.${id}`, { method: "DELETE", token }));
+}
+
+// ---- admin panel: every account, and the power to disable one ----
+
+export interface AdminProfile {
+  userId: string;
+  username: string;
+  isAdmin: boolean;
+  disabled: boolean;
+  createdAt: number;
+}
+
+/** Admin only: every signed-up account. A non-admin gets back just their own row (the database rule, not this code, decides). */
+export async function listProfiles(): Promise<AdminProfile[]> {
+  const { token } = await freshToken();
+  const res = await ok(
+    await call("/rest/v1/profiles?select=user_id,username,is_admin,disabled,created_at&order=created_at.asc&limit=1000", { token })
+  );
+  return ((await res.json()) as { user_id: string; username: string; is_admin: boolean; disabled: boolean; created_at: string }[]).map((r) => ({
+    userId: r.user_id,
+    username: r.username,
+    isAdmin: r.is_admin,
+    disabled: r.disabled,
+    createdAt: Date.parse(r.created_at) || 0,
+  }));
+}
+
+/** Admin only: sets is_admin and/or disabled on any account, including your own. */
+export async function setProfileFlags(userId: string, patch: { isAdmin?: boolean; disabled?: boolean }): Promise<void> {
+  const { token } = await freshToken();
+  const body: Record<string, boolean> = {};
+  if (patch.isAdmin !== undefined) body.is_admin = patch.isAdmin;
+  if (patch.disabled !== undefined) body.disabled = patch.disabled;
+  await ok(
+    await call(`/rest/v1/profiles?user_id=eq.${userId}`, {
+      method: "PATCH",
+      token,
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify(body),
+    })
+  );
+}
+
 // ---- global filters: admin-published filters every signed-in account gets, on by default ----
 
 interface GlobalFilterRow {
@@ -494,6 +541,22 @@ export async function isAdmin(): Promise<boolean> {
   const res = await ok(await call("/rest/v1/profiles?select=is_admin&limit=1", { token }));
   const rows = (await res.json()) as { is_admin: boolean }[];
   return rows[0]?.is_admin === true;
+}
+
+/**
+ * Signs the account out if an admin disabled it after this computer last signed in (a fresh sign-in is
+ * already refused at login). The database itself refuses every other read and write from a disabled
+ * account regardless of this check; this just turns that into a clear message instead of silent errors.
+ */
+export async function signOutIfDisabled(): Promise<boolean> {
+  const { token } = await freshToken();
+  const res = await ok(await call("/rest/v1/profiles?select=disabled&limit=1", { token }));
+  const rows = (await res.json()) as { disabled: boolean }[];
+  if (rows[0]?.disabled === true) {
+    await signOut();
+    return true;
+  }
+  return false;
 }
 
 /** The published filters, as runtime `Filter`s with each user's own on/off choice already applied. */

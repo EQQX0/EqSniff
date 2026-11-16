@@ -11,6 +11,7 @@ import { CaptureView } from "@/views/CaptureView";
 import { VpnView } from "@/views/VpnView";
 import { HotspotView } from "@/views/HotspotView";
 import { SettingsView } from "@/views/SettingsView";
+import { AdminView } from "@/views/AdminView";
 import { UpdateNow } from "@/components/UpdateNow";
 import { TopNav } from "@/components/TopNav";
 
@@ -28,7 +29,9 @@ const NAV_END = [
   { id: "settings", label: "Settings" },
 ] as const;
 
-type ViewId = (typeof NAV)[number]["id"] | (typeof NAV_END)[number]["id"];
+const ADMIN_NAV = { id: "admin", label: "Admin" } as const;
+
+type ViewId = (typeof NAV)[number]["id"] | (typeof NAV_END)[number]["id"] | typeof ADMIN_NAV.id;
 
 export default function App() {
   const [view, setView] = useState<ViewId>("capture");
@@ -202,7 +205,7 @@ export default function App() {
             </button>}
           </div>
         )}
-        <TopNav items={NAV} trailing={NAV_END} active={view} onSelect={(id) => setView(id as ViewId)} />
+        <TopNav items={NAV} trailing={isAdmin ? [...NAV_END, ADMIN_NAV] : NAV_END} active={view} onSelect={(id) => setView(id as ViewId)} />
       </header>
       <main className="relative z-10 min-h-0 flex-1 overflow-auto px-6 pb-6 pt-6">
         <div className="mx-auto h-full w-full max-w-[1400px]">
@@ -236,6 +239,11 @@ export default function App() {
           <div className={pane("settings")}>
             <SettingsView update={update} onUpdate={setUpdate} />
           </div>
+          {isAdmin && (
+            <div className={pane("admin")}>
+              <AdminView />
+            </div>
+          )}
         </div>
       </main>
     </div>

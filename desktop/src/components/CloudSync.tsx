@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
-import { CloudError, GLOBAL_FILTERS_SYNCED, loadSession, renameUser, resetPassword, signIn, signOut, signUp, syncNow, type CloudSession } from "@/lib/cloud";
+import { CloudError, GLOBAL_FILTERS_SYNCED, loadSession, renameUser, resetPassword, signIn, signOut, signOutIfDisabled, signUp, syncNow, type CloudSession } from "@/lib/cloud";
 import { SharedLibrary } from "@/components/SharedLibrary";
 import { BackupCard } from "@/components/BackupCard";
 
@@ -28,7 +28,15 @@ export function CloudSync() {
 
   useEffect(() => {
     loadSession()
-      .then(setSession)
+      .then(async (s) => {
+        if (s && (await signOutIfDisabled().catch(() => false))) {
+          setSession(null);
+          setError("This account has been disabled.");
+          window.dispatchEvent(new Event(GLOBAL_FILTERS_SYNCED));
+          return;
+        }
+        setSession(s);
+      })
       .catch(() => {})
       .finally(() => setReady(true));
   }, []);

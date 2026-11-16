@@ -27,11 +27,11 @@ const admin = (path: string, init: RequestInit = {}) =>
   });
 
 /** The profile row for a username, matched without regard to case. */
-async function findProfile(username: string): Promise<{ user_id: string; username: string } | null> {
+async function findProfile(username: string): Promise<{ user_id: string; username: string; disabled: boolean } | null> {
   const pattern = username.replace(/[\\%_]/g, (c) => `\\${c}`);
-  const res = await admin(`/rest/v1/profiles?select=user_id,username&username=ilike.${encodeURIComponent(pattern)}&limit=5`);
+  const res = await admin(`/rest/v1/profiles?select=user_id,username,disabled&username=ilike.${encodeURIComponent(pattern)}&limit=5`);
   if (!res.ok) return null;
-  const rows = (await res.json()) as { user_id: string; username: string }[];
+  const rows = (await res.json()) as { user_id: string; username: string; disabled: boolean }[];
   return rows.find((r) => r.username.toLowerCase() === username.toLowerCase()) ?? null;
 }
 
@@ -71,6 +71,7 @@ async function login(body: Record<string, unknown>) {
   if (!USERNAME.test(username) || !password) return json({ error: WRONG }, 401);
   const profile = await findProfile(username);
   if (!profile) return json({ error: WRONG }, 401);
+  if (profile.disabled) return json({ error: "This account has been disabled." }, 403);
   const who = await admin(`/auth/v1/admin/users/${profile.user_id}`);
   const email = who.ok ? ((await who.json()) as { email?: string }).email : undefined;
   if (!email) return json({ error: WRONG }, 401);

@@ -1,6 +1,6 @@
 {
-  "version": "0.2.17",
+  "version": "0.2.18",
   "url": "https://updates.eqqx2.com/EqNetwork-setup.exe",
-  "sha256": "ca3180d4b444f0bf023a9778d08256cd59f2b8331ec9ec5a7ad580cbb5f0c2cd",
-  "notes": "Fixed Sharing / Bridge sometimes reporting failure (0x80040201) even though Windows actually turned sharing on."
+  "sha256": "4894c15a62dc8467ca59da682dbff826eae7ad4e1e307e42f7eaefe37a8b7b90",
+  "notes": "Sharing IP Storage now shares the whole list in one go instead of one address at a time. Added an admin panel: see every account, disable one, and remove anyone's shared items."
 }
