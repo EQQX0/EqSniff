@@ -362,6 +362,9 @@ tbody tr:hover td { background: color-mix(in srgb, var(--ink) 4%, transparent); 
 
 @media (max-width: 640px) {
   .topbar { flex-wrap: wrap; }
+  .tabs { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
+  .tab { padding: 0 12px; }
+  .panel { padding: 24px 20px; }
   table, thead, tbody, tr { display: block; width: 100%; }
   thead { display: none; }
   tr {
