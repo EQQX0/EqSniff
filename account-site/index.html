@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EqNetwork Account</title>
+  <meta name="description" content="View your EqNetwork IP Storage, filters and account, signed in with your EqNetwork account." />
+  <meta name="robots" content="noindex" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Sign-in screen -->
+  <div class="login-wrap" id="login-screen">
+    <form class="login-card" id="login-form" novalidate>
+      <h1>EqNetwork Account</h1>
+      <p class="sub">Sign in to view your IP Storage, filters and account. This page cannot change anything &mdash; edits still happen in the app.</p>
+      <p class="error-text" id="login-error" role="alert" hidden></p>
+      <div class="field">
+        <label for="login-username">Username</label>
+        <input id="login-username" name="username" type="text" autocomplete="username" required />
+      </div>
+      <div class="field">
+        <label for="login-password">Password</label>
+        <input id="login-password" name="password" type="password" autocomplete="current-password" required />
+      </div>
+      <button class="btn" type="submit" id="login-submit">Sign in</button>
+      <p class="hint">This is the same account you sign in with in the EqNetwork app.</p>
+    </form>
+  </div>
+
+  <!-- Dashboard -->
+  <div class="app-shell" id="app-shell" hidden>
+    <div class="topbar">
+      <div class="brand"><span class="dot" aria-hidden="true"></span> EqNetwork Account</div>
+      <div class="who">
+        <span>Signed in as <strong id="who-username"></strong></span>
+        <span class="badge" id="who-admin" hidden>Admin</span>
+        <button class="btn secondary" id="sign-out" type="button">Sign out</button>
+      </div>
+    </div>
+    <main>
+      <div class="loading" id="loading" hidden>Loading your data&hellip;</div>
+      <div id="content" hidden>
+        <div class="tabs" role="tablist" aria-label="Section">
+          <button class="tab" role="tab" id="tab-ips" aria-selected="true" type="button">IP Storage</button>
+          <button class="tab" role="tab" id="tab-filters" aria-selected="false" type="button">Filters</button>
+          <button class="tab" role="tab" id="tab-account" aria-selected="false" type="button">Account</button>
+        </div>
+
+        <section class="panel" id="panel-ips">
+          <h2>IP Storage</h2>
+          <p class="lead">Addresses you saved in the app, synced to your account.</p>
+          <div id="ips-table-wrap"></div>
+        </section>
+
+        <section class="panel" id="panel-filters" hidden>
+          <h2>Filters</h2>
+          <p class="lead">Your saved capture filters, as they are set on this account.</p>
+          <div id="filters-table-wrap"></div>
+        </section>
+
+        <section class="panel" id="panel-account" hidden>
+          <h2>Account</h2>
+          <p class="lead">Basic information about your EqNetwork account.</p>
+          <div id="account-info"></div>
+        </section>
+      </div>
+      <p class="error-text" id="data-error" role="alert" hidden></p>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
