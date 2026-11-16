@@ -1,6 +1,6 @@
 {
-  "version": "0.2.26",
+  "version": "0.2.27",
   "url": "https://updates.eqqx2.com/EqNetwork-setup.exe",
-  "sha256": "6fbb5b116069e8f0ebf4f1a98f62aab7b5f13de7578f90850ba8bf663aea537c",
-  "notes": "Fixed the host crown sticking to a player who stopped hosting: it now judges recent traffic instead of the lifetime average, so it follows an actual host change."
+  "sha256": "6813c532439f62e0eb7d61e1b0228a54a910d98e48ebd1e7cf00c415a092f43c",
+  "notes": "Double-click any cell in the IP table to copy its value."
 }

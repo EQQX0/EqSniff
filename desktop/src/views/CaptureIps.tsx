@@ -191,6 +191,10 @@ interface Props {
   details: Record<string, IpDetails>;
 }
 
+function CopiedBadge() {
+  return <span className="rounded-pill bg-accent-soft/30 px-2 py-0.5 text-xs font-semibold text-accent">Copied</span>;
+}
+
 /** The addresses seen in a capture, each with an editable label saved in IP Storage. */
 export function IpList({ items, names, geo, hidden, onSave, onClear, onDelete, onHideIsp, now, details }: Props) {
   const [editing, setEditing] = useState<string | null>(null);
@@ -216,6 +220,16 @@ export function IpList({ items, names, geo, hidden, onSave, onClear, onDelete, o
   }, [menu]);
   const ispOf = (a: string) => details[a]?.isp ?? "";
   const copy = (text: string) => void navigator.clipboard?.writeText(text).catch(() => {});
+  const [copiedCell, setCopiedCell] = useState<string | null>(null);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copyCell = (cellId: string, text: string) => {
+    if (!text) return;
+    copy(text);
+    setCopiedCell(cellId);
+    if (copiedTimer.current) clearTimeout(copiedTimer.current);
+    copiedTimer.current = setTimeout(() => setCopiedCell(null), 900);
+  };
+  useEffect(() => () => { if (copiedTimer.current) clearTimeout(copiedTimer.current); }, []);
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     let base = items.filter((i) => !hiddenIps.has(i.address));
@@ -350,27 +364,75 @@ export function IpList({ items, names, geo, hidden, onSave, onClear, onDelete, o
                         </span>
                       )}
                     </td>
-                    <td className="px-3 py-1.5 font-mono text-text">{i.address}</td>
-                    <td className="px-3 py-1.5 font-mono text-muted">{[...i.protocols].join(" / ")}</td>
-                    <td className="px-3 py-1.5 font-mono text-muted" title="Service port seen on this connection">
-                      {[...i.ports].sort((a, b) => a - b).slice(0, 2).join(", ")}
+                    <td
+                      className="relative cursor-text px-3 py-1.5 font-mono text-text"
+                      title="Double-click to copy"
+                      onDoubleClick={() => copyCell(`${i.address}:addr`, i.address)}
+                    >
+                      {copiedCell === `${i.address}:addr` ? <CopiedBadge /> : i.address}
                     </td>
-                    <td className="px-3 py-1.5 text-text">
-                      {hit && (
+                    <td
+                      className="relative cursor-text px-3 py-1.5 font-mono text-muted"
+                      title="Double-click to copy"
+                      onDoubleClick={() => copyCell(`${i.address}:type`, [...i.protocols].join(" / "))}
+                    >
+                      {copiedCell === `${i.address}:type` ? <CopiedBadge /> : [...i.protocols].join(" / ")}
+                    </td>
+                    <td
+                      className="relative cursor-text px-3 py-1.5 font-mono text-muted"
+                      title="Double-click to copy every port seen on this connection"
+                      onDoubleClick={() => copyCell(`${i.address}:port`, [...i.ports].sort((a, b) => a - b).join(", "))}
+                    >
+                      {copiedCell === `${i.address}:port` ? <CopiedBadge /> : [...i.ports].sort((a, b) => a - b).slice(0, 2).join(", ")}
+                    </td>
+                    <td
+                      className="relative cursor-text px-3 py-1.5 text-text"
+                      title="Double-click to copy"
+                      onDoubleClick={() => copyCell(`${i.address}:country`, hit?.name ?? "")}
+                    >
+                      {copiedCell === `${i.address}:country` ? (
+                        <CopiedBadge />
+                      ) : hit ? (
                         <span className="inline-flex items-center gap-2">
                           <Flag code={hit.code} />
                           <span className="truncate">{hit.name}</span>
                         </span>
+                      ) : null}
+                    </td>
+                    <td
+                      className="relative cursor-text truncate px-3 py-1.5 text-text"
+                      title={details[i.address] ? [details[i.address].city, details[i.address].region].filter(Boolean).join(", ") : ""}
+                      onDoubleClick={() => copyCell(`${i.address}:city`, details[i.address]?.city ?? "")}
+                    >
+                      {copiedCell === `${i.address}:city` ? <CopiedBadge /> : details[i.address]?.city ?? ""}
+                    </td>
+                    <td
+                      className="relative cursor-text truncate px-3 py-1.5 text-text"
+                      title={details[i.address]?.isp ?? ""}
+                      onDoubleClick={() => copyCell(`${i.address}:isp`, details[i.address]?.isp ?? "")}
+                    >
+                      {copiedCell === `${i.address}:isp` ? <CopiedBadge /> : details[i.address]?.isp ?? ""}
+                    </td>
+                    <td
+                      className="relative cursor-text px-3 py-1.5"
+                      title="Double-click to copy"
+                      onDoubleClick={() => copyCell(`${i.address}:vpn`, details[i.address] ? (details[i.address].vpn ? "VPN" : "No") : "")}
+                    >
+                      {copiedCell === `${i.address}:vpn` ? (
+                        <CopiedBadge />
+                      ) : (
+                        details[i.address] && (
+                          <span className={details[i.address].vpn ? "font-semibold text-[#ff4d4d]" : "text-muted"}>{details[i.address].vpn ? "VPN" : "No"}</span>
+                        )
                       )}
                     </td>
-                    <td className="truncate px-3 py-1.5 text-text" title={details[i.address] ? [details[i.address].city, details[i.address].region].filter(Boolean).join(", ") : ""}>{details[i.address]?.city ?? ""}</td>
-                    <td className="truncate px-3 py-1.5 text-text" title={details[i.address]?.isp ?? ""}>{details[i.address]?.isp ?? ""}</td>
-                    <td className="px-3 py-1.5">
-                      {details[i.address] && (
-                        <span className={details[i.address].vpn ? "font-semibold text-[#ff4d4d]" : "text-muted"}>{details[i.address].vpn ? "VPN" : "No"}</span>
-                      )}
+                    <td
+                      className="relative cursor-text px-3 py-1.5 text-right font-mono text-muted"
+                      title="Double-click to copy"
+                      onDoubleClick={() => copyCell(`${i.address}:io`, `${i.inbound} / ${i.outbound}`)}
+                    >
+                      {copiedCell === `${i.address}:io` ? <CopiedBadge /> : `${i.inbound.toLocaleString()} / ${i.outbound.toLocaleString()}`}
                     </td>
-                    <td className="px-3 py-1.5 text-right font-mono text-muted">{i.inbound.toLocaleString()} / {i.outbound.toLocaleString()}</td>
                     <td className="px-3 py-1.5 text-muted">{isHidden ? "Hidden" : ""}</td>
                   </tr>
                 );
