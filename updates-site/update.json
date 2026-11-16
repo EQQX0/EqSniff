@@ -1,6 +1,6 @@
 {
-  "version": "0.2.24",
+  "version": "0.2.25",
   "url": "https://updates.eqqx2.com/EqNetwork-setup.exe",
-  "sha256": "c32f3ec8fe7085e4909ab282acefd0fadf915e9dfc86a0884bdb37059526fa61",
-  "notes": "The crown icon gets its own column instead of crowding the IP address. Fixed Filtered IPs still showing addresses from an ISP you hid."
+  "sha256": "1d559f5de8388a70f0b6d8a6c541f2070a03042ded31886c9ce6e22b782b9508",
+  "notes": "The host crown no longer flickers between players on a brief traffic spike. It only moves once a challenger has clearly led for 5 seconds straight."
 }

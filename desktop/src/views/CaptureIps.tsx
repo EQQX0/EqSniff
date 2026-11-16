@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Country, IpDetails, PacketRow } from "@/lib/api";
 import { Flag } from "@/views/CaptureView";
 import { isLocalAddress } from "@/lib/export";
@@ -65,25 +65,81 @@ export const isOnline = (i: IpSummary, now: number) => now - i.last <= ONLINE_WI
 
 /** An address needs at least this many packets before its rate is trusted enough to flag. */
 const HOST_MIN_PACKETS = 60;
-/** How many times faster than the next-busiest online address counts as a gap worth flagging. */
+/** How many times faster than the address it is being judged against counts as a gap worth flagging. */
 const HOST_RATE_RATIO = 5;
+/** A challenger must keep beating the current host for this many capture-seconds before taking the crown. */
+const HOST_STICKY_SECONDS = 5;
+
+/** Carries the crown between calls, so `pickHost` can judge a challenger over time instead of per call. */
+export interface HostState {
+  address: string | null;
+  challenger: string | null;
+  challengerSince: number | null;
+}
+
+export function newHostState(): HostState {
+  return { address: null, challenger: null, challengerSince: null };
+}
 
 /**
- * The one online address carrying far more traffic than every other online address right now,
- * which can mean its owner is hosting (their game has to simulate everything, on top of playing).
- * Only flagged with 2+ players online, so a lone player (which includes a host playing solo) is
- * never mistaken for a host, and only once the leader's own packet count is high enough that an
- * early read or a quiet moment can't trip it.
+ * The one online address carrying far more traffic than the rest, which can mean its owner is
+ * hosting (their game has to simulate everything, on top of playing). Only flagged with 2+ players
+ * online, so a lone player (which includes a host playing solo) is never mistaken for a host, and
+ * only once the leader's own packet count is high enough that an early read or a quiet moment can't
+ * trip it.
+ *
+ * Mutates `state` and returns the crowned address. Once crowned, an address keeps the crown through
+ * ordinary jitter: a new leader only takes over once it has beaten the current host by the same gap
+ * for HOST_STICKY_SECONDS straight, not on a single busy packet. Losing the crown only happens when
+ * the host goes offline or a challenger holds that lead for the whole window.
  */
-export function likelyHost(items: IpSummary[], now: number): string | null {
+export function pickHost(items: IpSummary[], now: number, state: HostState): string | null {
   const online = items.filter((i) => isOnline(i, now));
-  if (online.length < 2) return null;
+  if (online.length < 2) {
+    state.address = null;
+    state.challenger = null;
+    state.challengerSince = null;
+    return null;
+  }
   const rate = (i: IpSummary) => i.packets / Math.max(1, now - i.first);
-  const sorted = [...online].sort((a, b) => rate(b) - rate(a));
-  const top = sorted[0];
-  if (top.packets < HOST_MIN_PACKETS) return null;
-  if (rate(top) < rate(sorted[1]) * HOST_RATE_RATIO) return null;
-  return top.address;
+  const byRate = [...online].sort((a, b) => rate(b) - rate(a));
+  const top = byRate[0];
+  const current = state.address ? online.find((i) => i.address === state.address) : undefined;
+
+  if (!current) {
+    // No sticky host (none yet, or the old one went offline): pick fresh with no delay.
+    state.address = top.packets >= HOST_MIN_PACKETS && rate(top) >= rate(byRate[1]) * HOST_RATE_RATIO ? top.address : null;
+    state.challenger = null;
+    state.challengerSince = null;
+    return state.address;
+  }
+  if (current.address === top.address) {
+    // The host is still the busiest address; no challenge in progress.
+    state.challenger = null;
+    state.challengerSince = null;
+    return state.address;
+  }
+
+  // Someone else is busier right now. They only start a challenge by clearing the same bar
+  // against the CURRENT host (not just 2nd place), and only win it by clearing that bar for
+  // HOST_STICKY_SECONDS straight.
+  const challenges = top.packets >= HOST_MIN_PACKETS && rate(top) >= rate(current) * HOST_RATE_RATIO;
+  if (!challenges) {
+    state.challenger = null;
+    state.challengerSince = null;
+    return state.address;
+  }
+  if (state.challenger !== top.address) {
+    state.challenger = top.address;
+    state.challengerSince = now;
+    return state.address; // keep the host while the challenge is still fresh
+  }
+  if (now - (state.challengerSince ?? now) >= HOST_STICKY_SECONDS) {
+    state.address = top.address;
+    state.challenger = null;
+    state.challengerSince = null;
+  }
+  return state.address;
 }
 
 /** The book as a list, newest first. `onlyFiltered` keeps the addresses that had at least one packet through the filters. */
@@ -151,7 +207,8 @@ export function IpList({ items, names, geo, hidden, onSave, onClear, onDelete, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, names, query, now, hiddenIps, onlyIsp, details]);
   const onlineCount = useMemo(() => items.filter((i) => isOnline(i, now)).length, [items, now]);
-  const hostAddress = useMemo(() => likelyHost(items, now), [items, now]);
+  const hostState = useRef<HostState>(newHostState());
+  const hostAddress = useMemo(() => pickHost(items, now, hostState.current), [items, now]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
