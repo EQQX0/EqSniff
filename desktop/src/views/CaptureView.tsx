@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type UIEvent } from "react";
 import { api, type Adapter, type Country, type IpDetails, type PacketRow } from "@/lib/api";
 import { matchesAny, type Filter, type Lookup } from "@/lib/filters";
 import { Button } from "@/components/ui/Button";
@@ -112,6 +112,33 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
   const [tab, setTab] = useState<"all" | "filtered">("filtered");
   // The IP list is the main view. The packet table stays hidden until you ask for it.
   const [ipsOpen, setIpsOpen] = useState(true);
+  // The packet table can hold tens of thousands of rows during a busy capture. Rendering only the
+  // rows that fit the visible scroll area keeps the table smooth no matter how much traffic piles up.
+  const ROW_HEIGHT = 30;
+  const tableScroll = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const scrollFrame = useRef<number | null>(null);
+  const onTableScroll = useCallback((e: UIEvent<HTMLDivElement>) => {
+    if (scrollFrame.current !== null) return;
+    const top = e.currentTarget.scrollTop;
+    scrollFrame.current = requestAnimationFrame(() => {
+      scrollFrame.current = null;
+      setScrollTop(top);
+    });
+  }, []);
+  useEffect(() => {
+    const el = tableScroll.current;
+    if (!el) return;
+    const measure = () => setViewportHeight(el.clientHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ipsOpen]);
+  useEffect(() => () => {
+    if (scrollFrame.current !== null) cancelAnimationFrame(scrollFrame.current);
+  }, []);
   const [details, setDetails] = useState<Record<string, IpDetails>>({});
   const lookupBusy = useRef(new Set<string>());
   const [clockNow, setClockNow] = useState(() => Date.now() / 1000);
@@ -199,6 +226,14 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
       return (x < y ? -1 : 1) * sign;
     });
   }, [rows, filteredRows, tab, sort, names, geo]);
+
+  const OVERSCAN = 10;
+  const visibleStart = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+  const visibleEnd = Math.min(shown.length, visibleStart + Math.ceil(viewportHeight / ROW_HEIGHT) + OVERSCAN * 2);
+  const visibleRows = shown.slice(visibleStart, visibleEnd);
+  const topPad = visibleStart * ROW_HEIGHT;
+  const bottomPad = (shown.length - visibleEnd) * ROW_HEIGHT;
+  const visibleColumnCount = COLUMNS.filter((c) => show(c.id)).length;
 
   function clickHeader(key: ColumnId) {
     setSort((s) => (s?.key !== key ? { key, dir: "asc" } : s.dir === "asc" ? { key, dir: "desc" } : null));
@@ -716,7 +751,7 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
                 </thead>
               </table>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
+            <div ref={tableScroll} onScroll={onTableScroll} className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
               {shown.length === 0 ? (
           <EmptyState
             icon={<NetworkIcon className="h-6 w-6" />}
@@ -737,7 +772,12 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
                   ))}
                 </colgroup>
             <tbody>
-              {shown.map((r) => {
+              {topPad > 0 && (
+                <tr style={{ height: topPad }} aria-hidden="true">
+                  <td colSpan={visibleColumnCount} />
+                </tr>
+              )}
+              {visibleRows.map((r) => {
                 const far = farOf(r);
                 const cellCopy = (text: string, what: string) => ({
                   title: "Double-click to copy",
@@ -806,6 +846,11 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
                   </tr>
                 );
               })}
+              {bottomPad > 0 && (
+                <tr style={{ height: bottomPad }} aria-hidden="true">
+                  <td colSpan={visibleColumnCount} />
+                </tr>
+              )}
             </tbody>
                 </table>
               )}

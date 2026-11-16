@@ -1,6 +1,6 @@
 {
-  "version": "0.2.27",
+  "version": "0.2.28",
   "url": "https://updates.eqqx2.com/EqNetwork-setup.exe",
-  "sha256": "6813c532439f62e0eb7d61e1b0228a54a910d98e48ebd1e7cf00c415a092f43c",
-  "notes": "Double-click any cell in the IP table to copy its value."
+  "sha256": "4f6fec3f60519168ad423e011b6b9b6f5c491a8272b445abc8eb8117b14871c7",
+  "notes": "Fixed the Capture app slowing down under heavy traffic: the raw packet table now only renders the rows on screen instead of every packet captured."
 }
