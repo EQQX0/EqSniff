@@ -1,6 +1,6 @@
 {
-  "version": "0.2.28",
+  "version": "0.2.29",
   "url": "https://updates.eqqx2.com/EqNetwork-setup.exe",
-  "sha256": "4f6fec3f60519168ad423e011b6b9b6f5c491a8272b445abc8eb8117b14871c7",
-  "notes": "Fixed the Capture app slowing down under heavy traffic: the raw packet table now only renders the rows on screen instead of every packet captured."
+  "sha256": "220c4bdfc7a594862af04b698976c23e84151b3009c97bfe5ce01ae70b721bc7",
+  "notes": "Added an Export button to IP Storage: saves your addresses and labels as a CSV file."
 }

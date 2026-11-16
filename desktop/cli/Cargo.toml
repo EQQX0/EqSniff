@@ -1,6 +1,6 @@
 [package]
 name = "eqnet"
-version = "0.2.28"
+version = "0.2.29"
 edition = "2021"
 description = "EqNetwork command line: the same features as the app, without a window."
 

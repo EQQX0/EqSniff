@@ -10,6 +10,7 @@ import { BookmarkIcon } from "@/components/ui/icons";
 
 import { IP_STORE, isEntryArray, newEntryId, onChange, saveEntries, type IpEntry } from "@/lib/ipstore";
 import { CloudError, syncNow } from "@/lib/cloud";
+import { cell, download } from "@/lib/export";
 
 export type { IpEntry };
 
@@ -119,6 +120,13 @@ export function IpStorageView() {
   const allFilteredSelected = filtered.length > 0 && filtered.every((e) => selected.has(e.id));
   const someFilteredSelected = filtered.some((e) => selected.has(e.id));
 
+  function exportEntries() {
+    const head = ["Address", "Label", "Added"].join(",");
+    const lines = filtered.map((e) => [e.address, e.note, new Date(e.createdAt).toISOString()].map(cell).join(","));
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    download(`ip-storage-${stamp}.csv`, [head, ...lines].join("\r\n") + "\r\n", "text/csv");
+  }
+
   function toggleAll() {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -150,6 +158,9 @@ export function IpStorageView() {
         <div className="flex gap-2">
           <Button variant="secondary" onClick={sync} loading={syncing}>
             Sync
+          </Button>
+          <Button variant="secondary" disabled={filtered.length === 0} onClick={exportEntries}>
+            Export
           </Button>
           <Button onClick={openAdd}>Add address</Button>
         </div>

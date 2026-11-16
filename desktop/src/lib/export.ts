@@ -3,7 +3,7 @@ import type { PacketRow } from "@/lib/api";
 const iso = (t: number) => new Date(t * 1000).toISOString();
 
 /** Spreadsheet programs run text starting with = + - @ as a formula. Prefix those with a quote. */
-const cell = (v: string | number | null) => {
+export const cell = (v: string | number | null) => {
   const s = v === null ? "" : String(v);
   const safe = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
   return /[",\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
