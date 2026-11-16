@@ -1,6 +1,6 @@
 {
-  "version": "0.2.18",
+  "version": "0.2.19",
   "url": "https://updates.eqqx2.com/EqNetwork-setup.exe",
-  "sha256": "4894c15a62dc8467ca59da682dbff826eae7ad4e1e307e42f7eaefe37a8b7b90",
-  "notes": "Sharing IP Storage now shares the whole list in one go instead of one address at a time. Added an admin panel: see every account, disable one, and remove anyone's shared items."
+  "sha256": "c6e1fb4fe9b42d59430bb63687159033bc5ff4f79d69441b3ca6e0f7a47c1bce",
+  "notes": "An account is now required to use the app, and new accounts need admin approval. Each account is locked to one device, switching once every 30 days on its own (an admin can reset the lock sooner)."
 }

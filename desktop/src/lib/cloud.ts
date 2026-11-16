@@ -12,6 +12,7 @@ import { bodyForGlobal, filterFromGlobal, type Filter } from "@/lib/filters";
 export const CLOUD_URL = "https://bswzptrmeeobbnthjioz.supabase.co";
 const CLOUD_KEY = "sb_publishable_efMWSpsdDD8crieaCVSlow_PGXONxdi";
 const SESSION_STORE = "cloud-session";
+const DEVICE_STORE = "device-id";
 const VPN_DELETED = "vpn-deleted";
 export const FILTERS_SYNCED = "filters-synced";
 export const GLOBAL_FILTERS_SYNCED = "global-filters-synced";
@@ -27,6 +28,20 @@ export interface CloudSession {
   /** Fingerprint of the filter list as of the last sync, to tell which side changed. */
   filtersHash: string | null;
   lastSync: number | null;
+  /** This computer's device id, as accepted at the last successful sign-in. */
+  deviceId: string;
+}
+
+/**
+ * A random id for this install, made once and kept forever in local app data (never synced).
+ * Identifies "this computer" to the one-device-at-a-time lock, independent of which account signs in.
+ */
+export async function getDeviceId(): Promise<string> {
+  const have = await api.getStore(DEVICE_STORE);
+  if (typeof have === "string" && have) return have;
+  const id = crypto.randomUUID();
+  await api.saveStore(DEVICE_STORE, id);
+  return id;
 }
 
 export class CloudError extends Error {}
@@ -77,6 +92,7 @@ export async function loadSession(): Promise<CloudSession | null> {
     expiresAt: v.expiresAt ?? 0,
     filtersHash: v.filtersHash ?? null,
     lastSync: v.lastSync ?? null,
+    deviceId: v.deviceId ?? "",
   };
 }
 
@@ -91,7 +107,8 @@ interface TokenReply {
   username?: string;
   user?: { id?: string; email?: string };
   error?: string;
-  confirmEmail?: boolean;
+  pending?: boolean;
+  deviceId?: string;
 }
 
 function toSession(r: TokenReply, fallback: { email?: string; username?: string }, keep?: Partial<CloudSession>): CloudSession {
@@ -104,6 +121,7 @@ function toSession(r: TokenReply, fallback: { email?: string; username?: string 
     expiresAt: Date.now() + (r.expires_in ?? 3600) * 1000,
     filtersHash: keep?.filtersHash ?? null,
     lastSync: keep?.lastSync ?? null,
+    deviceId: r.deviceId ?? keep?.deviceId ?? "",
   };
 }
 
@@ -119,18 +137,14 @@ async function account(action: "signup" | "login" | "rename", body: Record<strin
   return out;
 }
 
-export type SignUpResult = { session: CloudSession } | { confirmEmail: true };
-
-export async function signUp(username: string, email: string, password: string): Promise<SignUpResult> {
-  const out = await account("signup", { username, email, password });
-  if (!out.access_token) return { confirmEmail: true }; // the project asks new accounts to confirm their email first
-  const s = toSession(out, { email, username });
-  await saveSession(s);
-  return { session: s };
+/** Sign-up never signs you in: the account is disabled until an admin approves it, then you sign in normally. */
+export async function signUp(username: string, email: string, password: string): Promise<void> {
+  await account("signup", { username, email, password });
 }
 
 export async function signIn(username: string, password: string): Promise<CloudSession> {
-  const s = toSession(await account("login", { username, password }), { username });
+  const deviceId = await getDeviceId();
+  const s = toSession(await account("login", { username, password, deviceId }), { username });
   await saveSession(s);
   return s;
 }
@@ -493,20 +507,28 @@ export interface AdminProfile {
   isAdmin: boolean;
   disabled: boolean;
   createdAt: number;
+  /** True once this account has signed in on a device at least once. */
+  hasDevice: boolean;
+  /** When the device lock last changed (first claimed, or switched). Null if never. */
+  deviceChangedAt: number | null;
 }
 
 /** Admin only: every signed-up account. A non-admin gets back just their own row (the database rule, not this code, decides). */
 export async function listProfiles(): Promise<AdminProfile[]> {
   const { token } = await freshToken();
   const res = await ok(
-    await call("/rest/v1/profiles?select=user_id,username,is_admin,disabled,created_at&order=created_at.asc&limit=1000", { token })
+    await call("/rest/v1/profiles?select=user_id,username,is_admin,disabled,created_at,active_device,device_changed_at&order=created_at.asc&limit=1000", { token })
   );
-  return ((await res.json()) as { user_id: string; username: string; is_admin: boolean; disabled: boolean; created_at: string }[]).map((r) => ({
+  return (
+    (await res.json()) as { user_id: string; username: string; is_admin: boolean; disabled: boolean; created_at: string; active_device: string | null; device_changed_at: string | null }[]
+  ).map((r) => ({
     userId: r.user_id,
     username: r.username,
     isAdmin: r.is_admin,
     disabled: r.disabled,
     createdAt: Date.parse(r.created_at) || 0,
+    hasDevice: !!r.active_device,
+    deviceChangedAt: r.device_changed_at ? Date.parse(r.device_changed_at) || null : null,
   }));
 }
 
@@ -522,6 +544,19 @@ export async function setProfileFlags(userId: string, patch: { isAdmin?: boolean
       token,
       headers: { Prefer: "return=minimal" },
       body: JSON.stringify(body),
+    })
+  );
+}
+
+/** Admin only: clears an account's device lock so its next sign-in, from any device, is free and immediate. */
+export async function adminResetDevice(userId: string): Promise<void> {
+  const { token } = await freshToken();
+  await ok(
+    await call(`/rest/v1/profiles?user_id=eq.${userId}`, {
+      method: "PATCH",
+      token,
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({ active_device: null, device_changed_at: null }),
     })
   );
 }
@@ -543,20 +578,30 @@ export async function isAdmin(): Promise<boolean> {
   return rows[0]?.is_admin === true;
 }
 
+export type AccountStatus = "ok" | "disabled" | "other-device";
+
 /**
- * Signs the account out if an admin disabled it after this computer last signed in (a fresh sign-in is
- * already refused at login). The database itself refuses every other read and write from a disabled
- * account regardless of this check; this just turns that into a clear message instead of silent errors.
+ * Checks whether this computer may still use the signed-in account, and signs out if not: either an
+ * admin disabled it after this computer last signed in, or another device switched the device lock
+ * away from this one. A fresh sign-in already refuses both cases at login; the database itself also
+ * refuses every other read and write once either is true, regardless of this check. This just turns
+ * that into a clear message instead of a pile of silent sync errors.
  */
-export async function signOutIfDisabled(): Promise<boolean> {
-  const { token } = await freshToken();
-  const res = await ok(await call("/rest/v1/profiles?select=disabled&limit=1", { token }));
-  const rows = (await res.json()) as { disabled: boolean }[];
-  if (rows[0]?.disabled === true) {
+export async function checkAccountStatus(): Promise<AccountStatus> {
+  const { token, session } = await freshToken();
+  const res = await ok(await call("/rest/v1/profiles?select=disabled,active_device&limit=1", { token }));
+  const rows = (await res.json()) as { disabled: boolean; active_device: string | null }[];
+  const row = rows[0];
+  if (!row) return "ok"; // can't tell; don't lock the user out over a glitch
+  if (row.disabled) {
     await signOut();
-    return true;
+    return "disabled";
   }
-  return false;
+  if (row.active_device && session.deviceId && row.active_device !== session.deviceId) {
+    await signOut();
+    return "other-device";
+  }
+  return "ok";
 }
 
 /** The published filters, as runtime `Filter`s with each user's own on/off choice already applied. */
