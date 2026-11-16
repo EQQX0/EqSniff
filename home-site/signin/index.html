@@ -6,11 +6,15 @@
   <title>Sign in &mdash; EqNetwork</title>
   <meta name="description" content="Sign in to your EqNetwork account to view your IP Storage, filters and account." />
   <meta name="robots" content="noindex" />
+  <link rel="preconnect" href="https://api.fontshare.com" />
+  <link rel="preconnect" href="https://cdn.fontshare.com" crossorigin />
+  <link href="https://api.fontshare.com/v2/css?f[]=switzer@400,500,600,700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/tokens.css" />
   <link rel="stylesheet" href="/account/styles.css" />
 </head>
 <body>
-  <div class="login-wrap">
-    <form class="login-card" id="login-form" novalidate>
+  <div class="login-wrap" data-reveal>
+    <form class="login-card reveal" id="login-form" novalidate>
       <h1>EqNetwork Account</h1>
       <p class="sub">Sign in to view your IP Storage, filters and account. This page cannot change anything &mdash; edits still happen in the app.</p>
       <p class="error-text" id="login-error" role="alert" hidden></p>
@@ -27,6 +31,7 @@
       <p class="hint">New here? <a href="/signup">Create an account</a>.</p>
     </form>
   </div>
+  <script src="/reveal.js"></script>
   <script src="/signin/app.js"></script>
 </body>
 </html>

@@ -1,0 +1,139 @@
+/* EqNetwork site — shared design tokens. Same Ember palette as the desktop app, one face (Switzer). */
+:root {
+  --bg: #14080a;
+  --surface: #220f12;
+  --surface-2: #2b141a;
+  --ink: #fbe3d0;
+  --muted: #dcbaaa;
+  --accent: #d1495b;
+  --accent-soft: #f4909b;
+  --accent-ink: #1c0609;
+  --field-1: #fbe3d0;
+  --field-1-ink: #1c0609;
+  --danger: #ff8d97;
+
+  --radius: 2px;
+  --margin: clamp(20px, 4vw, 48px);
+
+  --step-small: clamp(0.8125rem, 0.79rem + 0.1vw, 0.875rem);
+  --step-body: clamp(1.0625rem, 1rem + 0.25vw, 1.1875rem);
+  --step-lead: clamp(1.25rem, 1.1rem + 0.7vw, 1.625rem);
+  --step-head: clamp(2rem, 1.3rem + 3.2vw, 4rem);
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    /* This site is intentionally one dark theme; see report for why. */
+  }
+}
+
+* { box-sizing: border-box; }
+html { color-scheme: dark; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Switzer", "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  font-size: var(--step-body);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+img, svg { display: block; max-width: 100%; }
+
+a { color: inherit; text-decoration: none; }
+
+::selection { background: var(--accent); color: var(--accent-ink); }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+button { font-family: inherit; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 48px;
+  padding: 0 24px;
+  border-radius: var(--radius);
+  font-size: var(--step-small);
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  border: none;
+  cursor: pointer;
+  background: var(--accent);
+  color: var(--accent-ink);
+  transition: transform 220ms var(--ease-out), background 220ms var(--ease-out);
+}
+.btn:hover { transform: translateY(-1px); }
+.btn:active { transform: translateY(0); }
+.btn.secondary {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.btn.ghost {
+  background: transparent;
+  color: var(--ink);
+  border: 1.5px solid var(--muted);
+}
+.btn:disabled { opacity: 0.55; cursor: default; transform: none; }
+
+.site-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28px var(--margin) 0;
+}
+.site-top .wordmark {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-size: var(--step-lead);
+}
+.site-top nav {
+  display: flex;
+  gap: 28px;
+  font-size: var(--step-small);
+  color: var(--muted);
+}
+.site-top nav a { transition: color 160ms var(--ease-out); }
+.site-top nav a:hover,
+.site-top nav a:focus-visible { color: var(--ink); }
+
+.site-foot {
+  padding: 56px var(--margin) 48px;
+  color: var(--muted);
+  font-size: var(--step-small);
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.site-foot .foot-mark {
+  color: var(--ink);
+  font-weight: 600;
+  font-size: var(--step-head);
+  letter-spacing: -0.03em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
+}
+
+.reveal {
+  opacity: 0;
+  transform: translateY(18px);
+}
+.reveal.in {
+  opacity: 1;
+  transform: none;
+  transition: opacity 640ms var(--ease-out), transform 640ms var(--ease-out);
+}
+
+[data-ui] {
+  font-family: "Switzer", "Inter", system-ui, sans-serif;
+}

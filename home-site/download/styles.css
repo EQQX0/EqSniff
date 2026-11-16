@@ -1,0 +1,75 @@
+.dl-hero {
+  padding: clamp(80px, 16vw, 160px) var(--margin) 0;
+}
+.dl-hero h1 {
+  margin: 0 0 24px;
+  font-size: clamp(2.5rem, 1.3rem + 6vw, 5rem);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 0.95;
+}
+.dl-sentence {
+  max-width: 40ch;
+  font-size: 18px;
+  color: var(--muted);
+  margin: 0 0 32px;
+}
+.dl-hero-button { height: 52px; }
+
+.dl-preview {
+  padding: clamp(60px, 10vw, 100px) var(--margin) 0;
+}
+.dl-preview h2 {
+  margin: 0 0 32px;
+  font-size: clamp(1.5rem, 1.1rem + 2vw, 2.25rem);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+.dl-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+.dl-tile {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 24px;
+  min-height: 210px;
+}
+.dl-tile-label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+.dl-tile-row { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; color: var(--muted); padding: 7px 0; }
+.dl-tile-row--host { color: var(--ink); font-weight: 500; }
+.dl-tile-row--host span:last-child { color: var(--accent-soft); }
+.dl-chip {
+  display: inline-block;
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 13px;
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  margin: 0 8px 8px 0;
+}
+
+.dl-card-wrap {
+  padding: clamp(56px, 10vw, 96px) var(--margin) clamp(100px, 16vw, 180px);
+  display: flex;
+  justify-content: center;
+}
+.dl-card {
+  width: min(480px, 100%);
+  min-height: 220px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 40px;
+  text-align: center;
+}
+.dl-version { color: var(--muted); font-size: 15px; margin: 0 0 20px; }
+.dl-button { width: 100%; height: 52px; }
+.dl-reqs { color: var(--muted); font-size: 14px; margin: 18px 0 0; }
+.dl-hash { color: var(--muted); font-size: 13px; margin: 16px 0 0; word-break: break-all; }
+.dl-hash code { color: var(--ink); }
+
+@media (max-width: 760px) {
+  .dl-tiles { grid-template-columns: 1fr; }
+  .dl-card { padding: 28px 24px; }
+}

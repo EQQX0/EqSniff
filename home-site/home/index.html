@@ -4,43 +4,152 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>EqNetwork</title>
-  <meta name="description" content="EqNetwork: a Windows network toolkit for telling real players from noise on your own network." />
+  <meta name="description" content="EqNetwork watches your own network traffic on Windows and marks who's likely hosting — locally, nothing leaves your computer." />
+  <link rel="preconnect" href="https://api.fontshare.com" />
+  <link rel="preconnect" href="https://cdn.fontshare.com" crossorigin />
+  <link href="https://api.fontshare.com/v2/css?f[]=switzer@400,500,600,700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/tokens.css" />
   <link rel="stylesheet" href="/home/styles.css" />
 </head>
 <body>
-  <header>
-    <div class="brand"><span class="dot" aria-hidden="true"></span> EqNetwork</div>
+  <div class="site-top">
+    <span class="wordmark">EqNetwork</span>
     <nav>
       <a href="/download">Download</a>
       <a href="/account">Account</a>
     </nav>
-  </header>
-  <main>
-    <section class="hero">
-      <h1>See who&rsquo;s really on your network.</h1>
-      <p>EqNetwork watches your traffic, tells real players from noise, and flags who&rsquo;s likely hosting &mdash; all on your own computer, nothing leaves it.</p>
-      <div class="cta-row">
-        <a class="btn primary" href="/download">Download for Windows</a>
-        <a class="btn secondary" href="/account">Manage your account</a>
+  </div>
+
+  <section class="hero" data-reveal>
+    <div class="hero-bottom">
+      <p class="hero-sentence reveal">Watches your own traffic, locally, and marks who&rsquo;s likely hosting. Nothing leaves your computer.</p>
+      <div class="hero-statement">
+        <h1 data-mask-lines>
+          <span>Real players.</span>
+          <span>Not noise.</span>
+        </h1>
+        <a class="btn reveal" href="/download">Download for Windows</a>
       </div>
-    </section>
-    <section class="features">
-      <div class="feature">
+    </div>
+  </section>
+
+  <section class="how" data-reveal>
+    <h2 class="reveal">How it finds them</h2>
+    <div class="how-bar" data-ui>
+      <div class="how-seg how-seg--capture reveal">
+        <span class="how-time">Instant</span>
+        <p class="how-clause">Starts reading packets the moment you open the app.</p>
+      </div>
+      <div class="how-seg how-seg--filter reveal">
+        <span class="how-time">As you watch</span>
+        <p class="how-clause">Noise drops out by country, ISP, port or address.</p>
+      </div>
+      <div class="how-seg how-seg--reveal reveal">
+        <span class="how-time">One glance</span>
+        <p class="how-clause">The address with the most sustained traffic gets the crown.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="showcase" data-reveal>
+    <div class="showcase-head">
+      <h2 class="reveal">Noise, then one</h2>
+      <p class="reveal">Every address on your network looks the same until EqNetwork has watched long enough. Then one of them gets a crown &mdash; the player sending and receiving more than anyone else, which is usually the host.</p>
+    </div>
+    <div class="showcase-figures">
+      <div class="showcase-figure reveal">
+        <span class="showcase-number" id="noise-number">214</span>
+        <span class="showcase-caption">addresses seen</span>
+      </div>
+      <div class="showcase-figure showcase-figure--host reveal">
+        <span class="showcase-number" id="host-number">1<svg id="crown-mark" class="crown" viewBox="0 0 64 40" aria-hidden="true"><path d="M2 34 10 10l12 14 10-18 10 18 12-14 8 24z" fill="currentColor"/></svg></span>
+        <span class="showcase-caption">wearing the crown</span>
+      </div>
+    </div>
+    <div class="showcase-rows reveal" data-ui>
+      <div class="showcase-row"><span >192.168.1.14</span><span>42 KB/s</span></div>
+      <div class="showcase-row"><span >192.168.1.9</span><span>3 KB/s</span></div>
+      <div class="showcase-row showcase-row--host"><span >192.168.1.22</span><span>1.8 MB/s<svg class="crown crown--row" viewBox="0 0 64 40" aria-hidden="true"><path d="M2 34 10 10l12 14 10-18 10 18 12-14 8 24z" fill="currentColor"/></svg></span></div>
+    </div>
+    <button class="btn ghost showcase-replay" id="replay-capture" type="button">Replay the capture</button>
+    <p class="showcase-note">Example capture shown above for illustration &mdash; not live data from your network.</p>
+  </section>
+
+  <section class="features" data-reveal>
+    <h2 class="reveal">What it does</h2>
+    <div class="features-sheet" data-ui>
+      <div class="features-group reveal">
         <h3>Capture &amp; filter</h3>
-        <p>Watch live traffic on any adapter, or open a saved capture, with filters for country, ISP, ports and more.</p>
+        <div class="features-row">
+          <span class="features-name">Live traffic, any adapter</span>
+          <span class="features-leader"></span>
+          <span class="features-value">real-time</span>
+        </div>
+        <p class="features-desc">Watch packets as they arrive, or open a saved capture.</p>
+        <div class="features-row">
+          <span class="features-name">Country, ISP, port, address</span>
+          <span class="features-leader"></span>
+          <span class="features-value">built in</span>
+        </div>
+        <p class="features-desc">Stack filters, or write one rule for exactly what you want to see.</p>
       </div>
-      <div class="feature">
+      <div class="features-group reveal">
         <h3>Host detection</h3>
-        <p>A crown marks the player who&rsquo;s likely hosting, based on recent traffic &mdash; not just one lucky snapshot.</p>
+        <div class="features-row">
+          <span class="features-name">Crown on the likely host</span>
+          <span class="features-leader"></span>
+          <span class="features-value">automatic</span>
+        </div>
+        <p class="features-desc">Based on sustained traffic across the session, not one lucky packet.</p>
       </div>
-      <div class="feature">
-        <h3>IP Storage, synced</h3>
-        <p>Save addresses and labels once, and they follow you between computers when you sign in.</p>
+      <div class="features-group reveal">
+        <h3>IP Storage</h3>
+        <div class="features-row">
+          <span class="features-name">Addresses &amp; labels, synced</span>
+          <span class="features-leader"></span>
+          <span class="features-value">with account</span>
+        </div>
+        <p class="features-desc">Save once, see them again on every computer you sign into.</p>
+        <div class="ip-preview" data-ui>
+          <div class="ip-row"><span >192.168.1.22</span><span>Usual host</span></div>
+          <div class="ip-row"><span >45.33.8.100</span><span>Dedicated server</span></div>
+        </div>
       </div>
-    </section>
-  </main>
-  <footer>
-    &copy; EqNetwork
+    </div>
+  </section>
+
+  <section class="faq" data-reveal>
+    <h2 class="reveal">Questions</h2>
+    <div class="faq-cols reveal">
+      <p><strong>Does any of my traffic leave my computer?</strong> No &mdash; capture, filtering and host detection all run locally; your account only stores the IPs and filters you choose to save.</p>
+      <p><strong>What does &ldquo;likely hosting&rdquo; mean?</strong> EqNetwork watches which address sends and receives the most sustained traffic in a session and marks that one with a crown &mdash; a strong signal, not a certainty.</p>
+      <p><strong>Do I need administrator rights?</strong> Yes, briefly &mdash; Windows requires elevated access to read raw packets from a network adapter.</p>
+      <p><strong>Which adapters does it support?</strong> Any adapter Windows exposes to Npcap, including Wi-Fi and Ethernet; the installer sets up the capture driver for you.</p>
+      <p><strong>Can I open a capture I saved earlier?</strong> Yes &mdash; open a saved file the same way you&rsquo;d start a live capture, and every filter still applies.</p>
+      <p><strong>What happens to my saved IPs if I reinstall?</strong> Nothing &mdash; they live in your account, not on the machine, so signing in on a fresh install brings them back.</p>
+      <p><strong>Is there a Mac or Linux build?</strong> Not yet &mdash; EqNetwork is Windows-only for now, built directly against the Windows capture APIs.</p>
+      <p><strong>How do I sign in on a second computer?</strong> Install the app, choose Sign in, and use the account you created at sniff.eqqx2.com/signup.</p>
+    </div>
+  </section>
+
+  <section class="cta" data-reveal>
+    <p class="cta-sentence reveal">One account. <a class="cta-word" href="/signin">Sign in</a> anywhere.</p>
+    <p class="cta-note reveal">No password manager required &mdash; just the one you already use in the app.</p>
+  </section>
+
+  <footer class="site-foot">
+    <span class="foot-mark">EqNetwork</span>
+    <div>
+      <nav>
+        <a href="/download">Download</a>
+        <a href="/signin">Sign in</a>
+        <a href="/signup">Create account</a>
+      </nav>
+      <p>&copy; EqNetwork</p>
+    </div>
   </footer>
+
+  <script src="/reveal.js"></script>
+  <script src="/home/app.js"></script>
 </body>
 </html>

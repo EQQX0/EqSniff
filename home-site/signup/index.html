@@ -6,11 +6,15 @@
   <title>Create account &mdash; EqNetwork</title>
   <meta name="description" content="Create an EqNetwork account to sync your IP Storage and filters across computers." />
   <meta name="robots" content="noindex" />
+  <link rel="preconnect" href="https://api.fontshare.com" />
+  <link rel="preconnect" href="https://cdn.fontshare.com" crossorigin />
+  <link href="https://api.fontshare.com/v2/css?f[]=switzer@400,500,600,700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/tokens.css" />
   <link rel="stylesheet" href="/account/styles.css" />
 </head>
 <body>
-  <div class="login-wrap">
-    <form class="login-card" id="signup-form" novalidate>
+  <div class="login-wrap" data-reveal>
+    <form class="login-card reveal" id="signup-form" novalidate>
       <h1>Create your EqNetwork account</h1>
       <p class="sub">One account syncs your IP Storage and filters across computers. Use it to sign in here and in the app.</p>
       <p class="error-text" id="signup-error" role="alert" hidden></p>
@@ -31,6 +35,7 @@
       <p class="hint">Already have an account? <a href="/signin">Sign in</a>.</p>
     </form>
   </div>
+  <script src="/reveal.js"></script>
   <script src="/signup/app.js"></script>
 </body>
 </html>
