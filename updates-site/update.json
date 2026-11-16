@@ -1,6 +1,6 @@
 {
-  "version": "0.2.18",
+  "version": "0.2.20",
   "url": "https://updates.eqqx2.com/EqNetwork-setup.exe",
-  "sha256": "4894c15a62dc8467ca59da682dbff826eae7ad4e1e307e42f7eaefe37a8b7b90",
-  "notes": "Sharing IP Storage now shares the whole list in one go instead of one address at a time. Added an admin panel: see every account, disable one, and remove anyone's shared items."
+  "sha256": "7bce3e7e4dd11619018845596570c60b16782420e83a86194eedaa4a1ec727ef",
+  "notes": "Reverted the required-account change for now — account sync stays optional while the app is still being finished."
 }

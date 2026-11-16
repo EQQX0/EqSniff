@@ -2149,7 +2149,7 @@ dependencies = [
 
 [[package]]
 name = "network-toolkit"
-version = "0.2.18"
+version = "0.2.20"
 dependencies = [
  "base64 0.22.1",
  "boringtun",
