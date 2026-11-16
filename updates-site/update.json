@@ -1,6 +1,6 @@
 {
-  "version": "0.2.20",
+  "version": "0.2.21",
   "url": "https://updates.eqqx2.com/EqNetwork-setup.exe",
-  "sha256": "7bce3e7e4dd11619018845596570c60b16782420e83a86194eedaa4a1ec727ef",
-  "notes": "Reverted the required-account change for now — account sync stays optional while the app is still being finished."
+  "sha256": "1b62885920617adf41e5df631a582c751e91bcc03cbeabe74340d0ab29b3b9b8",
+  "notes": "The Capture packet table no longer trims to the last 3000 rows — it keeps every packet for the whole capture."
 }

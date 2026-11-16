@@ -58,7 +58,6 @@ export function Flag({ code }: { code: string }) {
   return <span className={`fi fi-${code.toLowerCase()} inline-block h-3.5 w-5 rounded-sm bg-cover shadow-[0_0_0_1px_rgba(255,255,255,.18)]`} aria-hidden="true" />;
 }
 
-const MAX_ROWS = 3000;
 /** The window reads at most this much of a capture file. */
 const MAX_FILE_BYTES = 32 * 1024 * 1024;
 /** The app side looks up at most this many addresses per request. */
@@ -343,10 +342,7 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
       absorb(ipBook.current, fresh, farOf, (r) => matchesAny(filtersNow.current, r, lookupNow.current));
       setIpVersion((v) => v + 1);
       setTotal((n) => n + fresh.length);
-      setRows((prev) => {
-        const next = prev.concat(fresh);
-        return next.length > MAX_ROWS ? next.slice(next.length - MAX_ROWS) : next;
-      });
+      setRows((prev) => prev.concat(fresh));
     },
     [onSeen, askGeo]
   );
@@ -524,7 +520,6 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
         <p className="ml-auto text-sm text-muted" aria-live="polite">
           {fromFile ? `File: ${fromFile}` : running ? "Capturing" : "Stopped"} · {total.toLocaleString()} packets
           {anyOn && ` · ${shown.length.toLocaleString()} match`}
-          {!fromFile && total > MAX_ROWS && ` (keeping last ${MAX_ROWS.toLocaleString()})`}
         </p>
       </Card>
 
