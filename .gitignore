@@ -11,3 +11,5 @@ replica/screens
 release
 .claude
 *.zip
+updates-site/EqNetwork-setup.exe
+updates-site/.vercel

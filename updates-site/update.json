@@ -1,0 +1,6 @@
+{
+  "version": "0.2.14",
+  "url": "https://updates.eqqx2.com/EqNetwork-setup.exe",
+  "sha256": "02ef3023cdacf28a8b810686f7c148be97352280aa8b5b30d5f1b4b98bc7e456",
+  "notes": "Stopping and starting a capture keeps the IP list. A player is online only while the server answers them, so a closed game port no longer shows people as online. Hide ISP in the right-click menu makes a real filter."
+}
