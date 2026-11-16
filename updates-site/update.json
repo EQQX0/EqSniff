@@ -1,6 +1,6 @@
 {
-  "version": "0.2.21",
+  "version": "0.2.22",
   "url": "https://updates.eqqx2.com/EqNetwork-setup.exe",
-  "sha256": "1b62885920617adf41e5df631a582c751e91bcc03cbeabe74340d0ab29b3b9b8",
-  "notes": "The Capture packet table no longer trims to the last 3000 rows — it keeps every packet for the whole capture."
+  "sha256": "c1f9d69a65d69dd8b89691b8914f819d51f50784d8bebc4ea7d2aa230e46fad8",
+  "notes": "IP Storage: a Sync button to pull in changes made elsewhere right away, and checkboxes to select and delete several addresses at once."
 }

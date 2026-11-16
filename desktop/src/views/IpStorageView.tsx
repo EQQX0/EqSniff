@@ -2,12 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Checkbox } from "@/components/ui/Checkbox";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { BookmarkIcon } from "@/components/ui/icons";
 
 import { IP_STORE, isEntryArray, newEntryId, onChange, saveEntries, type IpEntry } from "@/lib/ipstore";
+import { CloudError, syncNow } from "@/lib/cloud";
 
 export type { IpEntry };
 
@@ -18,8 +20,11 @@ export function IpStorageView() {
   const [entries, setEntries] = useState<IpEntry[]>([]);
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [syncNote, setSyncNote] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
   const [modal, setModal] = useState<{ mode: "add" | "edit"; entry: IpEntry } | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<IpEntry | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<IpEntry[] | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const load = () =>
@@ -38,6 +43,20 @@ export function IpStorageView() {
       setError(null);
     } catch (e) {
       setError(String(e));
+    }
+  }
+
+  async function sync() {
+    setSyncing(true);
+    setError(null);
+    setSyncNote(null);
+    try {
+      const r = await syncNow();
+      setSyncNote(`Synced. ${r.added} added here, ${r.sent} sent, ${r.removed} removed from the account.`);
+    } catch (e) {
+      setError(e instanceof CloudError ? e.message : String(e));
+    } finally {
+      setSyncing(false);
     }
   }
 
@@ -62,7 +81,13 @@ export function IpStorageView() {
 
   async function confirmDelete() {
     if (!deleteTarget) return;
-    await persist(entries.filter((e) => e.id !== deleteTarget.id));
+    const ids = new Set(deleteTarget.map((e) => e.id));
+    await persist(entries.filter((e) => !ids.has(e.id)));
+    setSelected((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => next.delete(id));
+      return next;
+    });
     setDeleteTarget(null);
   }
 
@@ -74,13 +99,43 @@ export function IpStorageView() {
     return [...list].sort((a, b) => b.createdAt - a.createdAt);
   }, [entries, search]);
 
+  useEffect(() => {
+    const ids = new Set(entries.map((e) => e.id));
+    setSelected((prev) => {
+      const next = new Set([...prev].filter((id) => ids.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [entries]);
+
+  function toggleOne(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every((e) => selected.has(e.id));
+  const someFilteredSelected = filtered.some((e) => selected.has(e.id));
+
+  function toggleAll() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allFilteredSelected) filtered.forEach((e) => next.delete(e.id));
+      else filtered.forEach((e) => next.add(e.id));
+      return next;
+    });
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div>
         <h1 className="text-xl font-bold text-text">IP Storage</h1>
         <p className="mt-1 text-sm text-muted">
           Your own saved addresses and labels. Jot down a router, a server, or any address you want to remember, with a
-          label next to it. This list stays on this computer and is not used by any capture filter.
+          label next to it. Not used by any capture filter. If you're signed in (Settings &gt; Account), this list syncs
+          with your account automatically, or press Sync to pull in a change made elsewhere right away.
         </p>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -92,9 +147,32 @@ export function IpStorageView() {
           onChange={(e) => setSearch(e.target.value)}
           className="w-full max-w-xs"
         />
-        <Button onClick={openAdd}>Add address</Button>
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={sync} loading={syncing}>
+            Sync
+          </Button>
+          <Button onClick={openAdd}>Add address</Button>
+        </div>
       </div>
       {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+      {syncNote && <p role="status" className="text-sm text-muted">{syncNote}</p>}
+      {selected.size > 0 && (
+        <div className="flex items-center justify-between rounded-md border border-border bg-surface px-3 py-2">
+          <span className="text-sm text-text">{selected.size} selected</span>
+          <div className="flex gap-2">
+            <Button size="sm" variant="secondary" onClick={() => setSelected(new Set())}>
+              Clear
+            </Button>
+            <Button
+              size="sm"
+              variant="danger"
+              onClick={() => setDeleteTarget(entries.filter((e) => selected.has(e.id)))}
+            >
+              Delete selected
+            </Button>
+          </div>
+        </div>
+      )}
       <Card className="p-0">
         {entries.length === 0 ? (
           <EmptyState
@@ -109,6 +187,16 @@ export function IpStorageView() {
           <table className="w-full text-left text-sm">
             <thead className="text-muted">
               <tr className="border-b border-border">
+                <th scope="col" className="w-10 px-3 py-2">
+                  <Checkbox
+                    checked={allFilteredSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = !allFilteredSelected && someFilteredSelected;
+                    }}
+                    onChange={toggleAll}
+                    aria-label="Select all addresses"
+                  />
+                </th>
                 <th scope="col" className="px-3 py-2 font-semibold">Address</th>
                 <th scope="col" className="px-3 py-2 font-semibold">Label</th>
                 <th scope="col" className="px-3 py-2 font-semibold">Added</th>
@@ -118,6 +206,13 @@ export function IpStorageView() {
             <tbody>
               {filtered.map((e) => (
                 <tr key={e.id} className="border-b border-border last:border-0">
+                  <td className="px-3 py-2">
+                    <Checkbox
+                      checked={selected.has(e.id)}
+                      onChange={() => toggleOne(e.id)}
+                      aria-label={`Select ${e.address}`}
+                    />
+                  </td>
                   <td className="px-3 py-2 font-mono text-xs text-text">{e.address}</td>
                   <td className="max-w-sm px-3 py-2 text-sm text-muted">{e.note || <span className="italic">No label</span>}</td>
                   <td className="px-3 py-2 text-xs text-muted">{new Date(e.createdAt).toLocaleDateString()}</td>
@@ -126,7 +221,7 @@ export function IpStorageView() {
                       <Button size="sm" variant="secondary" onClick={() => openEdit(e)} aria-label={`Edit ${e.address}`}>
                         Edit
                       </Button>
-                      <Button size="sm" variant="danger" onClick={() => setDeleteTarget(e)} aria-label={`Delete ${e.address}`}>
+                      <Button size="sm" variant="danger" onClick={() => setDeleteTarget([e])} aria-label={`Delete ${e.address}`}>
                         Delete
                       </Button>
                     </div>
@@ -149,11 +244,21 @@ export function IpStorageView() {
         )}
       </Modal>
 
-      <Modal open={deleteTarget !== null} onClose={() => setDeleteTarget(null)} title="Delete address">
+      <Modal
+        open={deleteTarget !== null}
+        onClose={() => setDeleteTarget(null)}
+        title={deleteTarget && deleteTarget.length > 1 ? "Delete addresses" : "Delete address"}
+      >
         {deleteTarget && (
           <div className="flex flex-col gap-4">
             <p className="text-sm text-text">
-              Delete <span className="font-mono">{deleteTarget.address}</span>? This cannot be undone.
+              {deleteTarget.length > 1 ? (
+                <>Delete {deleteTarget.length} addresses? This cannot be undone.</>
+              ) : (
+                <>
+                  Delete <span className="font-mono">{deleteTarget[0].address}</span>? This cannot be undone.
+                </>
+              )}
             </p>
             <div className="flex justify-end gap-2">
               <Button variant="secondary" onClick={() => setDeleteTarget(null)}>
