@@ -25,11 +25,13 @@ interface Props {
   onEditGlobal?: (id: string, f: Filter) => Promise<void>;
   /** Admin only: retires a global filter. It disappears for everyone. */
   onRetireGlobal?: (id: string) => Promise<void>;
+  /** Admin only: saves the shared order of the global filters (first = highest priority). */
+  onReorderGlobal?: (ids: string[]) => Promise<void>;
   /** A new filter to open in the window, already filled in (from a right-click on a row). `n` changes with every request. */
   draftRequest?: { filter: Filter; n: number } | null;
 }
 
-export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = false, onToggleGlobal, onPublishGlobal, onEditGlobal, onRetireGlobal, draftRequest }: Props) {
+export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = false, onToggleGlobal, onPublishGlobal, onEditGlobal, onRetireGlobal, onReorderGlobal, draftRequest }: Props) {
   const [draft, setDraft] = useState<Filter | null>(null);
   // Remounting the tabs puts the packet filters tab (where the window opens) in front.
   const [tabsKey, setTabsKey] = useState(0);
@@ -102,13 +104,14 @@ export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = f
   const toggleGlobal = (f: Filter) =>
     run(() => onToggleGlobal!(f).then(() => {}), `${f.name} is now ${f.enabled ? "off" : "on"} for you. Nobody else is affected.`);
 
-  /** Admin only: changes whether a global filter starts switched on for every account. */
-  const setDefaultForAll = (f: Filter) => {
-    const next = !(f.defaultEnabled ?? f.enabled);
-    return run(
-      () => onEditGlobal!(f.globalId!, { ...f, defaultEnabled: next }),
-      `“${f.name}” now starts ${next ? "on" : "off"} for everyone. Accounts that chose for themselves keep their own choice.`
-    );
+  /** Admin only: moves a global filter one place up or down. The order is shared by every account. */
+  const moveGlobal = (f: Filter, dir: -1 | 1) => {
+    const ids = globalFilters.map((x) => x.globalId!);
+    const i = ids.indexOf(f.globalId!);
+    const j = i + dir;
+    if (j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    return run(() => onReorderGlobal!(ids), `Moved “${f.name}” ${dir < 0 ? "up" : "down"} for everyone.`);
   };
 
   /** Moves a filter one place up or down among the packet filters. The top filter comes first in the Filter column of the IP lists. */
@@ -128,7 +131,7 @@ export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = f
     run(async () => {
       await onPublishGlobal!(f);
       await onChange(filters.filter((x) => x.id !== f.id));
-    }, `“${f.name}” is now a global filter for every signed-in account. It starts ${f.enabled ? "on" : "off"} for them.`);
+    }, `“${f.name}” is now a global filter for every signed-in account. It starts switched on for them.`);
 
   /** Admin only: turns a global filter back into one of your own. It stops being global for everyone. */
   const makeMine = (f: Filter) =>
@@ -187,24 +190,51 @@ export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = f
 
       {globalFilters.length > 0 && (
         <Card className="p-0">
-          <div className="flex items-center justify-between border-b border-border px-5 py-3">
-            <h2 className="text-sm font-semibold text-text">Global filters</h2>
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-border px-5 py-3">
+            <div>
+              <h2 className="text-sm font-semibold text-text">Global filters</h2>
+              <p className="text-xs text-muted">Set by an admin for every account. All start on; switch one off for just your account.</p>
+            </div>
             <span className="text-xs text-muted">
-              {globalFilters.length} published · on by default, turn one off below for just your account
+              {globalFilters.length} published · {globalFilters.filter((f) => f.enabled).length} on · they rank above your own filters
             </span>
           </div>
           <ul>
-            {globalFilters.map((f) => (
+            {globalFilters.map((f, idx) => (
               <li
                 key={f.globalId}
                 className="flex flex-wrap items-center gap-4 border-b border-border px-5 py-3.5 transition-colors duration-fast last:border-0 hover:bg-white/[0.04]"
               >
+                <div className="flex shrink-0 items-center gap-1" role="group" aria-label={`Global priority ${idx + 1}: ${f.name}`}>
+                  <span className="w-5 text-center text-xs font-semibold tabular-nums text-muted" title={`Global priority ${idx + 1}`}>{idx + 1}</span>
+                  {isAdmin && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => moveGlobal(f, -1)}
+                        disabled={idx === 0}
+                        aria-label={`Move ${f.name} up`}
+                        title="Move up (higher priority, for everyone)"
+                        className="grid h-7 w-7 place-items-center rounded-md text-muted transition-colors duration-fast hover:bg-white/10 hover:text-text disabled:opacity-25 disabled:hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
+                      >
+                        <span aria-hidden="true">▲</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveGlobal(f, 1)}
+                        disabled={idx === globalFilters.length - 1}
+                        aria-label={`Move ${f.name} down`}
+                        title="Move down (lower priority, for everyone)"
+                        className="grid h-7 w-7 place-items-center rounded-md text-muted transition-colors duration-fast hover:bg-white/10 hover:text-text disabled:opacity-25 disabled:hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
+                      >
+                        <span aria-hidden="true">▼</span>
+                      </button>
+                    </>
+                  )}
+                </div>
                 <Switch checked={f.enabled} label={`Switch ${f.name} on for you`} onChange={() => toggleGlobal(f)} />
                 <div className="min-w-0 flex-1">
                   <p className="flex items-center gap-2 truncate text-sm font-semibold text-text">
-                    <span className="shrink-0 rounded-pill border border-accent-soft bg-accent-soft/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-text">
-                      Global
-                    </span>
                     <span
                       className={`shrink-0 rounded-pill border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
                         f.mode === "hide" ? "border-danger/40 bg-danger-solid/20 text-danger" : "border-success/40 bg-success/10 text-success"
@@ -212,28 +242,20 @@ export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = f
                     >
                       {f.mode === "hide" ? "Hide" : "Show"}
                     </span>
-                    <span className="truncate">{f.name}</span>
+                    <span className="truncate" title={f.name}>{f.name}</span>
                   </p>
-                  <p className="truncate text-xs text-muted">Set by an admin for everyone · {describe(f)}</p>
+                  <p className="truncate text-xs text-muted" title={describe(f)}>{describe(f)}</p>
                 </div>
                 {isAdmin && (
                   <div className="flex shrink-0 items-center gap-1">
-                    <label className="mr-2 flex cursor-pointer items-center gap-2 text-xs text-muted" title="Admin: whether this filter starts switched on for every account. Accounts can still turn it off for themselves.">
-                      <Switch
-                        checked={f.defaultEnabled ?? f.enabled}
-                        label={`Switch ${f.name} on by default for everyone`}
-                        onChange={() => setDefaultForAll(f)}
-                      />
-                      Default for everyone
-                    </label>
-                    <label className="mr-2 flex cursor-pointer items-center gap-2 text-xs text-muted" title="Admin: switch off to take this filter back as one of your own. It stops being global for everyone.">
+                    <label className="mr-2 flex cursor-pointer items-center gap-2 text-xs text-muted" title="Switch off to take this filter back as one of your own. It stops being global for everyone.">
                       <Switch checked label={`Global: switch off to make ${f.name} yours`} onChange={() => setConfirm({ kind: "mine", f })} />
                       Global
                     </label>
                     <Button size="sm" variant="ghost" onClick={() => { setDraft({ ...f }); setDraftGlobal(true); }} aria-label={`Edit ${f.name} for everyone`}>
                       Edit
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => retireGlobal(f)} aria-label={`Retire ${f.name} for everyone`}>
+                    <Button size="sm" variant="ghost" className="text-danger hover:bg-danger-solid/20" onClick={() => retireGlobal(f)} aria-label={`Retire ${f.name} for everyone`}>
                       Retire
                     </Button>
                   </div>

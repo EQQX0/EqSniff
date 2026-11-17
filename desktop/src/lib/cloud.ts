@@ -440,12 +440,14 @@ export interface SharedItem {
   name: string;
   body: string;
   updatedAt: number;
+  /** The one account this is shared with, or null when it is shared with every account. */
+  recipientId: string | null;
 }
 
 export async function listShared(): Promise<SharedItem[]> {
   const { token } = await freshToken();
-  const res = await ok(await call("/rest/v1/shared_items?select=id,owner_id,owner_name,kind,name,body,updated_at&order=updated_at.desc&limit=500", { token }));
-  return ((await res.json()) as { id: string; owner_id: string; owner_name: string; kind: "tunnel" | "filter" | "ip"; name: string; body: string; updated_at: string }[]).map((r) => ({
+  const res = await ok(await call("/rest/v1/shared_items?select=id,owner_id,owner_name,kind,name,body,updated_at,recipient_id&order=updated_at.desc&limit=500", { token }));
+  return ((await res.json()) as { id: string; owner_id: string; owner_name: string; kind: "tunnel" | "filter" | "ip"; name: string; body: string; updated_at: string; recipient_id: string | null }[]).map((r) => ({
     id: r.id,
     ownerId: r.owner_id,
     ownerName: r.owner_name,
@@ -453,26 +455,38 @@ export async function listShared(): Promise<SharedItem[]> {
     name: r.name,
     body: r.body,
     updatedAt: Date.parse(r.updated_at) || 0,
+    recipientId: r.recipient_id ?? null,
   }));
 }
 
-/** Makes one tunnel or filter visible to every signed-in account. They get a read-only copy to add to their own list. */
-export async function shareItem(kind: "tunnel" | "filter" | "ip", name: string, body: string): Promise<void> {
+/** Finds an enabled account by username (case-insensitive) so something can be shared with just that account. */
+export async function findUserByUsername(username: string): Promise<{ userId: string; username: string } | null> {
+  const { token } = await freshToken();
+  const res = await ok(await call("/rest/v1/rpc/find_user_by_username", { method: "POST", token, body: JSON.stringify({ u: username }) }));
+  const rows = (await res.json()) as { user_id: string; username: string }[];
+  return rows[0] ? { userId: rows[0].user_id, username: rows[0].username } : null;
+}
+
+const recipientFilter = (recipientId: string | null) => (recipientId ? `recipient_id=eq.${recipientId}` : "recipient_id=is.null");
+
+/** Shares one tunnel or IP list with every signed-in account, or with only `recipientId`. Sharing again replaces the earlier share. */
+export async function shareItem(kind: "tunnel" | "filter" | "ip", name: string, body: string, recipientId: string | null = null): Promise<void> {
   const { token, session } = await freshToken();
+  await unshareItem(kind, name, recipientId);
   await ok(
-    await call("/rest/v1/shared_items?on_conflict=owner_id,kind,name", {
+    await call("/rest/v1/shared_items", {
       method: "POST",
       token,
-      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-      body: JSON.stringify({ kind, name, body, owner_name: session.username }),
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({ kind, name, body, owner_name: session.username, recipient_id: recipientId }),
     })
   );
 }
 
-export async function unshareItem(kind: "tunnel" | "filter" | "ip", name: string): Promise<void> {
+export async function unshareItem(kind: "tunnel" | "filter" | "ip", name: string, recipientId: string | null = null): Promise<void> {
   const { token, session } = await freshToken();
   await ok(
-    await call(`/rest/v1/shared_items?owner_id=eq.${session.userId}&kind=eq.${kind}&name=eq.${encodeURIComponent(name)}`, {
+    await call(`/rest/v1/shared_items?owner_id=eq.${session.userId}&kind=eq.${kind}&name=eq.${encodeURIComponent(name)}&${recipientFilter(recipientId)}`, {
       method: "DELETE",
       token,
     })
@@ -563,13 +577,13 @@ export async function signOutIfDisabled(): Promise<boolean> {
 export async function getGlobalFilters(): Promise<{ filters: Filter[]; admin: boolean }> {
   const { token } = await freshToken();
   const [rowsRes, overridesRes, admin] = await Promise.all([
-    ok(await call("/rest/v1/global_filters?deleted=eq.false&select=id,name,body,enabled&order=created_at.asc&limit=200", { token })),
+    ok(await call("/rest/v1/global_filters?deleted=eq.false&select=id,name,body,enabled&order=position.asc,created_at.asc&limit=200", { token })),
     ok(await call("/rest/v1/global_filter_overrides?select=filter_id,enabled&limit=1000", { token })),
     isAdmin(),
   ]);
   const rows = (await rowsRes.json()) as GlobalFilterRow[];
   const overrides = new Map((await overridesRes.json() as { filter_id: string; enabled: boolean }[]).map((o) => [o.filter_id, o.enabled]));
-  const filters = rows.map((r) => filterFromGlobal(r.id, r.name, overrides.get(r.id) ?? r.enabled, r.body, r.enabled));
+  const filters = rows.map((r) => filterFromGlobal(r.id, r.name, overrides.get(r.id) ?? true, r.body, true));
   return { filters, admin };
 }
 
@@ -587,15 +601,17 @@ export async function setGlobalOverride(filterId: string, enabled: boolean): Pro
   window.dispatchEvent(new Event(GLOBAL_FILTERS_SYNCED));
 }
 
-/** Admin only (enforced by the database): publishes a new global filter, switched on by default for everyone. */
+/** Admin only (enforced by the database): publishes a new global filter at the end of the order, on for everyone. */
 export async function publishGlobalFilter(f: Filter): Promise<void> {
   const { token } = await freshToken();
+  const last = await ok(await call("/rest/v1/global_filters?select=position&order=position.desc&limit=1", { token }));
+  const next = (((await last.json()) as { position: number }[])[0]?.position ?? 0) + 1;
   await ok(
     await call("/rest/v1/global_filters", {
       method: "POST",
       token,
       headers: { Prefer: "return=minimal" },
-      body: JSON.stringify({ name: f.name, body: bodyForGlobal(f), enabled: f.enabled }),
+      body: JSON.stringify({ name: f.name, body: bodyForGlobal(f), enabled: true, position: next }),
     })
   );
   window.dispatchEvent(new Event(GLOBAL_FILTERS_SYNCED));
@@ -609,9 +625,20 @@ export async function editGlobalFilter(id: string, f: Filter): Promise<void> {
       method: "PATCH",
       token,
       headers: { Prefer: "return=minimal" },
-      // The shared default, not this admin's own on/off choice (`enabled` can be a personal override).
-      body: JSON.stringify({ name: f.name, body: bodyForGlobal(f), enabled: f.defaultEnabled ?? f.enabled }),
+      // Only the shared definition; on/off is each account's own choice and the order is set separately.
+      body: JSON.stringify({ name: f.name, body: bodyForGlobal(f) }),
     })
+  );
+  window.dispatchEvent(new Event(GLOBAL_FILTERS_SYNCED));
+}
+
+/** Admin only: saves the shared order of the global filters (first id = highest priority). */
+export async function setGlobalOrder(ids: string[]): Promise<void> {
+  const { token } = await freshToken();
+  await Promise.all(
+    ids.map(async (id, i) =>
+      ok(await call(`/rest/v1/global_filters?id=eq.${id}`, { method: "PATCH", token, headers: { Prefer: "return=minimal" }, body: JSON.stringify({ position: i + 1 }) }))
+    )
   );
   window.dispatchEvent(new Event(GLOBAL_FILTERS_SYNCED));
 }

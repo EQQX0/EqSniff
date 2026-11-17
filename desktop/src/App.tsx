@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type PacketRow, type ScanHost, type UpdateInfo } from "@/lib/api";
-import { FILTERS_SYNCED, GLOBAL_FILTERS_SYNCED, editGlobalFilter, getGlobalFilters, loadSession, publishGlobalFilter, retireGlobalFilter, setGlobalOverride, startAutoSync } from "@/lib/cloud";
+import { FILTERS_SYNCED, GLOBAL_FILTERS_SYNCED, editGlobalFilter, getGlobalFilters, loadSession, publishGlobalFilter, retireGlobalFilter, setGlobalOrder, setGlobalOverride, startAutoSync } from "@/lib/cloud";
 import { isLocalAddress } from "@/lib/export";
 import { DevicesView, type Seen } from "@/views/DevicesView";
 import { IpStorageView } from "@/views/IpStorageView";
@@ -178,6 +178,7 @@ export default function App() {
   const toggleGlobalFilter = useCallback((f: Filter) => setGlobalOverride(f.globalId!, !f.enabled), []);
   const publishGlobal = useCallback((f: Filter) => publishGlobalFilter(f), []);
   const editGlobal = useCallback((id: string, f: Filter) => editGlobalFilter(id, f), []);
+  const reorderGlobal = useCallback((ids: string[]) => setGlobalOrder(ids), []);
   const retireGlobal = useCallback((id: string) => retireGlobalFilter(id), []);
 
   // Devices from captures, with anything the network scan found added on top.
@@ -246,6 +247,7 @@ export default function App() {
               onPublishGlobal={publishGlobal}
               onEditGlobal={editGlobal}
               onRetireGlobal={retireGlobal}
+              onReorderGlobal={reorderGlobal}
               draftRequest={draftRequest}
             />
           </div>

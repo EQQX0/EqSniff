@@ -114,7 +114,7 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
   }, [rowMenu]);
   /** Your own filters plus whatever global filters are in effect. Used for matching only; the quick toggle
    * row below still lists your own filters alone. */
-  const effectiveFilters = useMemo(() => (globalFilters.length ? [...filters, ...globalFilters] : filters), [filters, globalFilters]);
+  const effectiveFilters = useMemo(() => (globalFilters.length ? [...globalFilters, ...filters] : filters), [filters, globalFilters]);
   const [adapters, setAdapters] = useState<Adapter[]>([]);
   const [adapter, setAdapter] = useState("");
   const [running, setRunning] = useState(false);
