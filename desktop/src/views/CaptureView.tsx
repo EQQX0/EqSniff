@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type UIEvent } from "react";
 import { api, type Adapter, type Country, type IpDetails, type PacketRow } from "@/lib/api";
-import { matchesAny, type Filter, type Lookup } from "@/lib/filters";
+import { isIspFilter, matches, matchesAny, type Filter, type Lookup } from "@/lib/filters";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import {
@@ -72,7 +72,7 @@ function clock(t: number) {
 }
 
 /** Sort key for an address: IPv4 compares as numbers, anything else as text after the IPv4 ones. */
-function ipKey(ip: string): string {
+export function ipKey(ip: string): string {
   const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip);
   return v4 ? "0" + v4.slice(1).map((n) => n.padStart(3, "0")).join(".") : "1" + ip.toLowerCase();
 }
@@ -107,6 +107,7 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
   const [names, setNames] = useState<Record<string, string>>({});
   const [editing, setEditing] = useState<number | null>(null); // the row whose label is being typed
   const [sort, setSort] = useState<SortState>(null);
+  const [trafficQuery, setTrafficQuery] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [geo, setGeo] = useState<Record<string, Country>>({});
   const [cols, setCols] = useState<ColumnId[]>(loadColumns);
@@ -164,6 +165,8 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
   const asked = useRef(new Set<string>());
   const fileInput = useRef<HTMLInputElement>(null);
   const anyOn = effectiveFilters.some((f) => f.enabled);
+  /** The quick-toggle row lists packet filters only. ISP filters are managed on the Filters page's ISP tab. */
+  const packetFilters = useMemo(() => filters.filter((f) => !isIspFilter(f)), [filters]);
   /** The address on the other end of a packet, which is the one a label and a country belong to. */
   const farOf = (r: PacketRow) => (isLocalAddress(r.src) ? r.dst : r.src);
 
@@ -201,8 +204,38 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ipVersion, portNum, rows, filteredRows]);
 
+  /** For the All Traffic list: the addresses the filters hide, and which filter hid each one. */
+  const hiddenBy = useMemo(() => {
+    const out: Record<string, string[]> = {};
+    if (tab !== "all") return out;
+    const kept = new Set(filteredIps.map((i) => i.address));
+    const gone = new Set(allIps.map((i) => i.address).filter((a) => !kept.has(a)));
+    if (gone.size === 0) return out;
+    const hide = effectiveFilters.filter((f) => f.enabled && f.mode === "hide");
+    for (const r of rows) {
+      const far = farOf(r);
+      if (!gone.has(far)) continue;
+      const list = (out[far] ??= []);
+      for (const f of hide) if (!list.includes(f.name) && matches(f, r, lookup)) list.push(f.name);
+    }
+    // Not caught by a Hide filter: a Show filter left it out.
+    if (effectiveFilters.some((f) => f.enabled && f.mode !== "hide"))
+      for (const a of gone) if (!out[a]?.length) out[a] = ["Not in a Show filter"];
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, rows, allIps, filteredIps, effectiveFilters, lookup]);
+
   const shown = useMemo(() => {
-    const kept = tab === "all" ? rows : filteredRows;
+    let kept = tab === "all" ? rows : filteredRows;
+    const q = trafficQuery.trim().toLowerCase();
+    if (q) {
+      kept = kept.filter((r) => {
+        const far = isLocalAddress(r.src) ? r.dst : r.src;
+        return [r.src, r.dst, r.protocol, r.srcPort, r.dstPort, names[far], geo[far]?.name, details[far]?.city, details[far]?.isp].some(
+          (v) => v !== null && v !== undefined && String(v).toLowerCase().includes(q)
+        );
+      });
+    }
     if (!sort) return kept;
     const far = (r: PacketRow) => (isLocalAddress(r.src) ? r.dst : r.src);
     const value = (r: PacketRow): string | number => {
@@ -227,7 +260,7 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
       if (x === y) return a.id - b.id;
       return (x < y ? -1 : 1) * sign;
     });
-  }, [rows, filteredRows, tab, sort, names, geo]);
+  }, [rows, filteredRows, tab, sort, names, geo, details, trafficQuery]);
 
   const OVERSCAN = 10;
   const visibleStart = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
@@ -572,8 +605,8 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
 
       <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filters">
         <span className="text-sm text-muted">Filters:</span>
-        {filters.length === 0 && <span className="text-sm text-muted">none yet. Add some on the Filters page.</span>}
-        {filters.map((f) => (
+        {packetFilters.length === 0 && <span className="text-sm text-muted">none yet. Add some on the Filters page.</span>}
+        {packetFilters.map((f) => (
           <button
             key={f.id}
             type="button"
@@ -586,7 +619,7 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
             {f.enabled ? "✓ " : ""}{f.mode === "hide" ? "Hide: " : ""}{f.name}
           </button>
         ))}
-        {!anyOn && filters.length > 0 && <span className="text-xs text-muted">None switched on, so everything shows.</span>}
+        {!anyOn && packetFilters.length > 0 && <span className="text-xs text-muted">None switched on, so everything shows.</span>}
       </div>
 
       <div className={`flex flex-wrap items-center gap-2 ${ipsOpen ? "hidden" : ""}`}>
@@ -691,6 +724,16 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
           <NetworkIcon className="h-4 w-4" />
           {ipsOpen ? "Show traffic" : "Back to IPs"}
         </button>
+        {!ipsOpen && (
+          <input
+            type="search"
+            value={trafficQuery}
+            onChange={(e) => setTrafficQuery(e.target.value)}
+            placeholder="Search traffic (address, port, protocol, label, country, ISP)"
+            aria-label="Search traffic"
+            className="h-9 w-full max-w-sm rounded-pill border border-border bg-white/[0.06] px-4 text-sm text-text placeholder:text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
+          />
+        )}
         {ipsOpen && <span className="text-xs text-muted">Click a label to edit it. Labels are saved in IP Storage.</span>}
         {ipsOpen && notice && <span role="status" className="text-xs text-muted">{notice}</span>}
       </div>
@@ -702,6 +745,7 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
             names={names}
             geo={geo}
             hidden={tab === "all" ? new Set(allIps.map((i) => i.address).filter((a) => !filteredIps.some((f) => f.address === a))) : undefined}
+            hiddenBy={hiddenBy}
             onSave={saveName}
             now={fromFile ? allIps.reduce((m, i) => Math.max(m, i.last), 0) : clockNow}
             onClear={clearCaptured}

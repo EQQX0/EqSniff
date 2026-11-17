@@ -1,6 +1,6 @@
 {
-  "version": "0.2.31",
+  "version": "0.2.32",
   "url": "https://sniff.eqqx2.com/updates/EqNetwork-setup.exe",
-  "sha256": "558cc3d5cba1af78cfebd2c42f8c9dfa83978fed7044e2ada5564f9a9a67048b",
-  "notes": "Copy buttons for addresses and labels in IP Storage. Fixed the likely-host crown showing on an IP hidden by a filter."
+  "sha256": "f93af7c883111ff57e73bcb7d44e554a0abe2f43ae576a5f9f880dcdbb929992",
+  "notes": "ISP filters get their own tab on the Filters page and stay out of the Capture filter row. The Filter column names the filter that hid each IP. Search box for the traffic table and sortable columns in the IP list."
 }

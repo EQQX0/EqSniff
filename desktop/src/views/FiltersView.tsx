@@ -3,9 +3,10 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Switch } from "@/components/ui/Switch";
+import { Tabs } from "@/components/ui/Tabs";
 import { NetworkIcon } from "@/components/ui/icons";
 import { FilterWizard } from "@/components/FilterWizard";
-import { blankFilter, describe, fromFile, newId, toFile, type Filter } from "@/lib/filters";
+import { blankFilter, describe, fromFile, isIspFilter, newId, splitList, toFile, type Filter } from "@/lib/filters";
 import { download } from "@/lib/export";
 
 interface Props {
@@ -29,7 +30,12 @@ export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = f
   const [draft, setDraft] = useState<Filter | null>(null);
   const [draftGlobal, setDraftGlobal] = useState(false);
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
+  const [ispText, setIspText] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
+
+  // ISP filters (a Hide filter that only names ISPs) get their own tab. Everything else is a packet filter.
+  const packetFilters = filters.filter((f) => !isIspFilter(f));
+  const ispFilters = filters.filter(isIspFilter);
 
   async function run(work: () => Promise<void>, ok: string) {
     try {
@@ -44,6 +50,19 @@ export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = f
 
   const toggle = (f: Filter) =>
     run(() => onChange(filters.map((x) => (x.id === f.id ? { ...x, enabled: !x.enabled } : x))), `${f.name} is now ${f.enabled ? "off" : "on"}.`);
+
+  /** Adds a Hide filter for the ISP, switched on. The same name the Capture right-click uses, so it is made once and reused. */
+  function addIsp() {
+    const isp = ispText.trim().split(",")[0].trim().slice(0, 120);
+    if (isp === "") return;
+    const name = `Hide ISP: ${isp}`.slice(0, 80);
+    const have = filters.find((f) => f.name === name);
+    const next = have
+      ? filters.map((f) => (f.id === have.id ? { ...f, enabled: true } : f))
+      : [...filters, { ...blankFilter(newId()), name, mode: "hide" as const, isps: isp, enabled: true }];
+    void run(() => onChange(next), `Hiding ISP “${isp}”.`);
+    setIspText("");
+  }
 
   function exportFile() {
     download("my-filters.json", toFile(filters), "application/json");
@@ -62,7 +81,7 @@ export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = f
     if (fileInput.current) fileInput.current.value = "";
   }
 
-  const onCount = filters.filter((f) => f.enabled).length;
+  const onCount = packetFilters.filter((f) => f.enabled).length;
   const closeDraft = () => {
     setDraft(null);
     setDraftGlobal(false);
@@ -74,17 +93,8 @@ export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = f
   const retireGlobal = (f: Filter) =>
     run(() => onRetireGlobal!(f.globalId!), `Retired “${f.name}”. It is gone for everyone who had it switched on.`);
 
-  return (
+  const packetPanel = (
     <div className="flex flex-col gap-5">
-      <div>
-        <h1 className="text-xl font-bold text-text">Filters</h1>
-        <p className="mt-1 text-sm text-muted">
-          A filter is either a <strong className="font-semibold text-text">Show</strong> filter, which keeps only the packets it matches, or a{" "}
-          <strong className="font-semibold text-text">Hide</strong> filter, which removes them. A packet must match every box you fill in. With
-          several Show filters on, a packet that matches any of them stays. A Hide filter always wins. With none on, everything is shown.
-        </p>
-      </div>
-
       <div className="flex flex-wrap items-center gap-2">
         <Button onClick={() => { setDraft(blankFilter(newId())); setDraftGlobal(false); }}>New filter</Button>
         {isAdmin && (
@@ -105,17 +115,6 @@ export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = f
           onChange={(e) => importFile(e.target.files?.[0])}
         />
       </div>
-
-      {message && (
-        <p
-          role={message.kind === "error" ? "alert" : "status"}
-          className={`anim-fade rounded-pill border px-4 py-2 text-sm ${
-            message.kind === "error" ? "border-danger/40 bg-danger-solid/20 text-danger" : "border-border bg-white/[0.05] text-muted"
-          }`}
-        >
-          {message.text}
-        </p>
-      )}
 
       {draft && (
         <FilterWizard
@@ -186,7 +185,7 @@ export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = f
       )}
 
       <Card className="p-0">
-        {filters.length === 0 ? (
+        {packetFilters.length === 0 ? (
           <EmptyState
             icon={<NetworkIcon className="h-6 w-6" />}
             title="No filters yet"
@@ -197,11 +196,11 @@ export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = f
             <div className="flex items-center justify-between border-b border-border px-5 py-3">
               <h2 className="text-sm font-semibold text-text">Your filters</h2>
               <span className="text-xs text-muted">
-                {filters.length} saved · {onCount} on
+                {packetFilters.length} saved · {onCount} on
               </span>
             </div>
             <ul>
-              {filters.map((f) => (
+              {packetFilters.map((f) => (
                 <li
                   key={f.id}
                   className="flex flex-wrap items-center gap-4 border-b border-border px-5 py-3.5 transition-colors duration-fast last:border-0 hover:bg-white/[0.04]"
@@ -230,6 +229,104 @@ export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = f
           </>
         )}
       </Card>
+    </div>
+  );
+
+  const ispPanel = (
+    <div className="flex flex-col gap-5">
+      <div>
+        <h2 className="text-lg font-bold text-text">ISP filter</h2>
+        <p className="mt-1 text-sm text-muted">
+          Hide IPs from specific Internet Service Providers. Useful for filtering out known hosting providers like Take-Two Interactive, Amazon, etc.
+          Part of a name is enough and capitals do not matter. A hidden IP stays in the All Traffic list, dimmed, with the ISP filter named in its Filter column.
+        </p>
+      </div>
+      <Card>
+        <form
+          className="flex flex-wrap items-center gap-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            addIsp();
+          }}
+        >
+          <input
+            value={ispText}
+            onChange={(e) => setIspText(e.target.value)}
+            aria-label="ISP name to hide"
+            placeholder="Enter ISP name (e.g., Amazon, Take-Two Interactive)"
+            maxLength={120}
+            className="h-10 min-w-0 flex-1 rounded-pill border border-border-input bg-white/[0.06] px-4 text-sm text-text placeholder:text-muted transition-all duration-base ease-brand hover:bg-white/[0.09] focus-visible:bg-white/[0.1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
+          />
+          <Button type="submit" disabled={splitList(ispText).length === 0}>+ Add ISP</Button>
+        </form>
+        {ispFilters.length === 0 ? (
+          <p className="mt-4 text-sm text-muted">No ISPs hidden yet. You can also right-click an IP on the Capture page and choose “Hide ISP”.</p>
+        ) : (
+          <ul className="mt-4 flex flex-wrap gap-2" aria-label="Hidden ISPs">
+            {ispFilters.map((f) => (
+              <li
+                key={f.id}
+                className={`inline-flex items-center gap-1 rounded-pill border py-1 pl-3 pr-1 text-sm transition-colors duration-fast ${
+                  f.enabled ? "border-accent bg-surface text-text" : "border-border text-muted"
+                }`}
+              >
+                <button
+                  type="button"
+                  aria-pressed={f.enabled}
+                  title={f.enabled ? "Hiding this ISP. Click to switch off." : "Switched off. Click to switch on."}
+                  onClick={() => toggle(f)}
+                  className="rounded-pill px-1 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
+                >
+                  {f.isps}
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Remove ${f.isps}`}
+                  onClick={() => remove(f)}
+                  className="grid h-6 w-6 place-items-center rounded-full text-muted transition-colors duration-fast hover:bg-white/10 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
+                >
+                  <span aria-hidden="true">✕</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col gap-5">
+      <div>
+        <h1 className="text-xl font-bold text-text">Filters</h1>
+        <p className="mt-1 text-sm text-muted">
+          A filter is either a <strong className="font-semibold text-text">Show</strong> filter, which keeps only the packets it matches, or a{" "}
+          <strong className="font-semibold text-text">Hide</strong> filter, which removes them. A packet must match every box you fill in. With
+          several Show filters on, a packet that matches any of them stays. A Hide filter always wins. With none on, everything is shown.
+        </p>
+      </div>
+
+      {message && (
+        <p
+          role={message.kind === "error" ? "alert" : "status"}
+          className={`anim-fade rounded-pill border px-4 py-2 text-sm ${
+            message.kind === "error" ? "border-danger/40 bg-danger-solid/20 text-danger" : "border-border bg-white/[0.05] text-muted"
+          }`}
+        >
+          {message.text}
+        </p>
+      )}
+
+      <Tabs
+        tabs={[
+          { id: "packet", label: "Packet filters", panel: packetPanel },
+          {
+            id: "isp",
+            label: <>ISP filters{ispFilters.length > 0 && <span className="ml-1.5 text-xs opacity-80">{ispFilters.length}</span>}</>,
+            panel: ispPanel,
+          },
+        ]}
+      />
     </div>
   );
 }

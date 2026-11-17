@@ -247,6 +247,11 @@ export function problems(f: Filter): Problems {
   return out;
 }
 
+/** A Hide filter that only names ISPs. These live on the Filters page's ISP tab and stay out of the Capture quick-toggle row. */
+export const isIspFilter = (f: Filter) =>
+  f.mode === "hide" && f.isps.trim() !== "" && f.protocol === "any" && f.port.trim() === "" && f.address.trim() === "" &&
+  f.countries.trim() === "" && f.minBytes.trim() === "" && f.maxBytes.trim() === "" && f.hex.trim() === "";
+
 export const newId = () => `f-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 
 /** Short plain-language summary of what a filter checks. */

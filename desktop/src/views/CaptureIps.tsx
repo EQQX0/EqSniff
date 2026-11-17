@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Country, IpDetails, PacketRow } from "@/lib/api";
-import { Flag } from "@/views/CaptureView";
+import { Flag, ipKey } from "@/views/CaptureView";
 import { isLocalAddress } from "@/lib/export";
 import { NAME_MAX } from "@/lib/ipstore";
 import { CrownIcon } from "@/components/ui/icons";
@@ -172,12 +172,16 @@ export function listBook(book: IpBook, onlyFiltered: boolean, serverPort: number
   return (onlyFiltered ? all.filter((i) => i.passed > 0) : all).sort((x, y) => y.packets - x.packets);
 }
 
+type IpSortKey = "label" | "ip" | "type" | "port" | "country" | "city" | "isp" | "vpn" | "io";
+
 interface Props {
   items: IpSummary[];
   names: Record<string, string>;
   geo: Record<string, Country>;
   /** Addresses the filters hide. Only passed for the All Traffic list. */
   hidden?: Set<string>;
+  /** For each hidden address, the names of the filters that hid it. */
+  hiddenBy?: Record<string, string[]>;
   onSave: (address: string, value: string) => void;
   /** Forgets every captured address (saved labels stay). */
   onClear: () => void;
@@ -198,13 +202,14 @@ function CopiedBadge() {
 }
 
 /** The addresses seen in a capture, each with an editable label saved in IP Storage. */
-export function IpList({ items, names, geo, hidden, onSave, onClear, onDelete, onHideIsp, onShowPort, now, details }: Props) {
+export function IpList({ items, names, geo, hidden, hiddenBy, onSave, onClear, onDelete, onHideIsp, onShowPort, now, details }: Props) {
   const [editing, setEditing] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   // Right-click menu and the views it sets up. These only change what this list shows, not the capture.
   const [menu, setMenu] = useState<{ x: number; y: number; address: string } | null>(null);
   const [hiddenIps, setHiddenIps] = useState<Set<string>>(new Set());
   const [onlyIsp, setOnlyIsp] = useState<string | null>(null);
+  const [sort, setSort] = useState<{ key: IpSortKey; dir: "asc" | "desc" } | null>(null);
   useEffect(() => {
     if (!menu) return;
     const close = () => setMenu(null);
@@ -237,11 +242,61 @@ export function IpList({ items, names, geo, hidden, onSave, onClear, onDelete, o
     let base = items.filter((i) => !hiddenIps.has(i.address));
     if (onlyIsp !== null) base = base.filter((i) => ispOf(i.address) === onlyIsp);
     const list = q ? base.filter((i) => i.address.toLowerCase().includes(q) || (names[i.address] ?? "").toLowerCase().includes(q)) : base;
+    if (sort) {
+      const value = (i: IpSummary): string | number => {
+        switch (sort.key) {
+          case "label": return (names[i.address] ?? "").toLowerCase();
+          case "ip": return ipKey(i.address);
+          case "type": return [...i.protocols].sort().join("/");
+          case "port": return i.ports.size ? Math.min(...i.ports) : "";
+          case "country": return (geo[i.address]?.name ?? "").toLowerCase();
+          case "city": return (details[i.address]?.city ?? "").toLowerCase();
+          case "isp": return ispOf(i.address).toLowerCase();
+          case "vpn": return details[i.address] ? (details[i.address].vpn ? 1 : 0) : "";
+          default: return i.inbound + i.outbound;
+        }
+      };
+      const sign = sort.dir === "asc" ? 1 : -1;
+      // Empty values always go last, so the useful rows stay on top.
+      return [...list].sort((a, b) => {
+        const x = value(a), y = value(b);
+        if (x === "" && y !== "") return 1;
+        if (y === "" && x !== "") return -1;
+        if (x === y) return 0;
+        return (x < y ? -1 : 1) * sign;
+      });
+    }
     // players who are online come first; each group keeps its order
     const on = (i: IpSummary) => isOnline(i, now);
     return [...list.filter(on), ...list.filter((i) => !on(i))];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, names, query, now, hiddenIps, onlyIsp, details]);
+  }, [items, names, query, now, hiddenIps, onlyIsp, details, geo, sort]);
+
+  /** A heading that sorts the list: click once for A to Z, again for Z to A, a third time to go back to online-first. */
+  const sortTh = (key: IpSortKey, text: string, width: string, extra = "", title?: string) => {
+    const active = sort?.key === key;
+    return (
+      <th
+        scope="col"
+        aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
+        className={`${width} p-0 font-semibold ${extra}`}
+      >
+        <button
+          type="button"
+          onClick={() => setSort((s) => (s?.key !== key ? { key, dir: "asc" } : s.dir === "asc" ? { key, dir: "desc" } : null))}
+          title={active ? (sort.dir === "asc" ? "Sorted A to Z. Click for Z to A." : "Sorted Z to A. Click to clear.") : (title ?? `Sort by ${text.toLowerCase()}`)}
+          className={`flex w-full items-center gap-1 px-3 py-2 text-left font-semibold transition-colors duration-fast hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-soft ${
+            extra.includes("text-right") ? "justify-end" : ""
+          } ${active ? "text-accent-soft" : ""}`}
+        >
+          <span className="truncate">{text}</span>
+          <span aria-hidden="true" className={`shrink-0 text-[10px] ${active ? "opacity-100" : "opacity-30"}`}>
+            {active ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}
+          </span>
+        </button>
+      </th>
+    );
+  };
   const onlineCount = useMemo(() => items.filter((i) => isOnline(i, now)).length, [items, now]);
   const hostState = useRef<HostState>(newHostState());
   const hostCandidates = useMemo(() => (hidden && hidden.size > 0 ? items.filter((i) => !hidden.has(i.address)) : items), [items, hidden]);
@@ -285,17 +340,17 @@ export function IpList({ items, names, geo, hidden, onSave, onClear, onDelete, o
           <table className="w-full min-w-[64rem] table-fixed text-left text-xs">
             <thead className="sticky top-0 z-10 bg-[linear-gradient(180deg,#4a1621,#33101a)] text-text">
               <tr>
-                <th className="w-[14%] px-3 py-2 font-semibold">Label</th>
+                {sortTh("label", "Label", "w-[11%]")}
                 <th className="w-[3%] px-0 py-2 text-center font-semibold" title="Likely host"><span className="sr-only">Likely host</span></th>
-                <th className="w-[12%] px-3 py-2 font-semibold">IP address</th>
-                <th className="w-[6%] px-3 py-2 font-semibold">Type</th>
-                <th className="w-[7%] px-3 py-2 font-semibold">Port</th>
-                <th className="w-[11%] px-3 py-2 font-semibold">Country</th>
-                <th className="w-[10%] px-3 py-2 font-semibold">City</th>
-                <th className="w-[14%] px-3 py-2 font-semibold">ISP</th>
-                <th className="w-[7%] px-3 py-2 font-semibold" title="Known VPN, proxy or data-centre address (needs the lookup)">VPN</th>
-                <th className="w-[9%] px-3 py-2 text-right font-semibold" title="Packets in / out">In / out</th>
-                <th className="w-[7%] px-3 py-2 font-semibold">{hidden ? "Filter" : ""}</th>
+                {sortTh("ip", "IP address", "w-[12%]")}
+                {sortTh("type", "Type", "w-[6%]")}
+                {sortTh("port", "Port", "w-[7%]")}
+                {sortTh("country", "Country", "w-[10%]")}
+                {sortTh("city", "City", "w-[10%]")}
+                {sortTh("isp", "ISP", "w-[12%]")}
+                {sortTh("vpn", "VPN", "w-[7%]", "", "Sort by VPN. Known VPN, proxy or data-centre address (needs the lookup)")}
+                {sortTh("io", "In / out", "w-[9%]", "text-right", "Sort by packets in plus out")}
+                <th className="w-[13%] px-3 py-2 font-semibold">{hidden ? "Filter" : ""}</th>
               </tr>
             </thead>
             <tbody>
@@ -436,7 +491,9 @@ export function IpList({ items, names, geo, hidden, onSave, onClear, onDelete, o
                     >
                       {copiedCell === `${i.address}:io` ? <CopiedBadge /> : `${i.inbound.toLocaleString()} / ${i.outbound.toLocaleString()}`}
                     </td>
-                    <td className="px-3 py-1.5 text-muted">{isHidden ? "Hidden" : ""}</td>
+                    <td className="truncate px-3 py-1.5 text-muted" title={isHidden ? (hiddenBy?.[i.address]?.join(", ") || "Hidden") : undefined}>
+                      {isHidden ? (hiddenBy?.[i.address]?.join(", ") || "Hidden") : ""}
+                    </td>
                   </tr>
                 );
               })}
