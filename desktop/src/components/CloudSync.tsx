@@ -1,3 +1,4 @@
+import { toast } from "@/components/ui/Toast";
 import { FormEvent, useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -109,6 +110,7 @@ export function CloudSync() {
       setSession(await renameUser(newName.trim()));
       setNewName("");
       setNote("Username changed.");
+      toast("Username changed");
     });
   };
 

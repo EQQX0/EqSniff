@@ -8,8 +8,9 @@ import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { BookmarkIcon, CopyIcon } from "@/components/ui/icons";
 
-import { IP_STORE, isEntryArray, newEntryId, onChange, saveEntries, type IpEntry } from "@/lib/ipstore";
-import { SYNC_DONE } from "@/lib/cloud";
+import { toast } from "@/components/ui/Toast";
+import { IP_STORE, ago, groupByLabel, isEntryArray, isHiddenIp, loadShared, newEntryId, onChange, renameLabel, saveEntries, setFavorite, setLink, type IpEntry, type LabelGroup, type SharedStorage } from "@/lib/ipstore";
+import { SYNC_DONE, deleteSharedEntry, saveSharedEntry } from "@/lib/cloud";
 import { cell, copyText, download } from "@/lib/export";
 
 export type { IpEntry };
@@ -25,9 +26,16 @@ export function IpStorageView() {
   const [deleteTarget, setDeleteTarget] = useState<IpEntry[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const [renaming, setRenaming] = useState<{ label: string; next: string } | null>(null);
+  const [shared, setShared] = useState<SharedStorage>({ access: "none", owner: "", entries: [] });
+  const [sharedModal, setSharedModal] = useState<{ mode: "add" | "edit"; entry: IpEntry } | null>(null);
+  const [sharedDelete, setSharedDelete] = useState<IpEntry | null>(null);
 
   function handleCopy(key: string, value: string) {
-    void copyText(value);
+    void copyText(value).then((ok) =>
+      ok === false ? toast("Copying was blocked by Windows. Select the text and press Ctrl+C instead.", { kind: "error" }) : toast(`Copied ${key.startsWith("label") || key.includes("note") ? "label" : "address"}: ${value.length > 50 ? value.slice(0, 47) + "…" : value}`)
+    );
     setCopiedKey(key);
     window.setTimeout(() => setCopiedKey((k) => (k === key ? null : k)), 1200);
   }
@@ -38,12 +46,18 @@ export function IpStorageView() {
         .getStore(IP_STORE)
         .then((v) => isEntryArray(v) && setEntries(v))
         .catch((e) => setError(String(e)));
+    const loadShare = () => void loadShared().then(setShared).catch(() => {});
+    loadShare();
+    window.addEventListener(SYNC_DONE, loadShare);
     load();
     window.addEventListener(SYNC_DONE, load); // a change pulled from the account in the background
     const off = onChange(load); // a label added on the Capture page appears here at once
+    const offShared = onChange(loadShare);
     return () => {
       window.removeEventListener(SYNC_DONE, load);
+      window.removeEventListener(SYNC_DONE, loadShare);
       off();
+      offShared();
     };
   }, []);
 
@@ -54,6 +68,7 @@ export function IpStorageView() {
       setError(null);
     } catch (e) {
       setError(String(e));
+      toast(String(e instanceof Error ? e.message : e), { kind: "error" });
     }
   }
 
@@ -68,18 +83,25 @@ export function IpStorageView() {
   async function save(entry: IpEntry) {
     const address = entry.address.trim().slice(0, ADDRESS_MAX);
     if (!address) return;
+    if (isHiddenIp(address)) {
+      toast(`${address} is always hidden by an admin, so it cannot be saved.`, { kind: "error" });
+      return;
+    }
     const note = entry.note.trim().slice(0, NOTE_MAX);
     const clean: IpEntry = { ...entry, address, note };
     const exists = entries.some((e) => e.id === clean.id);
     const next = exists ? entries.map((e) => (e.id === clean.id ? clean : e)) : [...entries, clean];
     await persist(next);
+    toast(exists ? `Saved changes to ${address}` : `Added ${address}`);
     setModal(null);
   }
 
   async function confirmDelete() {
     if (!deleteTarget) return;
     const ids = new Set(deleteTarget.map((e) => e.id));
+    const before = entries;
     await persist(entries.filter((e) => !ids.has(e.id)));
+    toast(ids.size === 1 ? `Deleted ${deleteTarget[0].address}` : `Deleted ${ids.size} addresses`, { action: { label: "Undo", run: () => void persist(before).then(() => toast("Restored")) } });
     setSelected((prev) => {
       const next = new Set(prev);
       ids.forEach((id) => next.delete(id));
@@ -88,13 +110,19 @@ export function IpStorageView() {
     setDeleteTarget(null);
   }
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const list = q
-      ? entries.filter((e) => e.address.toLowerCase().includes(q) || e.note.toLowerCase().includes(q))
-      : entries;
-    return [...list].sort((a, b) => b.createdAt - a.createdAt);
-  }, [entries, search]);
+  const q = search.trim().toLowerCase();
+  // A label matches when its current address or any earlier one matches (address, label, place, ISP or an earlier label).
+  const matches = (e: IpEntry) =>
+    q === "" || [e.address, e.note, e.place ?? "", e.isp ?? "", ...(e.prevLabels ?? []).map((p) => p.label)].some((v) => v.toLowerCase().includes(q));
+  const groups = useMemo(
+    () => groupByLabel(entries).filter((g) => [g.current, ...g.past].some(matches)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [entries, q]
+  );
+  const filtered = useMemo(() => groups.flatMap((g) => [g.current, ...g.past]), [groups]);
+  const sharedGroups = useMemo(() => groupByLabel(shared.entries).filter((g) => [g.current, ...g.past].some(matches)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [shared.entries, q]);
 
   useEffect(() => {
     const ids = new Set(entries.map((e) => e.id));
@@ -117,10 +145,37 @@ export function IpStorageView() {
   const someFilteredSelected = filtered.some((e) => selected.has(e.id));
 
   function exportEntries() {
-    const head = ["Address", "Label", "Added"].join(",");
-    const lines = filtered.map((e) => [e.address, e.note, new Date(e.createdAt).toISOString()].map(cell).join(","));
+    const head = ["Address", "Label", "Added", "First seen", "Last seen", "Times seen", "Location", "ISP"].join(",");
+    const iso = (t?: number) => (t ? new Date(t).toISOString() : "");
+    const lines = filtered.map((e) =>
+      [e.address, e.note, iso(e.createdAt), iso(e.firstSeen), iso(e.lastSeen), String(e.timesSeen ?? ""), e.place ?? "", e.isp ?? ""].map(cell).join(",")
+    );
     const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
     download(`ip-storage-${stamp}.csv`, [head, ...lines].join("\r\n") + "\r\n", "text/csv");
+  }
+
+  const toggleOpen = (label: string) =>
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+
+  const selectedLabels = [...new Set(entries.filter((e) => selected.has(e.id) && e.note).map((e) => e.note))];
+  const selectedLinked = entries.some((e) => selected.has(e.id) && e.groupKey);
+
+  async function link() {
+    const key = entries.find((e) => selectedLabels.includes(e.note) && e.groupKey)?.groupKey ?? `g-${newEntryId()}`;
+    await setLink(selectedLabels, key);
+    toast(`Linked ${selectedLabels.length} labels as one person`);
+    setSelected(new Set());
+  }
+
+  async function unlink() {
+    await setLink(selectedLabels, "");
+    toast("Unlinked");
+    setSelected(new Set());
   }
 
   function toggleAll() {
@@ -137,16 +192,16 @@ export function IpStorageView() {
       <div>
         <h1 className="text-xl font-bold text-text">IP Storage</h1>
         <p className="mt-1 text-sm text-muted">
-          Your own saved addresses and labels. Jot down a router, a server, or any address you want to remember, with a
-          label next to it. Not used by any capture filter. If you're signed in (Settings &gt; Account), this list stays in sync
-          with your account automatically, within about 30 seconds of a change on another computer.
+          Your own saved addresses and labels. A label shows its current address, and the addresses it used before sit behind
+          the more+ button with when each was first and last seen. Not used by any capture filter. This list stays on this computer.
+          {shared.access !== "none" && " An admin also shares a storage list with you, shown below."}
         </p>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Input
           label="Search"
           hideLabel
-          placeholder="Search by address or label"
+          placeholder="Search address, label, country, ISP or an earlier IP"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="w-full max-w-xs"
@@ -163,6 +218,16 @@ export function IpStorageView() {
         <div className="flex items-center justify-between rounded-md border border-border bg-surface px-3 py-2">
           <span className="text-sm text-text">{selected.size} selected</span>
           <div className="flex gap-2">
+            {selectedLabels.length >= 2 && (
+              <Button size="sm" variant="secondary" onClick={() => void link()} title="Treat these labels as the same person">
+                Link as one person
+              </Button>
+            )}
+            {selectedLinked && (
+              <Button size="sm" variant="secondary" onClick={() => void unlink()}>
+                Unlink
+              </Button>
+            )}
             <Button size="sm" variant="secondary" onClick={() => setSelected(new Set())}>
               Clear
             </Button>
@@ -202,61 +267,151 @@ export function IpStorageView() {
                 </th>
                 <th scope="col" className="px-3 py-2 font-semibold">Address</th>
                 <th scope="col" className="px-3 py-2 font-semibold">Label</th>
+                <th scope="col" className="px-3 py-2 font-semibold">Last seen</th>
                 <th scope="col" className="px-3 py-2 font-semibold">Added</th>
                 <th scope="col" className="px-3 py-2"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((e) => (
-                <tr key={e.id} className="border-b border-border last:border-0">
-                  <td className="px-3 py-2">
-                    <Checkbox
-                      checked={selected.has(e.id)}
-                      onChange={() => toggleOne(e.id)}
-                      aria-label={`Select ${e.address}`}
-                    />
-                  </td>
-                  <td className="px-3 py-2 font-mono text-xs text-text">
-                    <span className="inline-flex items-center gap-1.5">
-                      {e.address}
-                      <CopyButton
-                        value={e.address}
-                        label="address"
-                        copied={copiedKey === `${e.id}-address`}
-                        onCopy={() => handleCopy(`${e.id}-address`, e.address)}
-                      />
-                    </span>
-                  </td>
-                  <td className="max-w-sm px-3 py-2 text-sm text-muted">
-                    <span className="inline-flex items-center gap-1.5">
-                      {e.note || <span className="italic">No label</span>}
-                      {e.note && (
-                        <CopyButton
-                          value={e.note}
-                          label="label"
-                          copied={copiedKey === `${e.id}-note`}
-                          onCopy={() => handleCopy(`${e.id}-note`, e.note)}
-                        />
-                      )}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-xs text-muted">{new Date(e.createdAt).toLocaleDateString()}</td>
-                  <td className="px-3 py-1.5 text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button size="sm" variant="secondary" onClick={() => openEdit(e)} aria-label={`Edit ${e.address}`}>
-                        Edit
-                      </Button>
-                      <Button size="sm" variant="danger" onClick={() => setDeleteTarget([e])} aria-label={`Delete ${e.address}`}>
-                        Delete
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
+              {groups.map((g) => (
+                <GroupRows
+                  key={g.current.id}
+                  g={g}
+                  entries={entries}
+                  expanded={open.has(g.label || g.current.id)}
+                  onToggle={() => toggleOpen(g.label || g.current.id)}
+                  selected={selected}
+                  onSelect={toggleOne}
+                  copiedKey={copiedKey}
+                  onCopy={handleCopy}
+                  onEdit={openEdit}
+                  onDelete={(e) => setDeleteTarget([e])}
+                  onFavorite={(e) => void setFavorite(e.address, !e.favorite).then(() => toast(e.favorite ? `Removed ${e.address} from favourites` : `Added ${e.address} to favourites`))}
+                  onRename={(label) => setRenaming({ label, next: label })}
+                />
               ))}
             </tbody>
           </table>
         )}
       </Card>
+
+      {shared.access !== "none" && (
+        <Card className="p-0">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
+            <div>
+              <h2 className="text-sm font-semibold text-text">Shared storage</h2>
+              <p className="text-xs text-muted">
+                Kept by an admin and always up to date. {shared.access === "edit" ? "You can add and change addresses here." : "Read only."} Its labels also show in Capture.
+              </p>
+            </div>
+            {shared.access === "edit" && (
+              <Button size="sm" onClick={() => setSharedModal({ mode: "add", entry: { id: newEntryId(), address: "", note: "", createdAt: Date.now() } })}>
+                Add address
+              </Button>
+            )}
+          </div>
+          {sharedGroups.length === 0 ? (
+            <p className="px-4 py-8 text-center text-sm text-muted">{shared.entries.length === 0 ? "Nothing in the shared storage yet." : `No shared addresses match “${search}”.`}</p>
+          ) : (
+            <table className="w-full text-left text-sm">
+              <thead className="text-muted">
+                <tr className="border-b border-border">
+                  <th scope="col" className="px-3 py-2 font-semibold">Address</th>
+                  <th scope="col" className="px-3 py-2 font-semibold">Label</th>
+                  <th scope="col" className="px-3 py-2 font-semibold">Last seen</th>
+                  <th scope="col" className="px-3 py-2 font-semibold">Added</th>
+                  <th scope="col" className="px-3 py-2"><span className="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {sharedGroups.map((g) => (
+                  <GroupRows
+                    key={g.current.id}
+                    g={g}
+                    entries={shared.entries}
+                    expanded={open.has(`shared:${g.label || g.current.id}`)}
+                    onToggle={() => toggleOpen(`shared:${g.label || g.current.id}`)}
+                    copiedKey={copiedKey}
+                    onCopy={handleCopy}
+                    onEdit={shared.access === "edit" ? (e) => setSharedModal({ mode: "edit", entry: e }) : undefined}
+                    onDelete={shared.access === "edit" ? (e) => setSharedDelete(e) : undefined}
+                  />
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Card>
+      )}
+
+      <Modal open={sharedModal !== null} onClose={() => setSharedModal(null)} title={sharedModal?.mode === "edit" ? "Edit shared address" : "Add shared address"}>
+        {sharedModal && (
+          <EntryForm
+            key={sharedModal.entry.id}
+            initial={sharedModal.entry}
+            onCancel={() => setSharedModal(null)}
+            onSave={async (entry) => {
+              const address = entry.address.trim().slice(0, ADDRESS_MAX);
+              if (!address) return;
+              try {
+                await saveSharedEntry(shared.owner, { ...entry, address, note: entry.note.trim().slice(0, NOTE_MAX), updatedAt: Date.now() });
+                setError(null);
+                toast(sharedModal?.mode === "add" ? `Added ${address} to shared storage` : `Saved changes to ${address} in shared storage`);
+              } catch (e) {
+                setError(String(e instanceof Error ? e.message : e));
+                toast(String(e instanceof Error ? e.message : e), { kind: "error" });
+              }
+              setSharedModal(null);
+            }}
+          />
+        )}
+      </Modal>
+
+      <Modal open={sharedDelete !== null} onClose={() => setSharedDelete(null)} title="Delete shared address">
+        {sharedDelete && (
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-text">
+              Delete <span className="font-mono">{sharedDelete.address}</span> from the shared storage? It disappears for everyone who can see it.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setSharedDelete(null)}>Cancel</Button>
+              <Button
+                variant="danger"
+                onClick={async () => {
+                  try {
+                    await deleteSharedEntry(shared.owner, sharedDelete.address);
+                    setError(null);
+                    toast(`Deleted ${sharedDelete.address} from shared storage`);
+                  } catch (e) {
+                    setError(String(e instanceof Error ? e.message : e));
+                    toast(String(e instanceof Error ? e.message : e), { kind: "error" });
+                  }
+                  setSharedDelete(null);
+                }}
+              >
+                Delete
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal open={renaming !== null} onClose={() => setRenaming(null)} title="Rename label">
+        {renaming && (
+          <form
+            className="flex flex-col gap-4"
+            onSubmit={(ev) => {
+              ev.preventDefault();
+              void renameLabel(renaming.label, renaming.next).then(() => { toast(`Renamed label to ${renaming.next.trim()}`); setRenaming(null); }).catch((e) => toast(String(e instanceof Error ? e.message : e), { kind: "error" }));
+            }}
+          >
+            <Input label="Label" value={renaming.next} maxLength={NOTE_MAX} onChange={(ev) => setRenaming({ ...renaming, next: ev.target.value })} hint="Every address this label has used gets the new name." />
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={() => setRenaming(null)}>Cancel</Button>
+              <Button type="submit" disabled={!renaming.next.trim() || renaming.next.trim() === renaming.label}>Rename</Button>
+            </div>
+          </form>
+        )}
+      </Modal>
 
       <Modal open={modal !== null} onClose={() => setModal(null)} title={modal?.mode === "edit" ? "Edit address" : "Add address"}>
         {modal && (
@@ -382,5 +537,138 @@ function EntryForm({
         <Button type="submit">Save</Button>
       </div>
     </form>
+  );
+}
+
+const star = "★";
+
+/** One label: its current address, then (behind more+) the addresses it used before with when each was seen. */
+function GroupRows({
+  g,
+  entries,
+  expanded,
+  onToggle,
+  selected,
+  onSelect,
+  copiedKey,
+  onCopy,
+  onEdit,
+  onDelete,
+  onFavorite,
+  onRename,
+}: {
+  g: LabelGroup;
+  entries: IpEntry[];
+  expanded: boolean;
+  onToggle: () => void;
+  selected?: Set<string>;
+  onSelect?: (id: string) => void;
+  copiedKey: string | null;
+  onCopy: (key: string, value: string) => void;
+  onEdit?: (e: IpEntry) => void;
+  onDelete?: (e: IpEntry) => void;
+  onFavorite?: (e: IpEntry) => void;
+  onRename?: (label: string) => void;
+}) {
+  const e = g.current;
+  const linked = e.groupKey ? [...new Set(entries.filter((x) => x.groupKey === e.groupKey && x.note !== e.note && x.note).map((x) => x.note))] : [];
+  const seenLine = (x: IpEntry) =>
+    [
+      x.place,
+      x.isp,
+      x.firstSeen ? `first seen ${new Date(x.firstSeen).toLocaleDateString()}` : null,
+      x.lastSeen ? `last seen ${ago(x.lastSeen)}` : "not seen yet",
+      x.timesSeen ? `seen ${x.timesSeen}×` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  const row = (x: IpEntry, current: boolean) => (
+    <tr key={x.id} className={`border-b border-border last:border-0 ${current ? "" : "bg-white/[0.03]"}`}>
+      {selected && onSelect && (
+        <td className="w-10 px-3 py-2">
+          <Checkbox checked={selected.has(x.id)} onChange={() => onSelect(x.id)} aria-label={`Select ${x.address}`} />
+        </td>
+      )}
+      <td className="px-3 py-2 font-mono text-xs text-text">
+        <span className={`inline-flex items-center gap-1.5 ${current ? "" : "pl-4"}`}>
+          {x.address}
+          <CopyButton value={x.address} label="address" copied={copiedKey === `${x.id}-address`} onCopy={() => onCopy(`${x.id}-address`, x.address)} />
+        </span>
+        {!current && <div className="pl-4 font-sans text-[11px] text-muted">{seenLine(x)}</div>}
+      </td>
+      <td className="max-w-sm px-3 py-2 text-sm text-muted">
+        {current ? (
+          <>
+            <span className="inline-flex flex-wrap items-center gap-1.5">
+              {onFavorite && (
+                <button
+                  type="button"
+                  onClick={() => onFavorite(x)}
+                  aria-pressed={!!x.favorite}
+                  aria-label={`${x.favorite ? "Unfavourite" : "Favourite"} ${x.note || x.address}`}
+                  title={x.favorite ? "Favourite. Click to remove." : "Mark as a favourite (kept at the top)"}
+                  className={`text-base leading-none ${x.favorite ? "text-[#ffd34d]" : "text-muted/40 hover:text-muted"}`}
+                >
+                  {star}
+                </button>
+              )}
+              {x.note || <span className="italic">No label</span>}
+              {x.note && <CopyButton value={x.note} label="label" copied={copiedKey === `${x.id}-note`} onCopy={() => onCopy(`${x.id}-note`, x.note)} />}
+              {g.past.length > 0 && (
+                <button
+                  type="button"
+                  onClick={onToggle}
+                  aria-expanded={expanded}
+                  className="rounded-pill border border-border-input px-2 py-0.5 text-[11px] font-semibold text-text hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
+                >
+                  {expanded ? "less" : `more+ (${g.past.length})`}
+                </button>
+              )}
+            </span>
+            <div className="text-[11px] text-muted">{seenLine(x)}</div>
+            {linked.length > 0 && <div className="text-[11px] text-accent-soft" title="Labels marked as the same person">Linked with {linked.join(", ")}</div>}
+          </>
+        ) : (
+          <span className="text-xs italic">earlier address</span>
+        )}
+        {(x.prevLabels?.length ?? 0) > 0 && (
+          <div
+            className="text-[11px] text-[#ffb454]"
+            title={x.prevLabels!.map((p) => `${p.label} until ${new Date(p.until).toLocaleDateString()}`).join("; ")}
+          >
+            Also labelled {[...new Set(x.prevLabels!.map((p) => p.label))].join(", ")} before
+          </div>
+        )}
+      </td>
+      <td className="px-3 py-2 text-xs text-muted" title={x.lastSeen ? new Date(x.lastSeen).toLocaleString() : "Capture has not seen this address yet"}>
+        {x.lastSeen ? ago(x.lastSeen) : <span className="italic">not yet</span>}
+      </td>
+      <td className="px-3 py-2 text-xs text-muted">{new Date(x.createdAt).toLocaleDateString()}</td>
+      <td className="px-3 py-1.5 text-right">
+        <div className="flex justify-end gap-2">
+          {current && onRename && x.note && (
+            <Button size="sm" variant="ghost" onClick={() => onRename(x.note)} aria-label={`Rename label ${x.note}`}>
+              Rename
+            </Button>
+          )}
+          {onEdit && (
+            <Button size="sm" variant="secondary" onClick={() => onEdit(x)} aria-label={`Edit ${x.address}`}>
+              Edit
+            </Button>
+          )}
+          {onDelete && (
+            <Button size="sm" variant="danger" onClick={() => onDelete(x)} aria-label={`Delete ${x.address}`}>
+              Delete
+            </Button>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+  return (
+    <>
+      {row(e, true)}
+      {expanded && g.past.map((x) => row(x, false))}
+    </>
   );
 }

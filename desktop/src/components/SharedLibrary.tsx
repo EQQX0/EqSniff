@@ -1,15 +1,12 @@
+import { toast } from "@/components/ui/Toast";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { api } from "@/lib/api";
 import { CloudError, findUserByUsername, listShared, shareItem, unshareItem, type CloudSession, type SharedItem } from "@/lib/cloud";
 import { Input } from "@/components/ui/Input";
-import { loadEntries, newEntryId, saveEntries, type IpEntry } from "@/lib/ipstore";
 
-type Kind = "tunnel" | "ip";
-
-/** Fixed name under which the whole IP Storage list is shared as one item, instead of one per address. */
-const IP_STORAGE_SHARE_NAME = "IP Storage";
+type Kind = "tunnel";
 
 /** A tunnel name that is free on this computer: the shared name, then the owner's name added, then a number. */
 function freeName(want: string, owner: string, taken: Set<string>): string {
@@ -30,7 +27,6 @@ function freeName(want: string, owner: string, taken: Set<string>): string {
 export function SharedLibrary({ session }: { session: CloudSession }) {
   const [shared, setShared] = useState<SharedItem[]>([]);
   const [tunnels, setTunnels] = useState<string[]>([]);
-  const [ips, setIps] = useState<IpEntry[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -47,8 +43,7 @@ export function SharedLibrary({ session }: { session: CloudSession }) {
 
   const refresh = useCallback(async () => {
     try {
-      const [list, mine, ipList] = await Promise.all([listShared(), api.vpnSyncList(), loadEntries()]);
-      setIps(ipList);
+      const [list, mine] = await Promise.all([listShared(), api.vpnSyncList()]);
       setShared(list);
       setTunnels(mine.map((t) => t.name));
     } catch (e) {
@@ -63,7 +58,6 @@ export function SharedLibrary({ session }: { session: CloudSession }) {
   const rid = recipient?.userId ?? null;
   const isShared = (kind: Kind, name: string) =>
     shared.some((s) => s.ownerId === session.userId && s.kind === kind && s.name === name && s.recipientId === rid);
-  const ipStorageShared = isShared("ip", IP_STORAGE_SHARE_NAME);
   const toWhom = recipient ? recipient.username : "every account";
   // The Share buttons wait until a typed username has been looked up.
   const targetPending = target.trim() !== "" && recipient?.username.toLowerCase() !== target.trim().toLowerCase();
@@ -101,9 +95,11 @@ export function SharedLibrary({ session }: { session: CloudSession }) {
     try {
       const result = await task();
       setNote(result ?? done);
+      toast(result ?? done);
       await refresh();
     } catch (e) {
       setError(e instanceof CloudError ? e.message : String(e));
+      toast(e instanceof CloudError ? e.message : String(e), { kind: "error" });
     } finally {
       setBusy(null);
     }
@@ -116,51 +112,22 @@ export function SharedLibrary({ session }: { session: CloudSession }) {
       isShared("tunnel", name) ? `Stopped sharing ${name} with ${toWhom}.` : `${name} is now shared with ${toWhom}.`
     );
 
-  const toggleIpStorage = () =>
-    act(
-      "i:all",
-      async () =>
-        ipStorageShared
-          ? unshareItem("ip", IP_STORAGE_SHARE_NAME, rid)
-          : shareItem(
-              "ip",
-              IP_STORAGE_SHARE_NAME,
-              JSON.stringify(ips.map((e) => ({ address: e.address, note: e.note }))),
-              rid
-            ),
-      ipStorageShared ? `Stopped sharing your IP Storage with ${toWhom}.` : `Your whole IP Storage (${ips.length} address${ips.length === 1 ? "" : "es"}) is now shared with ${toWhom}.`
-    );
-
   const add = (item: SharedItem) =>
     act(
       `a:${item.id}`,
       async () => {
-        if (item.kind === "ip") {
-          const parsed = JSON.parse(item.body) as unknown;
-          const incoming = Array.isArray(parsed) ? parsed : [parsed];
-          const list = await loadEntries();
-          const already = new Set(list.map((e) => e.address));
-          const fresh = incoming.filter(
-            (got): got is { address: string; note?: string } => !!got && typeof got === "object" && typeof (got as { address?: unknown }).address === "string" && !already.has((got as { address: string }).address)
-          );
-          if (fresh.length === 0) throw new CloudError(incoming.length > 1 ? "Every address in that list is already in your IP Storage." : "That address is already in your IP Storage.");
-          await saveEntries(
-            [...list, ...fresh.map((got) => ({ id: newEntryId(), address: got.address, note: String(got.note ?? "").slice(0, 500), createdAt: Date.now() }))],
-            list
-          );
-          return `Added ${fresh.length} address${fresh.length === 1 ? "" : "es"} to your IP Storage.${fresh.length < incoming.length ? ` (${incoming.length - fresh.length} already there.)` : ""}`;
-        } else if (item.kind === "tunnel") {
+        if (item.kind === "tunnel") {
           const here = new Set((await api.vpnSyncList()).map((t) => t.name));
           await api.vpnSyncWrite(freeName(item.name, item.ownerName, here), item.body);
         } else {
           throw new CloudError("Filters are no longer shared. Ask an admin to publish it as a global filter.");
         }
       },
-      `Added ${item.name} to your ${item.kind === "tunnel" ? "VPN tunnels" : "IP Storage"}.`
+      `Added ${item.name} to your VPN tunnels.`
     );
 
   // Filters are not shared any more (an admin can publish one as a global filter instead), so none are listed.
-  const others = shared.filter((s) => s.ownerId !== session.userId && s.kind !== "filter");
+  const others = shared.filter((s) => s.ownerId !== session.userId && s.kind === "tunnel");
   const forMe = others.filter((s) => s.recipientId === session.userId);
   const forEveryone = others.filter((s) => s.recipientId === null);
   const mine = shared.filter((s) => s.ownerId === session.userId && s.recipientId !== null);
@@ -170,10 +137,9 @@ export function SharedLibrary({ session }: { session: CloudSession }) {
       <div>
         <h2 className="text-sm font-semibold text-text">Share with other accounts</h2>
         <p className="mt-1 text-xs text-muted">
-          Choose a tunnel or your whole IP Storage to share with every signed-in account, or type one username to share with only that account. They can add their own copy. Stop sharing
+          Choose a tunnel to share with every signed-in account, or type one username to share with only that account. They can add their own copy. Stop sharing
           at any time (copies people already made stay with them). A shared tunnel includes its
-          private key, so share a config you made for other people to use. Sharing IP Storage shares every address and label in
-          it with every signed-in account, so share only a list you are happy to publish. Filters are not shared; an admin can publish one as a global filter. Nothing is shared unless you press Share.
+          private key, so share a config you made for other people to use. Filters and IP Storage are not shared here: an admin can publish a filter as a global filter and can give accounts access to the shared IP Storage. Nothing is shared unless you press Share.
         </p>
       </div>
 
@@ -210,8 +176,8 @@ export function SharedLibrary({ session }: { session: CloudSession }) {
 
       <div className="space-y-2">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-muted">Yours</h3>
-        {tunnels.length === 0 && ips.length === 0 ? (
-          <p className="text-xs text-muted">Nothing to share yet. Add a tunnel or an IP address first.</p>
+        {tunnels.length === 0 ? (
+          <p className="text-xs text-muted">Nothing to share yet. Add a tunnel first.</p>
         ) : (
           <ul className="space-y-2">
             {tunnels.map((n) => (
@@ -225,17 +191,6 @@ export function SharedLibrary({ session }: { session: CloudSession }) {
                 </Button>
               </li>
             ))}
-            {ips.length > 0 && (
-              <li key="i:all" className="flex items-center justify-between gap-3 text-sm text-text">
-                <span className="truncate">
-                  <span className="text-xs text-muted">IP Storage · </span>
-                  {ips.length} address{ips.length === 1 ? "" : "es"}
-                </span>
-                <Button size="sm" variant="secondary" disabled={targetPending} loading={busy === "i:all"} onClick={toggleIpStorage}>
-                  {ipStorageShared ? "Stop sharing" : "Share"}
-                </Button>
-              </li>
-            )}
           </ul>
         )}
       </div>
@@ -247,7 +202,7 @@ export function SharedLibrary({ session }: { session: CloudSession }) {
             {mine.map((s) => (
               <li key={s.id} className="flex items-center justify-between gap-3 text-sm text-text">
                 <span className="truncate">
-                  <span className="text-xs text-muted">{s.kind === "tunnel" ? "Tunnel" : "IP Storage"} · </span>
+                  <span className="text-xs text-muted">Tunnel · </span>
                   {s.name}
                   <span className="text-xs text-muted"> with {names[s.recipientId!] ?? "one account"}</span>
                 </span>
@@ -272,7 +227,7 @@ export function SharedLibrary({ session }: { session: CloudSession }) {
             {forMe.map((s) => (
               <li key={s.id} className="flex items-center justify-between gap-3 text-sm text-text">
                 <span className="truncate">
-                  <span className="text-xs text-muted">{s.kind === "tunnel" ? "Tunnel" : "IP Storage"} · </span>
+                  <span className="text-xs text-muted">Tunnel · </span>
                   {s.name}
                   <span className="text-xs text-muted"> from {s.ownerName || "unknown"}</span>
                 </span>
@@ -294,18 +249,8 @@ export function SharedLibrary({ session }: { session: CloudSession }) {
             {forEveryone.map((s) => (
               <li key={s.id} className="flex items-center justify-between gap-3 text-sm text-text">
                 <span className="truncate">
-                  <span className="text-xs text-muted">{s.kind === "tunnel" ? "Tunnel" : "IP Storage"} ·</span>
-                  {s.kind === "ip"
-                    ? (() => {
-                        try {
-                          const parsed = JSON.parse(s.body) as unknown;
-                          const count = Array.isArray(parsed) ? parsed.length : 1;
-                          return `${count} address${count === 1 ? "" : "es"}`;
-                        } catch {
-                          return s.name;
-                        }
-                      })()
-                    : s.name}
+                  <span className="text-xs text-muted">Tunnel · </span>
+                  {s.name}
                   <span className="text-xs text-muted"> by {s.ownerName || "unknown"}</span>
                 </span>
                 <Button size="sm" variant="secondary" loading={busy === `a:${s.id}`} onClick={() => add(s)}>

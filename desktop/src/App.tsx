@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type PacketRow, type ScanHost, type UpdateInfo } from "@/lib/api";
-import { FILTERS_SYNCED, GLOBAL_FILTERS_SYNCED, editGlobalFilter, getGlobalFilters, loadSession, publishGlobalFilter, retireGlobalFilter, setGlobalOrder, setGlobalOverride, startAutoSync } from "@/lib/cloud";
+import { FILTERS_SYNCED, GLOBAL_FILTERS_SYNCED, editGlobalFilter, getGlobalFilters, loadSession, publishGlobalFilter, retireGlobalFilter, setGlobalCrown, setGlobalOrder, setGlobalOverride, startAutoSync } from "@/lib/cloud";
 import { isLocalAddress } from "@/lib/export";
 import { DevicesView, type Seen } from "@/views/DevicesView";
 import { IpStorageView } from "@/views/IpStorageView";
@@ -13,6 +13,8 @@ import { HotspotView } from "@/views/HotspotView";
 import { SettingsView } from "@/views/SettingsView";
 import { AdminView } from "@/views/AdminView";
 import { UpdateNow } from "@/components/UpdateNow";
+import { ToastHost } from "@/components/ui/Toast";
+import { loadHidden } from "@/lib/ipstore";
 import { TopNav } from "@/components/TopNav";
 
 const NAV = [
@@ -64,6 +66,7 @@ export default function App() {
 
   // Optional account sync. Does nothing unless the user signed in and turned it on.
   useEffect(() => startAutoSync(), []);
+  useEffect(() => void loadHidden(), []); // the always-hidden list, read from this computer before the first sync
 
   // The filters an admin published for every signed-in account, and whether this account is the admin.
   // Empty and false while signed out; a sync refreshes this list the same way it refreshes your own filters.
@@ -178,6 +181,7 @@ export default function App() {
   const toggleGlobalFilter = useCallback((f: Filter) => setGlobalOverride(f.globalId!, !f.enabled), []);
   const publishGlobal = useCallback((f: Filter) => publishGlobalFilter(f), []);
   const editGlobal = useCallback((id: string, f: Filter) => editGlobalFilter(id, f), []);
+  const crownGlobal = useCallback((id: string, crown: boolean) => setGlobalCrown(id, crown), []);
   const reorderGlobal = useCallback((ids: string[]) => setGlobalOrder(ids), []);
   const retireGlobal = useCallback((id: string) => retireGlobalFilter(id), []);
 
@@ -209,6 +213,7 @@ export default function App() {
 
   return (
     <div className="relative flex h-screen flex-col">
+      <ToastHost />
       <div className="ember-bg" aria-hidden="true">
         <span className="ember-orb a" />
         <span className="ember-orb b" />
@@ -248,6 +253,7 @@ export default function App() {
               onEditGlobal={editGlobal}
               onRetireGlobal={retireGlobal}
               onReorderGlobal={reorderGlobal}
+              onSetGlobalCrown={crownGlobal}
               draftRequest={draftRequest}
             />
           </div>

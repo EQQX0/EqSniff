@@ -1,6 +1,6 @@
 {
-  "version": "0.3.0",
+  "version": "0.4.0",
   "url": "https://sniff.eqqx2.com/updates/EqNetwork-setup.exe",
-  "sha256": "685cc02f8385493c6c9f4e40d674a236fe4e9606f7e843f59e33eb7ad94a3a00",
-  "notes": "Sync is now always on while you are signed in: it runs every 30 seconds and whenever you return to the app, so the Sync buttons are gone. The Filter column in the IP lists shows only the highest-priority filter, with the others on hover."
+  "sha256": "1702e3e1e53c6cacc9e5b12207bff6b62a8077b6f31cb586898054f4b5baba8d",
+  "notes": "Every action now shows a confirmation toast, with Undo on deletes, and copying an address or label gives feedback. Admins can hide IPs for every account: hidden addresses are never saved to IP Storage and never appear in captures. Labels keep the addresses they used before (more+), and admins can share IP Storage live with chosen accounts."
 }

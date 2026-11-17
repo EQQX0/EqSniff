@@ -1,8 +1,10 @@
+import { toast } from "@/components/ui/Toast";
+import { copyText } from "@/lib/export";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Country, IpDetails, PacketRow } from "@/lib/api";
 import { Flag, ipKey } from "@/views/CaptureView";
 import { isLocalAddress } from "@/lib/export";
-import { NAME_MAX } from "@/lib/ipstore";
+import { NAME_MAX, ago, type IpEntry } from "@/lib/ipstore";
 import { seedFromRow, type Filter } from "@/lib/filters";
 import { CrownIcon } from "@/components/ui/icons";
 
@@ -22,6 +24,8 @@ export interface IpSummary {
   outbound: number;
   /** Service ports (below 49152) seen on either end of packets with this address. Games use these; clients use random high ports. */
   ports: Set<number>;
+  /** The most recent port the address used on its end, when it is not a service port (a random high port, as in a peer-to-peer connection). */
+  remotePort: number | null;
   /** TCP, UDP and so on, as seen in this address's packets. */
   protocols: Set<string>;
   /**
@@ -50,7 +54,7 @@ export function absorb(book: IpBook, rows: PacketRow[], farOf: (r: PacketRow) =>
     let hit = book.get(a);
     if (!hit) {
       if (book.size >= limit) continue;
-      hit = { address: a, packets: 0, bytes: 0, last: r.time, first: r.time, lastOut: 0, passed: 0, inbound: 0, outbound: 0, ports: new Set(), protocols: new Set(), recentRate: 0, rateAt: r.time };
+      hit = { address: a, packets: 0, bytes: 0, last: r.time, first: r.time, lastOut: 0, passed: 0, inbound: 0, outbound: 0, ports: new Set(), remotePort: null, protocols: new Set(), recentRate: 0, rateAt: r.time };
       book.set(a, hit);
     }
     hit.packets++;
@@ -71,6 +75,8 @@ export function absorb(book: IpBook, rows: PacketRow[], farOf: (r: PacketRow) =>
       hit.rateAt = r.time;
     }
     hit.protocols.add(r.protocol);
+    const farPort = isLocalAddress(r.src) ? r.dstPort : r.srcPort;
+    if (farPort !== null && farPort >= 49152) hit.remotePort = farPort;
     for (const pt of [r.srcPort, r.dstPort]) if (pt !== null && pt < 49152 && hit.ports.size < 40) hit.ports.add(pt);
   }
 }
@@ -185,6 +191,10 @@ interface Props {
   hiddenBy?: Record<string, string[]>;
   /** For each address that gets through, the Show filters that let it in. */
   showedBy?: Record<string, string[]>;
+  /** Addresses that get the crown icon, with the name of the crown filter that matched. Only admin-chosen global filters give it. */
+  crownBy?: Map<string, string>;
+  /** For a labelled address, the other addresses its label used before (newest first). */
+  history?: Record<string, IpEntry[]>;
   /** True when at least one Show filter is switched on. With none on, nothing limits what is shown. */
   showFiltersOn?: boolean;
   onSave: (address: string, value: string) => void;
@@ -209,8 +219,9 @@ export function CopiedBadge() {
 }
 
 /** The addresses seen in a capture, each with an editable label saved in IP Storage. */
-export function IpList({ items, names, geo, hidden, hiddenBy, showedBy, showFiltersOn, onSave, onClear, onDelete, onHideIsp, onShowPort, onCreateFilter, now, details }: Props) {
+export function IpList({ items, names, geo, hidden, hiddenBy, showedBy, crownBy, history, showFiltersOn, onSave, onClear, onDelete, onHideIsp, onShowPort, onCreateFilter, now, details }: Props) {
   const [editing, setEditing] = useState<string | null>(null);
+  const [moreOpen, setMoreOpen] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
   // Right-click menu and the views it sets up. These only change what this list shows, not the capture.
   const [menu, setMenu] = useState<{ x: number; y: number; address: string } | null>(null);
@@ -233,7 +244,8 @@ export function IpList({ items, names, geo, hidden, hiddenBy, showedBy, showFilt
     };
   }, [menu]);
   const ispOf = (a: string) => details[a]?.isp ?? "";
-  const copy = (text: string) => void navigator.clipboard?.writeText(text).catch(() => {});
+  const copy = (text: string) =>
+    void copyText(text).then((ok) => (ok ? toast(`Copied: ${text.length > 50 ? text.slice(0, 47) + "…" : text}`) : toast("Copying was blocked by Windows. Select the text and press Ctrl+C instead.", { kind: "error" })));
   const [copiedCell, setCopiedCell] = useState<string | null>(null);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const copyCell = (cellId: string, text: string) => {
@@ -248,14 +260,16 @@ export function IpList({ items, names, geo, hidden, hiddenBy, showedBy, showFilt
     const q = query.trim().toLowerCase();
     let base = items.filter((i) => !hiddenIps.has(i.address));
     if (onlyIsp !== null) base = base.filter((i) => ispOf(i.address) === onlyIsp);
-    const list = q ? base.filter((i) => i.address.toLowerCase().includes(q) || (names[i.address] ?? "").toLowerCase().includes(q)) : base;
+    // A search also finds a label by the addresses (or country, ISP) it used before.
+    const pastHit = (i: IpSummary) => (history?.[i.address] ?? []).some((p) => [p.address, p.place ?? "", p.isp ?? ""].some((v) => v.toLowerCase().includes(q)));
+    const list = q ? base.filter((i) => i.address.toLowerCase().includes(q) || (names[i.address] ?? "").toLowerCase().includes(q) || pastHit(i)) : base;
     if (sort) {
       const value = (i: IpSummary): string | number => {
         switch (sort.key) {
           case "label": return (names[i.address] ?? "").toLowerCase();
           case "ip": return ipKey(i.address);
           case "type": return [...i.protocols].sort().join("/");
-          case "port": return i.ports.size ? Math.min(...i.ports) : "";
+          case "port": return i.ports.size ? Math.min(...i.ports) : i.remotePort ?? "";
           case "country": return (geo[i.address]?.name ?? "").toLowerCase();
           case "city": return (details[i.address]?.city ?? "").toLowerCase();
           case "isp": return ispOf(i.address).toLowerCase();
@@ -277,7 +291,7 @@ export function IpList({ items, names, geo, hidden, hiddenBy, showedBy, showFilt
     const on = (i: IpSummary) => isOnline(i, now);
     return [...list.filter(on), ...list.filter((i) => !on(i))];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, names, query, now, hiddenIps, onlyIsp, details, geo, sort]);
+  }, [items, names, query, now, hiddenIps, onlyIsp, details, geo, sort, history]);
 
   /** A heading that sorts the list: click once for A to Z, again for Z to A, a third time to go back to online-first. */
   const sortTh = (key: IpSortKey, text: string, width: string, extra = "", title?: string) => {
@@ -305,9 +319,6 @@ export function IpList({ items, names, geo, hidden, hiddenBy, showedBy, showFilt
     );
   };
   const onlineCount = useMemo(() => items.filter((i) => isOnline(i, now)).length, [items, now]);
-  const hostState = useRef<HostState>(newHostState());
-  const hostCandidates = useMemo(() => (hidden && hidden.size > 0 ? items.filter((i) => !hidden.has(i.address)) : items), [items, hidden]);
-  const hostAddress = useMemo(() => pickHost(hostCandidates, now, hostState.current), [hostCandidates, now]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -415,14 +426,39 @@ export function IpList({ items, names, geo, hidden, hiddenBy, showedBy, showFilt
                           {label ?? "+ Add label"}
                         </button>
                       )}
+                      {editing !== i.address && history?.[i.address] && (
+                        <button
+                          type="button"
+                          onClick={() => setMoreOpen((s) => { const n = new Set(s); if (n.has(i.address)) n.delete(i.address); else n.add(i.address); return n; })}
+                          aria-expanded={moreOpen.has(i.address)}
+                          title="Addresses this label used before"
+                          className="shrink-0 rounded-pill border border-border-input px-2 py-0.5 text-[11px] font-semibold text-text hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
+                        >
+                          {moreOpen.has(i.address) ? "less" : `more+ (${history[i.address].length})`}
+                        </button>
+                      )}
                      </div>
+                     {moreOpen.has(i.address) && history?.[i.address] && (
+                       <ul className="mt-1 space-y-0.5 pl-4 text-[11px] text-muted">
+                         {history[i.address].map((p) => (
+                           <li key={p.address} className="truncate" title={[p.place, p.isp].filter(Boolean).join(" · ")}>
+                             <span className="font-mono text-text">{p.address}</span>
+                             {" · "}
+                             {p.firstSeen ? `first seen ${new Date(p.firstSeen).toLocaleDateString()}` : "first seen unknown"}
+                             {" · "}
+                             {p.lastSeen ? `last seen ${ago(p.lastSeen)}` : "not seen yet"}
+                             {p.timesSeen ? ` · ${p.timesSeen}×` : ""}
+                           </li>
+                         ))}
+                       </ul>
+                     )}
                     </td>
                     <td className="px-0 py-1.5 text-center">
-                      {hostAddress === i.address && (
+                      {crownBy?.has(i.address) && (
                         <span
                           role="img"
-                          aria-label="Likely host"
-                          title="Carrying far more traffic than the other online players right now — may be hosting, not just playing."
+                          aria-label="Crown"
+                          title={`Matched the crown filter “${crownBy.get(i.address)}”, set by an admin.`}
                           className="inline-flex"
                         >
                           <CrownIcon className="h-3.5 w-3.5 shrink-0 text-[#ffd34d]" />
@@ -445,10 +481,10 @@ export function IpList({ items, names, geo, hidden, hiddenBy, showedBy, showFilt
                     </td>
                     <td
                       className="relative cursor-text px-3 py-1.5 font-mono text-muted"
-                      title="Double-click to copy every port seen on this connection"
-                      onDoubleClick={() => copyCell(`${i.address}:port`, [...i.ports].sort((a, b) => a - b).join(", "))}
+                      title={i.ports.size || i.remotePort === null ? "Double-click to copy every port seen on this connection" : "No service port: this is the random port the address is using (typical of a peer-to-peer connection). Double-click to copy."}
+                      onDoubleClick={() => copyCell(`${i.address}:port`, i.ports.size ? [...i.ports].sort((a, b) => a - b).join(", ") : String(i.remotePort ?? ""))}
                     >
-                      {copiedCell === `${i.address}:port` ? <CopiedBadge /> : [...i.ports].sort((a, b) => a - b).slice(0, 2).join(", ")}
+                      {copiedCell === `${i.address}:port` ? <CopiedBadge /> : i.ports.size ? [...i.ports].sort((a, b) => a - b).slice(0, 2).join(", ") : i.remotePort !== null ? <span className="text-muted/70">{i.remotePort}</span> : ""}
                     </td>
                     <td
                       className="relative cursor-text overflow-hidden px-3 py-1.5 text-text"
@@ -518,7 +554,7 @@ export function IpList({ items, names, geo, hidden, hiddenBy, showedBy, showFilt
         const isp = ispOf(i.address);
         const d = details[i.address];
         const ports = [...i.ports].sort((a, b) => a - b).slice(0, 3);
-        const row = [names[i.address] ?? "", i.address, [...i.protocols].join("/"), [...i.ports].sort((a, b) => a - b).slice(0, 2).join(","), geo[i.address]?.name ?? "", d?.city ?? "", isp, d ? (d.vpn ? "VPN" : "No") : "", `${i.inbound}/${i.outbound}`].join("\t");
+        const row = [names[i.address] ?? "", i.address, [...i.protocols].join("/"), (i.ports.size ? [...i.ports].sort((a, b) => a - b).slice(0, 2).join(",") : String(i.remotePort ?? "")), geo[i.address]?.name ?? "", d?.city ?? "", isp, d ? (d.vpn ? "VPN" : "No") : "", `${i.inbound}/${i.outbound}`].join("\t");
         const item = "block w-full px-4 py-2 text-left text-sm text-text hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-none";
         const danger = "block w-full px-4 py-2 text-left text-sm text-[#ff4d4d] hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-none";
         return (

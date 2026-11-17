@@ -40,7 +40,7 @@ Rules that save you time:
 | Backup | `eqnet backup export backup.json`, `eqnet backup import backup.json` |
 | Data folder | `eqnet folder` |
 
-One label keeps at most 3 addresses. Writing a fourth address to the same label (`ips add`, `ips label`, `minecraft-log`, or naming it in the window) removes the oldest one. The window uses `capLabel` in `desktop/src/lib/ipstore.ts`, the CLI uses `cap_label` in `cli.rs`.
+A label has one current address (the one seen most recently) and keeps its earlier addresses as history, with first seen, last seen and times seen. One label keeps at most 50 addresses; writing one more (`ips add`, `ips label`, `minecraft-log`, or naming it in the window) removes the oldest. The window uses `capLabel` in `desktop/src/lib/ipstore.ts`, the CLI uses `cap_label` in `cli.rs`.
 
 ## What `capture` reports
 

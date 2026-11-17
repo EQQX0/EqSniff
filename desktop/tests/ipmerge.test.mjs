@@ -45,4 +45,17 @@ r = mergeSync([L("a", "edited after", 10, 300)], {}, [{ address: "a", label: "x"
 ok(get(r, "a").note === "edited after" && r.push.length === 1, "edited here after the deletion: kept and restored");
 r = mergeSync([], {}, [{ address: "a", label: "x", updatedAt: 100, deleted: true }], newId);
 ok(r.entries.length === 0 && !r.changedLocal && !r.remove.length, "deleted row on a new computer adds nothing");
+
+// seen details are combined, never lost
+r = mergeSync([{ ...L("a", "x", 10, 10), firstSeen: 100, lastSeen: 500, timesSeen: 2 }], {}, [{ ...R("a", "x", 10), firstSeen: 50, lastSeen: 300, timesSeen: 4 }], newId);
+ok(get(r, "a").firstSeen === 50 && get(r, "a").lastSeen === 500 && get(r, "a").timesSeen === 4, "earliest first, latest last, higher count");
+ok(r.push.length === 1 && r.changedLocal, "combined seen details are sent and kept");
+r = mergeSync([L("a", "x", 10, 10)], {}, [{ ...R("a", "x", 10), firstSeen: 50, lastSeen: 300, timesSeen: 4, place: "UK", isp: "Virgin" }], newId);
+ok(get(r, "a").place === "UK" && get(r, "a").isp === "Virgin" && r.changedLocal && !r.push.length, "details from the cloud fill in a bare local copy");
+r = mergeSync([], {}, [{ ...R("a", "x", 10), groupKey: "g1", favorite: true, prevLabels: [{ label: "old", until: 5 }] }], newId);
+ok(get(r, "a").groupKey === "g1" && get(r, "a").favorite === true && get(r, "a").prevLabels.length === 1, "new computer gets link, favourite, earlier labels");
+r = mergeSync([{ ...L("a", "mine", 10, 90), favorite: true }], {}, [{ ...R("a", "theirs", 50), favorite: false }], newId);
+ok(get(r, "a").note === "mine" && get(r, "a").favorite === true && r.push.length === 1, "newer local label brings its own favourite");
+r = mergeSync([{ ...L("a", "x", 10, 10), firstSeen: 1, lastSeen: 2, timesSeen: 1 }], {}, [{ ...R("a", "x", 10), firstSeen: 1, lastSeen: 2, timesSeen: 1 }], newId);
+ok(!r.push.length && !r.changedLocal, "identical details do nothing");
 console.log(`ipmerge: ${n} checks passed`);

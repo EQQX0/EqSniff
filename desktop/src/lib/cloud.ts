@@ -1,6 +1,6 @@
 import { api } from "@/lib/api";
-import { IP_DELETED, IP_STORE, announceChange, isEntryArray, loadDeleted, newEntryId, onEdited, type IpEntry } from "@/lib/ipstore";
-import { mergeSync, type RemoteEntry } from "@/lib/ipmerge";
+import { HIDDEN_STORE, IP_DELETED, IP_STORE, SHARED_STORE, announceChange, loadEntries, saveEntries, setHiddenCache, isEntryArray, loadDeleted, newEntryId, onEdited, type IpEntry, type StorageAccess } from "@/lib/ipstore";
+import { mergeSync, type Meta, type RemoteEntry } from "@/lib/ipmerge";
 import { bodyForGlobal, filterFromGlobal, type Filter } from "@/lib/filters";
 
 /**
@@ -196,14 +196,61 @@ export function syncNow(): Promise<SyncReport> {
 
 // ---- IP Storage ----
 
-async function syncIps(token: string, report: SyncReport) {
-  const res = await ok(await call("/rest/v1/ip_entries?select=address,label,updated_at,deleted&limit=10000", { token }));
-  const remote: RemoteEntry[] = ((await res.json()) as { address: string; label: string; updated_at: string; deleted: boolean }[]).map((r) => ({
+const IP_COLUMNS = "address,label,updated_at,deleted,first_seen,last_seen,times_seen,group_key,favorite,prev_labels,place,isp";
+
+interface IpRow {
+  address: string;
+  label: string;
+  updated_at: string;
+  deleted: boolean;
+  first_seen: string | null;
+  last_seen: string | null;
+  times_seen: number | null;
+  group_key: string | null;
+  favorite: boolean | null;
+  prev_labels: { label: string; until: number }[] | null;
+  place: string | null;
+  isp: string | null;
+}
+
+const ms = (t: string | null) => (t ? Date.parse(t) || undefined : undefined);
+
+function rowToRemote(r: IpRow): RemoteEntry {
+  return {
     address: r.address,
     label: r.label,
     updatedAt: Date.parse(r.updated_at) || 0,
     deleted: r.deleted,
-  }));
+    firstSeen: ms(r.first_seen),
+    lastSeen: ms(r.last_seen),
+    timesSeen: r.times_seen || undefined,
+    groupKey: r.group_key || undefined,
+    favorite: r.favorite || undefined,
+    prevLabels: Array.isArray(r.prev_labels) && r.prev_labels.length ? r.prev_labels : undefined,
+    place: r.place || undefined,
+    isp: r.isp || undefined,
+  };
+}
+
+/** The columns of an `ip_entries` row for one address and its details. */
+function metaToRow(p: { address: string; label: string } & Meta) {
+  return {
+    address: p.address,
+    label: p.label,
+    first_seen: p.firstSeen ? new Date(p.firstSeen).toISOString() : null,
+    last_seen: p.lastSeen ? new Date(p.lastSeen).toISOString() : null,
+    times_seen: p.timesSeen ?? 0,
+    group_key: p.groupKey ?? null,
+    favorite: !!p.favorite,
+    prev_labels: p.prevLabels ?? null,
+    place: p.place ?? null,
+    isp: p.isp ?? null,
+  };
+}
+
+async function syncIps(token: string, report: SyncReport) {
+  const res = await ok(await call(`/rest/v1/ip_entries?select=${IP_COLUMNS}&limit=10000`, { token }));
+  const remote: RemoteEntry[] = ((await res.json()) as IpRow[]).map(rowToRemote);
 
   const stored = await api.getStore(IP_STORE);
   const local: IpEntry[] = isEntryArray(stored) ? stored : [];
@@ -215,7 +262,7 @@ async function syncIps(token: string, report: SyncReport) {
         method: "POST",
         token,
         headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-        body: JSON.stringify(result.push.map((p) => ({ ...p, deleted: false }))),
+        body: JSON.stringify(result.push.map((p) => ({ ...metaToRow(p), deleted: false }))),
       })
     );
   }
@@ -388,12 +435,123 @@ async function syncFilters(token: string, session: CloudSession, report: SyncRep
   return await fingerprintOf(JSON.stringify(list));
 }
 
+// ---- always-hidden IPs: set by an admin, applies to every account ----
+
+export interface HiddenIp {
+  address: string;
+  note: string;
+  createdAt: number;
+}
+
+export async function listHiddenIps(): Promise<HiddenIp[]> {
+  const { token } = await freshToken();
+  const res = await ok(await call("/rest/v1/hidden_ips?select=address,note,created_at&order=created_at.asc&limit=1000", { token }));
+  return ((await res.json()) as { address: string; note: string; created_at: string }[]).map((r) => ({ address: r.address, note: r.note, createdAt: Date.parse(r.created_at) || 0 }));
+}
+
+/** Keeps a local copy of the hidden list, and removes any hidden address already saved in IP Storage. */
+async function refreshHidden(token: string) {
+  const res = await ok(await call("/rest/v1/hidden_ips?select=address&limit=1000", { token }));
+  const list = ((await res.json()) as { address: string }[]).map((r) => r.address);
+  setHiddenCache(list);
+  await api.saveStore(HIDDEN_STORE, list);
+  const entries = await loadEntries();
+  if (entries.some((e) => list.includes(e.address))) await saveEntries(entries, entries); // saveEntries drops hidden addresses and records the deletions
+}
+
+/** Admin only: hides an address for every account, from IP Storage and from capture. */
+export async function addHiddenIp(address: string, note: string): Promise<void> {
+  const { token } = await freshToken();
+  await ok(
+    await call("/rest/v1/hidden_ips?on_conflict=address", {
+      method: "POST",
+      token,
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({ address, note }),
+    })
+  );
+  await refreshHidden(token);
+}
+
+/** Admin only: stops hiding an address. */
+export async function removeHiddenIp(address: string): Promise<void> {
+  const { token } = await freshToken();
+  await ok(await call(`/rest/v1/hidden_ips?address=eq.${encodeURIComponent(address)}`, { method: "DELETE", token }));
+  await refreshHidden(token);
+}
+
+/** What the admin let this account do with the shared IP Storage: nothing, read it, or read and change it. */
+export async function getStorageAccess(): Promise<StorageAccess> {
+  const { token } = await freshToken();
+  const res = await ok(await call("/rest/v1/rpc/caller_storage_access", { method: "POST", token, body: "{}" }));
+  const v = (await res.json()) as string;
+  return v === "read" || v === "edit" ? v : "none";
+}
+
+/** Keeps a local copy of the admin's shared IP Storage for accounts that were given access; clears it for everyone else. */
+async function refreshSharedStorage(token: string) {
+  const access = await getStorageAccess();
+  const before = (await api.getStore(SHARED_STORE)) as { access?: string; entries?: unknown[] } | null;
+  if (access === "none") {
+    if (before && (before.access !== "none" || (before.entries?.length ?? 0) > 0)) {
+      await api.saveStore(SHARED_STORE, { access: "none", owner: "", entries: [] });
+      announceChange();
+    }
+    return;
+  }
+  const ownerRes = await ok(await call("/rest/v1/rpc/shared_storage_owner", { method: "POST", token, body: "{}" }));
+  const owner = ((await ownerRes.json()) as string | null) ?? "";
+  if (!owner) return;
+  const res = await ok(await call(`/rest/v1/ip_entries?user_id=eq.${owner}&deleted=eq.false&select=${IP_COLUMNS}&limit=10000`, { token }));
+  const entries: IpEntry[] = ((await res.json()) as IpRow[]).map((row) => {
+    const r = rowToRemote(row);
+    const { address, label, updatedAt, deleted: _d, ...meta } = r;
+    return { id: `shared-${address}`, address, note: label, createdAt: updatedAt, updatedAt, ...meta };
+  });
+  const next = { access, owner, entries };
+  if (JSON.stringify(next) !== JSON.stringify(before)) {
+    await api.saveStore(SHARED_STORE, next);
+    announceChange();
+  }
+}
+
+/** For an account with "edit" access: saves one address (label and details) into the shared list. */
+export async function saveSharedEntry(owner: string, e: IpEntry): Promise<void> {
+  const { token } = await freshToken();
+  await ok(
+    await call("/rest/v1/ip_entries?on_conflict=user_id,address", {
+      method: "POST",
+      token,
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({ ...metaToRow({ ...e, label: e.note }), user_id: owner, deleted: false }),
+    })
+  );
+  await refreshSharedStorage(token);
+}
+
+/** For an account with "edit" access: removes one address from the shared list. */
+export async function deleteSharedEntry(owner: string, address: string): Promise<void> {
+  const { token } = await freshToken();
+  await ok(
+    await call(`/rest/v1/ip_entries?user_id=eq.${owner}&address=eq.${encodeURIComponent(address)}`, {
+      method: "PATCH",
+      token,
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({ deleted: true }),
+    })
+  );
+  await refreshSharedStorage(token);
+}
+
 async function doSync(): Promise<SyncReport> {
   const { token, session } = await freshToken();
   const report: SyncReport = { added: 0, sent: 0, removed: 0, notes: [] };
   let filtersHash = session.filtersHash;
 
-  await syncIps(token, report);
+  // Only an admin's IP Storage goes to the cloud (it is the shared list). Everyone else keeps theirs on this computer.
+  if (await isAdmin()) await syncIps(token, report);
+  await refreshSharedStorage(token);
+  await refreshHidden(token);
   filtersHash = await syncFilters(token, session, report);
   await syncTunnels(token, report);
 
@@ -527,21 +685,30 @@ export interface AdminProfile {
   isAdmin: boolean;
   disabled: boolean;
   createdAt: number;
+  /** What this account may do with the admin's shared IP Storage. */
+  storageAccess: StorageAccess;
 }
 
 /** Admin only: every signed-up account. A non-admin gets back just their own row (the database rule, not this code, decides). */
 export async function listProfiles(): Promise<AdminProfile[]> {
   const { token } = await freshToken();
   const res = await ok(
-    await call("/rest/v1/profiles?select=user_id,username,is_admin,disabled,created_at&order=created_at.asc&limit=1000", { token })
+    await call("/rest/v1/profiles?select=user_id,username,is_admin,disabled,created_at,storage_access&order=created_at.asc&limit=1000", { token })
   );
-  return ((await res.json()) as { user_id: string; username: string; is_admin: boolean; disabled: boolean; created_at: string }[]).map((r) => ({
+  return ((await res.json()) as { user_id: string; username: string; is_admin: boolean; disabled: boolean; created_at: string; storage_access: string }[]).map((r) => ({
     userId: r.user_id,
     username: r.username,
     isAdmin: r.is_admin,
     disabled: r.disabled,
     createdAt: Date.parse(r.created_at) || 0,
+    storageAccess: r.storage_access === "read" || r.storage_access === "edit" ? r.storage_access : "none",
   }));
+}
+
+/** Admin only: chooses what an account may do with the shared IP Storage. */
+export async function setProfileStorage(userId: string, access: StorageAccess): Promise<void> {
+  const { token } = await freshToken();
+  await ok(await call(`/rest/v1/profiles?user_id=eq.${userId}`, { method: "PATCH", token, headers: { Prefer: "return=minimal" }, body: JSON.stringify({ storage_access: access }) }));
 }
 
 /** Admin only: sets is_admin and/or disabled on any account, including your own. */
@@ -567,6 +734,7 @@ interface GlobalFilterRow {
   name: string;
   body: string;
   enabled: boolean;
+  crown?: boolean;
 }
 
 /** True only for the account(s) marked `is_admin` in the `profiles` table. */
@@ -597,13 +765,13 @@ export async function signOutIfDisabled(): Promise<boolean> {
 export async function getGlobalFilters(): Promise<{ filters: Filter[]; admin: boolean }> {
   const { token } = await freshToken();
   const [rowsRes, overridesRes, admin] = await Promise.all([
-    ok(await call("/rest/v1/global_filters?deleted=eq.false&select=id,name,body,enabled&order=position.asc,created_at.asc&limit=200", { token })),
+    ok(await call("/rest/v1/global_filters?deleted=eq.false&select=id,name,body,enabled,crown&order=position.asc,created_at.asc&limit=200", { token })),
     ok(await call("/rest/v1/global_filter_overrides?select=filter_id,enabled&limit=1000", { token })),
     isAdmin(),
   ]);
   const rows = (await rowsRes.json()) as GlobalFilterRow[];
   const overrides = new Map((await overridesRes.json() as { filter_id: string; enabled: boolean }[]).map((o) => [o.filter_id, o.enabled]));
-  const filters = rows.map((r) => filterFromGlobal(r.id, r.name, overrides.get(r.id) ?? true, r.body, true));
+  const filters = rows.map((r) => filterFromGlobal(r.id, r.name, overrides.get(r.id) ?? true, r.body, true, r.crown === true));
   return { filters, admin };
 }
 
@@ -649,6 +817,13 @@ export async function editGlobalFilter(id: string, f: Filter): Promise<void> {
       body: JSON.stringify({ name: f.name, body: bodyForGlobal(f) }),
     })
   );
+  window.dispatchEvent(new Event(GLOBAL_FILTERS_SYNCED));
+}
+
+/** Admin only: marks whether addresses matched by this global filter get the crown icon, for every account. */
+export async function setGlobalCrown(id: string, crown: boolean): Promise<void> {
+  const { token } = await freshToken();
+  await ok(await call(`/rest/v1/global_filters?id=eq.${id}`, { method: "PATCH", token, headers: { Prefer: "return=minimal" }, body: JSON.stringify({ crown }) }));
   window.dispatchEvent(new Event(GLOBAL_FILTERS_SYNCED));
 }
 

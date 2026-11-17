@@ -18,7 +18,8 @@ import {
 import { EmptyState } from "@/components/ui/EmptyState";
 import { NetworkIcon } from "@/components/ui/icons";
 import { Switch } from "@/components/ui/Switch";
-import { NAME_MAX, loadEntries, newEntryId, onChange as onIpStoreChange, saveEntries, setName } from "@/lib/ipstore";
+import { toast } from "@/components/ui/Toast";
+import { NAME_MAX, loadEntries, loadShared, newEntryId, onChange as onIpStoreChange, hiddenIps, isHiddenIp, pastFor, recordSeen, saveEntries, setName, type IpEntry } from "@/lib/ipstore";
 import { labelFor, parseMinecraftLog } from "@/lib/mclog";
 import { ACTIVE_EACH_WAY, CopiedBadge, IpList, absorb, listBook, type IpBook } from "@/views/CaptureIps";
 import "flag-icons/css/flag-icons.min.css";
@@ -273,6 +274,21 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, filteredIps, effectiveFilters, lookup, byPriority]);
 
+  /** Addresses that get the crown: a packet matches a global filter an admin marked as a crown filter that is on for this account. First by priority wins. */
+  const crownBy = useMemo(() => {
+    const out = new Map<string, string>();
+    const crown = globalFilters.filter((f) => f.crown && f.enabled);
+    if (crown.length === 0) return out;
+    for (const r of rows) {
+      const far = farOf(r);
+      if (out.has(far)) continue;
+      const hit = crown.find((f) => matches(f, r, lookup));
+      if (hit) out.set(far, hit.name);
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, globalFilters, lookup]);
+
   const shown = useMemo(() => {
     let kept = tab === "all" ? rows : filteredRows;
     const q = trafficQuery.trim().toLowerCase();
@@ -322,13 +338,54 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
     setSort((s) => (s?.key !== key ? { key, dir: "asc" } : s.dir === "asc" ? { key, dir: "desc" } : null));
   }
 
+  // Labels come from your own IP Storage and, when an admin gave this account access, the shared storage (yours wins).
+  const [labelEntries, setLabelEntries] = useState<IpEntry[]>([]);
   useEffect(() => {
     const load = () =>
-      loadEntries()
-        .then((list) => setNames(Object.fromEntries(list.filter((e) => e.note).map((e) => [e.address, e.note]))))
+      Promise.all([loadEntries(), loadShared()])
+        .then(([mine, shared]) => {
+          const have = new Set(mine.map((e) => e.address));
+          const list = [...mine, ...shared.entries.filter((e) => !have.has(e.address))];
+          setLabelEntries(list);
+          setNames(Object.fromEntries(list.filter((e) => e.note).map((e) => [e.address, e.note])));
+        })
         .catch(() => {});
     load();
     return onIpStoreChange(load); // keeps names in step with the IP Storage page
+  }, []);
+
+  /** For each labelled address, the other addresses its label used before (newest first), for the more+ button. */
+  const history = useMemo(() => {
+    const out: Record<string, IpEntry[]> = {};
+    for (const e of labelEntries) {
+      if (!e.note) continue;
+      const past = pastFor(labelEntries, e.address);
+      if (past.length) out[e.address] = past;
+    }
+    return out;
+  }, [labelEntries]);
+
+  // While capturing, tell IP Storage which labelled addresses are being seen (first/last seen, visits, where, ISP).
+  const seenNow = useRef({ names, details, geo, running });
+  seenNow.current = { names, details, geo, running };
+  useEffect(() => {
+    const t = window.setInterval(() => {
+      const cur = seenNow.current;
+      if (!cur.running) return;
+      const book = ipBook.current;
+      let newest = 0;
+      for (const i of book.values()) if (i.last > newest) newest = i.last;
+      const sightings = [] as { address: string; place?: string; isp?: string }[];
+      for (const [address, label] of Object.entries(cur.names)) {
+        const i = book.get(address);
+        if (!label || !i || newest - i.last > 15) continue;
+        const d = cur.details[address];
+        const place = [cur.geo[address]?.name, d?.city].filter(Boolean).join(" · ") || undefined;
+        sightings.push({ address, place, isp: d?.isp || undefined });
+      }
+      if (sightings.length) void recordSeen(sightings).catch(() => {});
+    }, 20000);
+    return () => window.clearInterval(t);
   }, []);
 
   async function saveName(address: string, value: string) {
@@ -343,9 +400,10 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
     });
     try {
       await setName(address, clean);
-      setNotice(clean ? `Saved the label for ${address} in IP Storage.` : `Removed the label for ${address} from IP Storage.`);
+      toast(clean ? `Saved the label for ${address}` : `Removed the label for ${address}`);
     } catch (e) {
-      setError(String(e));
+      toast(e instanceof Error ? e.message : String(e), { kind: "error" });
+      void loadEntries().then((list) => setNames((n) => ({ ...n, [address]: list.find((x) => x.address === address)?.note ?? "" }))).catch(() => {});
     }
   }
 
@@ -464,6 +522,7 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
   /** Adds packets from the app side to the table. */
   const ingest = useCallback(
     (fresh: PacketRow[]) => {
+      if (hiddenIps().size) fresh = fresh.filter((p) => !isHiddenIp(p.src) && !isHiddenIp(p.dst)); // always-hidden addresses never enter the table or the IP list
       if (fresh.length === 0) return;
       onSeen(fresh);
       askGeo(fresh);
@@ -558,32 +617,23 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
 
   // Click-to-copy feedback in the packet table: a badge in the cell and a flash on the row (about a second), plus a toast.
   const [copiedCell, setCopiedCell] = useState<{ row: number; col: string } | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const toastCount = useRef(0);
   useEffect(() => () => {
     if (copiedTimer.current) clearTimeout(copiedTimer.current);
-    if (toastTimer.current) clearTimeout(toastTimer.current);
   }, []);
   async function copyCellValue(rowId: number, col: string, text: string, what: string) {
     if (text === "") return;
     const ok = await copyText(text);
-    // A zero-width character that alternates keeps a screen reader announcing a repeat copy of the same value.
-    toastCount.current += 1;
-    const tail = toastCount.current % 2 ? "" : "​";
-    if (toastTimer.current) clearTimeout(toastTimer.current);
     if (copiedTimer.current) clearTimeout(copiedTimer.current);
     if (!ok) {
       setNotice("Copying was blocked by Windows. Select the text and press Ctrl+C instead.");
-      setToast("Copying was blocked by Windows. Select the text and press Ctrl+C instead." + tail);
+      toast("Copying was blocked by Windows. Select the text and press Ctrl+C instead.", { kind: "error" });
     } else {
       setNotice(`Copied ${what}.`);
-      setToast(`Copied ${what}: ${text.length > 60 ? text.slice(0, 57) + "…" : text}` + tail);
+      toast(`Copied ${what}: ${text.length > 60 ? text.slice(0, 57) + "…" : text}`);
       setCopiedCell({ row: rowId, col });
       copiedTimer.current = setTimeout(() => setCopiedCell(null), 1000);
     }
-    toastTimer.current = setTimeout(() => setToast(null), 2200);
   }
 
   async function copy(text: string, what: string) {
@@ -608,6 +658,7 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
     try {
       const part = file.size > MAX_FILE_BYTES ? file.slice(0, MAX_FILE_BYTES) : file;
       const res = await api.importPcap(bytesToBase64(new Uint8Array(await part.arrayBuffer())));
+      if (hiddenIps().size) res.rows = res.rows.filter((p) => !isHiddenIp(p.src) && !isHiddenIp(p.dst));
       setRows(res.rows);
       ipBook.current = new Map();
       absorb(ipBook.current, res.rows, farOf, (r) => matchesAny(filtersNow.current, r, lookupNow.current));
@@ -832,6 +883,8 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
             geo={geo}
             hidden={tab === "all" ? new Set(allIps.map((i) => i.address).filter((a) => !filteredIps.some((f) => f.address === a))) : undefined}
             hiddenBy={hiddenBy}
+            crownBy={crownBy}
+            history={history}
             showedBy={showedBy}
             showFiltersOn={effectiveFilters.some((f) => f.enabled && f.mode !== "hide")}
             onSave={saveName}
@@ -1006,12 +1059,6 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
           </div>
         </div>
       </Card>
-      )}
-      <div role="status" aria-live="polite" className="sr-only">{toast}</div>
-      {toast && (
-        <div aria-hidden="true" className="glass-strong anim-fade pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-pill px-5 py-2 text-sm text-text shadow-xl">
-          {toast}
-        </div>
       )}
       {rowMenu && (() => {
         const r = rowMenu.row;

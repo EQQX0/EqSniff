@@ -33,6 +33,8 @@ export interface Filter {
   globalId?: string;
   /** Runtime only, global filters only: the on/off state every account starts with (an admin sets it). `enabled` is this account's own choice. */
   defaultEnabled?: boolean;
+  /** Global filters only: an admin marked it so addresses it matches get the crown icon in the IP lists. */
+  crown?: boolean;
 }
 
 /** What the filters can ask about an address besides its digits. Unknown (not looked up yet) never matches. */
@@ -337,7 +339,7 @@ export function fromStored(raw: unknown): Filter[] {
  * if they have one, else the shared default. The id is the shared filter's id, so toggling it can be
  * told apart from a normal local filter (see `Filter.globalId`).
  */
-export function filterFromGlobal(id: string, name: string, effectiveEnabled: boolean, bodyJson: string, defaultEnabled?: boolean): Filter {
+export function filterFromGlobal(id: string, name: string, effectiveEnabled: boolean, bodyJson: string, defaultEnabled?: boolean, crown = false): Filter {
   let raw: Record<string, unknown> = {};
   try {
     const parsed = JSON.parse(bodyJson);
@@ -345,11 +347,11 @@ export function filterFromGlobal(id: string, name: string, effectiveEnabled: boo
   } catch {
     /* a damaged body falls back to a blank filter */
   }
-  return { ...clean({ ...raw, id, name, enabled: effectiveEnabled }, true), globalId: id, defaultEnabled: defaultEnabled ?? effectiveEnabled };
+  return { ...clean({ ...raw, id, name, enabled: effectiveEnabled }, true), globalId: id, defaultEnabled: defaultEnabled ?? effectiveEnabled, crown };
 }
 
 /** Everything but id/name/enabled, for an admin to save as a global filter's shared definition. */
 export function bodyForGlobal(f: Filter): string {
-  const { id: _id, name: _name, enabled: _enabled, globalId: _globalId, defaultEnabled: _defaultEnabled, ...rest } = f;
+  const { id: _id, name: _name, enabled: _enabled, globalId: _globalId, defaultEnabled: _defaultEnabled, crown: _crown, ...rest } = f;
   return JSON.stringify(rest);
 }

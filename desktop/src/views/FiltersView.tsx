@@ -1,3 +1,4 @@
+import { toast } from "@/components/ui/Toast";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -5,7 +6,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Switch } from "@/components/ui/Switch";
 import { Modal } from "@/components/ui/Modal";
 import { Tabs } from "@/components/ui/Tabs";
-import { NetworkIcon } from "@/components/ui/icons";
+import { CrownIcon, NetworkIcon } from "@/components/ui/icons";
 import { FilterWizard } from "@/components/FilterWizard";
 import { blankFilter, describe, fromFile, isIspFilter, newId, splitList, toFile, type Filter } from "@/lib/filters";
 import { download } from "@/lib/export";
@@ -27,11 +28,13 @@ interface Props {
   onRetireGlobal?: (id: string) => Promise<void>;
   /** Admin only: saves the shared order of the global filters (first = highest priority). */
   onReorderGlobal?: (ids: string[]) => Promise<void>;
+  /** Admin only: chooses whether addresses a global filter matches get the crown icon in the IP lists, for everyone. */
+  onSetGlobalCrown?: (id: string, crown: boolean) => Promise<void>;
   /** A new filter to open in the window, already filled in (from a right-click on a row). `n` changes with every request. */
   draftRequest?: { filter: Filter; n: number } | null;
 }
 
-export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = false, onToggleGlobal, onPublishGlobal, onEditGlobal, onRetireGlobal, onReorderGlobal, draftRequest }: Props) {
+export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = false, onToggleGlobal, onPublishGlobal, onEditGlobal, onRetireGlobal, onReorderGlobal, onSetGlobalCrown, draftRequest }: Props) {
   const [draft, setDraft] = useState<Filter | null>(null);
   // Remounting the tabs puts the packet filters tab (where the window opens) in front.
   const [tabsKey, setTabsKey] = useState(0);
@@ -42,7 +45,7 @@ export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = f
     setTabsKey((k) => k + 1);
   }, [draftRequest]);
   const [draftGlobal, setDraftGlobal] = useState(false);
-  const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
+  const setMessage = (m: { kind: "ok" | "error"; text: string }) => toast(m.text, { kind: m.kind });
   const [ispText, setIspText] = useState("");
   const [confirm, setConfirm] = useState<{ kind: "global" | "mine"; f: Filter } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -60,7 +63,15 @@ export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = f
     }
   }
 
-  const remove = (f: Filter) => run(() => onChange(filters.filter((x) => x.id !== f.id)), `Deleted “${f.name}”.`);
+  const remove = async (f: Filter) => {
+    const before = filters;
+    try {
+      await onChange(filters.filter((x) => x.id !== f.id));
+      toast(`Deleted “${f.name}”`, { action: { label: "Undo", run: () => void onChange(before).then(() => toast(`Restored “${f.name}”`)).catch((e) => toast(String(e instanceof Error ? e.message : e), { kind: "error" })) } });
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), { kind: "error" });
+    }
+  };
 
   const toggle = (f: Filter) =>
     run(() => onChange(filters.map((x) => (x.id === f.id ? { ...x, enabled: !x.enabled } : x))), `${f.name} is now ${f.enabled ? "off" : "on"}.`);
@@ -103,6 +114,13 @@ export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = f
 
   const toggleGlobal = (f: Filter) =>
     run(() => onToggleGlobal!(f).then(() => {}), `${f.name} is now ${f.enabled ? "off" : "on"} for you. Nobody else is affected.`);
+
+  /** Admin only: turns the crown on or off for a global filter. Only crown filters can show the crown icon. */
+  const toggleCrown = (f: Filter) =>
+    run(
+      () => onSetGlobalCrown!(f.globalId!, !f.crown),
+      f.crown ? `“${f.name}” no longer gives the crown.` : `Addresses “${f.name}” matches now get the crown, for everyone.`
+    );
 
   /** Admin only: moves a global filter one place up or down. The order is shared by every account. */
   const moveGlobal = (f: Filter, dir: -1 | 1) => {
@@ -243,11 +261,26 @@ export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = f
                       {f.mode === "hide" ? "Hide" : "Show"}
                     </span>
                     <span className="truncate" title={f.name}>{f.name}</span>
+                    {f.crown && (
+                      <span role="img" aria-label="Gives the crown icon" title="Addresses this filter matches get the crown icon in the IP lists" className="inline-flex shrink-0">
+                        <CrownIcon className="h-3.5 w-3.5 text-[#ffd34d]" />
+                      </span>
+                    )}
                   </p>
                   <p className="truncate text-xs text-muted" title={describe(f)}>{describe(f)}</p>
                 </div>
                 {isAdmin && (
                   <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => toggleCrown(f)}
+                      aria-pressed={!!f.crown}
+                      aria-label={`${f.name}: ${f.crown ? "stop giving" : "give"} the crown icon`}
+                      title={f.crown ? "Crown on: addresses this filter matches get the crown. Click to turn off." : "Click to make addresses this filter matches get the crown icon."}
+                      className={`mr-1 grid h-8 w-8 place-items-center rounded-md transition-colors duration-fast hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft ${f.crown ? "text-[#ffd34d]" : "text-muted/50"}`}
+                    >
+                      <CrownIcon className="h-4 w-4" />
+                    </button>
                     <label className="mr-2 flex cursor-pointer items-center gap-2 text-xs text-muted" title="Switch off to take this filter back as one of your own. It stops being global for everyone.">
                       <Switch checked label={`Global: switch off to make ${f.name} yours`} onChange={() => setConfirm({ kind: "mine", f })} />
                       Global
@@ -416,17 +449,6 @@ export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = f
           several Show filters on, a packet that matches any of them stays. A Hide filter always wins. With none on, everything is shown.
         </p>
       </div>
-
-      {message && (
-        <p
-          role={message.kind === "error" ? "alert" : "status"}
-          className={`anim-fade rounded-pill border px-4 py-2 text-sm ${
-            message.kind === "error" ? "border-danger/40 bg-danger-solid/20 text-danger" : "border-border bg-white/[0.05] text-muted"
-          }`}
-        >
-          {message.text}
-        </p>
-      )}
 
       <Modal
         open={confirm !== null}

@@ -169,8 +169,8 @@ fn ip_labels(app: &AppHandle) -> HashMap<String, String> {
         .collect()
 }
 
-/// One label keeps at most this many addresses; a new one replaces the oldest. Returns the addresses dropped.
-const LABEL_IPS_MAX: usize = 3;
+/// One label keeps at most this many addresses (its current one and its history); a new one replaces the oldest. Returns the addresses dropped.
+const LABEL_IPS_MAX: usize = 50;
 
 fn cap_label(list: &mut Vec<Value>, label: &str, newest: &str) -> Vec<String> {
     if label.is_empty() {
