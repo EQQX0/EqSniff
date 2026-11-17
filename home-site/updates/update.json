@@ -1,6 +1,6 @@
 {
-  "version": "0.4.2",
+  "version": "0.4.3",
   "url": "https://sniff.eqqx2.com/updates/EqNetwork-setup.exe",
-  "sha256": "e0a5d3694047871bb96051f86899129e0da91a03ad2b7c2b9e4d447fffc15bdd",
-  "notes": "Fix: the crown is back to the likely-host rule. Only one address gets it, the busy one among addresses matched by the crown filter an admin chose, instead of every matched address."
+  "sha256": "8c1d8f2383210728a5be5a8353bf3627acdbff427b50f16f0d2e812c4d7f062e",
+  "notes": "Fix: labels show in Capture again (the shared and hidden IP lists could not be read, which dropped your labels), and the hidden list now survives a restart. IP Storage shows First seen instead of Added, and the detail line under a label shows only country and city."
 }

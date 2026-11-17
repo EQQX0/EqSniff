@@ -343,10 +343,10 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
   const [labelEntries, setLabelEntries] = useState<IpEntry[]>([]);
   useEffect(() => {
     const load = () =>
-      Promise.all([loadEntries(), loadShared()])
+      Promise.all([loadEntries(), loadShared().catch(() => null)]) // a missing shared list must never hide your own labels
         .then(([mine, shared]) => {
           const have = new Set(mine.map((e) => e.address));
-          const list = [...mine, ...shared.entries.filter((e) => !have.has(e.address))];
+          const list = [...mine, ...(shared?.entries ?? []).filter((e) => !have.has(e.address))];
           setLabelEntries(list);
           setNames(Object.fromEntries(list.filter((e) => e.note).map((e) => [e.address, e.note])));
         })

@@ -25,7 +25,7 @@ pub fn save_filters(app: AppHandle, filters: serde_json::Value) -> Result<(), St
 
 /// Small named JSON files for things like device labels. Only these names are allowed.
 fn named(app: &AppHandle, name: &str) -> Result<std::path::PathBuf, String> {
-    if !["labels", "capture-filter", "ip-storage", "ip-storage-deleted", "vpn-deleted", "cloud-session"].contains(&name) {
+    if !["labels", "capture-filter", "ip-storage", "ip-storage-deleted", "vpn-deleted", "cloud-session", "ip-shared", "ip-hidden"].contains(&name) {
         return Err("Unknown store.".into());
     }
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;

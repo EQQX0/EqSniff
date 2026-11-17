@@ -291,7 +291,7 @@ export function IpStorageView() {
                 <th scope="col" className="px-3 py-2 font-semibold">Address</th>
                 <th scope="col" className="px-3 py-2 font-semibold">Label</th>
                 <th scope="col" className="px-3 py-2 font-semibold">Last seen</th>
-                <th scope="col" className="px-3 py-2 font-semibold">Added</th>
+                <th scope="col" className="px-3 py-2 font-semibold">First seen</th>
                 <th scope="col" className="px-3 py-2"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
@@ -342,7 +342,7 @@ export function IpStorageView() {
                   <th scope="col" className="px-3 py-2 font-semibold">Address</th>
                   <th scope="col" className="px-3 py-2 font-semibold">Label</th>
                   <th scope="col" className="px-3 py-2 font-semibold">Last seen</th>
-                  <th scope="col" className="px-3 py-2 font-semibold">Added</th>
+                  <th scope="col" className="px-3 py-2 font-semibold">First seen</th>
                   <th scope="col" className="px-3 py-2"><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
@@ -598,10 +598,6 @@ function GroupRows({
   const seenLine = (x: IpEntry) =>
     [
       x.place,
-      x.isp,
-      x.firstSeen ? `first seen ${new Date(x.firstSeen).toLocaleDateString()}` : null,
-      x.lastSeen ? `last seen ${ago(x.lastSeen)}` : "not seen yet",
-      x.timesSeen ? `seen ${x.timesSeen}×` : null,
     ]
       .filter(Boolean)
       .join(" · ");
@@ -666,7 +662,9 @@ function GroupRows({
       <td className="px-3 py-2 text-xs text-muted" title={x.lastSeen ? new Date(x.lastSeen).toLocaleString() : "Capture has not seen this address yet"}>
         {x.lastSeen ? ago(x.lastSeen) : <span className="italic">not yet</span>}
       </td>
-      <td className="px-3 py-2 text-xs text-muted">{new Date(x.createdAt).toLocaleDateString()}</td>
+      <td className="px-3 py-2 text-xs text-muted" title={x.firstSeen ? new Date(x.firstSeen).toLocaleString() : "Capture has not seen this address yet"}>
+        {x.firstSeen ? new Date(x.firstSeen).toLocaleDateString() : <span className="italic">not yet</span>}
+      </td>
       <td className="px-3 py-1.5 text-right">
         <div className="flex justify-end gap-2">
           {current && onRename && x.note && (
