@@ -113,6 +113,20 @@
   margin: 0 0 18px;
 }
 
+.success-text {
+  color: var(--accent-soft);
+  font-size: var(--step-body);
+  margin: 0 0 18px;
+}
+
+.panel-subhead {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin: 32px 0 16px;
+}
+
+#password-form .btn { width: auto; }
+
 .hint {
   color: var(--muted);
   font-size: var(--step-body);

@@ -111,6 +111,80 @@ async function rename(req: Request, body: Record<string, unknown>) {
   return json({ username });
 }
 
+/** Resolves the caller's user id from their access token, or null if the token is invalid. */
+async function callerId(token: string): Promise<string | null> {
+  const me = await fetch(`${URL_}/auth/v1/user`, { headers: { apikey: ANON, Authorization: `Bearer ${token}` } });
+  if (!me.ok) return null;
+  const out = (await me.json()) as { id?: string };
+  return out.id ?? null;
+}
+
+/** True if the given account's profile has is_admin set. */
+async function isAdmin(userId: string): Promise<boolean> {
+  const res = await admin(`/rest/v1/profiles?select=is_admin&user_id=eq.${userId}&limit=1`);
+  if (!res.ok) return false;
+  const rows = (await res.json()) as { is_admin: boolean }[];
+  return rows[0]?.is_admin === true;
+}
+
+/** Verifies the request's x-user-token belongs to a signed-in admin. Returns the admin's own user id, or an error Response to return as-is. */
+async function requireAdmin(req: Request): Promise<{ adminId: string } | Response> {
+  const token = (req.headers.get("x-user-token") ?? "").trim();
+  if (!token) return json({ error: "You are not signed in." }, 401);
+  const adminId = await callerId(token);
+  if (!adminId) return json({ error: "Your sign-in has expired. Sign in again." }, 401);
+  if (!(await isAdmin(adminId))) return json({ error: "Admins only." }, 403);
+  return { adminId };
+}
+
+/** Admin: bans or unbans an account at the Auth level (blocks sign-in outright), mirrored onto the profile's "disabled" flag the app already shows and checks. */
+async function adminSetBanned(req: Request, body: Record<string, unknown>) {
+  const check = await requireAdmin(req);
+  if (check instanceof Response) return check;
+  const userId = String(body.userId ?? "");
+  const banned = Boolean(body.banned);
+  if (!userId) return json({ error: "Missing account." }, 400);
+  const res = await admin(`/auth/v1/admin/users/${userId}`, {
+    method: "PUT",
+    body: JSON.stringify({ ban_duration: banned ? "876000h" : "none" }),
+  });
+  if (!res.ok) return json({ error: "Could not update that account." }, res.status);
+  await admin(`/rest/v1/profiles?user_id=eq.${userId}`, {
+    method: "PATCH",
+    headers: { Prefer: "return=minimal" },
+    body: JSON.stringify({ disabled: banned }),
+  });
+  return json({ ok: true });
+}
+
+/** Admin: permanently deletes an account. The profile row and its saved data cascade with it. */
+async function adminDeleteUser(req: Request, body: Record<string, unknown>) {
+  const check = await requireAdmin(req);
+  if (check instanceof Response) return check;
+  const userId = String(body.userId ?? "");
+  if (!userId) return json({ error: "Missing account." }, 400);
+  if (userId === check.adminId) return json({ error: "You can't delete your own account here." }, 400);
+  const res = await admin(`/auth/v1/admin/users/${userId}`, { method: "DELETE" });
+  if (!res.ok) return json({ error: "Could not delete that account." }, res.status);
+  return json({ ok: true });
+}
+
+/** Admin: sets another account's password directly, for when they're locked out. */
+async function adminSetPassword(req: Request, body: Record<string, unknown>) {
+  const check = await requireAdmin(req);
+  if (check instanceof Response) return check;
+  const userId = String(body.userId ?? "");
+  const password = String(body.password ?? "");
+  if (!userId) return json({ error: "Missing account." }, 400);
+  if (password.length < 8) return json({ error: "The password needs at least 8 characters." }, 400);
+  const res = await admin(`/auth/v1/admin/users/${userId}`, {
+    method: "PUT",
+    body: JSON.stringify({ password }),
+  });
+  if (!res.ok) return json({ error: "Could not set that account's password." }, res.status);
+  return json({ ok: true });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
   if (req.method !== "POST") return json({ error: "Not found." }, 404);
@@ -123,5 +197,8 @@ Deno.serve(async (req) => {
   if (body.action === "signup") return signUp(body);
   if (body.action === "login") return login(body);
   if (body.action === "rename") return rename(req, body);
+  if (body.action === "adminSetBanned") return adminSetBanned(req, body);
+  if (body.action === "adminDeleteUser") return adminDeleteUser(req, body);
+  if (body.action === "adminSetPassword") return adminSetPassword(req, body);
   return json({ error: "Not found." }, 404);
 });

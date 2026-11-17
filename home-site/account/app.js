@@ -48,6 +48,29 @@
     return res;
   }
 
+  /** Calls an admin-only action on the account edge function, proving who's asking with the caller's own token. */
+  async function callAccountFn(action, token, payload = {}) {
+    const res = await fetch(`${CLOUD_URL}/functions/v1/account`, {
+      method: "POST",
+      headers: { apikey: CLOUD_KEY, Authorization: `Bearer ${CLOUD_KEY}`, "x-user-token": token, "Content-Type": "application/json" },
+      body: JSON.stringify({ action, ...payload }),
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok || out.error) throw new Error(out.error || `The server answered with status ${res.status}.`);
+    return out;
+  }
+
+  /** Changes the signed-in user's own password via Supabase Auth directly (no admin rights needed). */
+  async function changeOwnPassword(token, newPassword) {
+    const res = await fetch(`${CLOUD_URL}/auth/v1/user`, {
+      method: "PUT",
+      headers: { apikey: CLOUD_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ password: newPassword }),
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(out.msg || out.error_description || out.message || `The server answered with status ${res.status}.`);
+  }
+
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
@@ -155,17 +178,19 @@
     const rows = profiles
       .map(
         (p) => `
-      <tr data-user-id="${escapeHtml(p.user_id)}">
+      <tr data-user-id="${escapeHtml(p.user_id)}" data-username="${escapeHtml(p.username)}">
         <td data-label="Username">${escapeHtml(p.username)}</td>
         <td data-label="Created">${fmtDate(p.created_at)}</td>
         <td data-label="Admin"><button class="chip-btn${p.is_admin ? "" : " positive"} admin-toggle" type="button" data-field="is_admin" data-value="${!p.is_admin}">${p.is_admin ? "Revoke admin" : "Make admin"}</button></td>
-        <td data-label="Access"><button class="chip-btn${p.disabled ? " positive" : " negative"} admin-toggle" type="button" data-field="disabled" data-value="${!p.disabled}">${p.disabled ? "Enable" : "Disable"}</button></td>
+        <td data-label="Access"><button class="chip-btn${p.disabled ? " positive" : " negative"} admin-ban" type="button" data-value="${!p.disabled}">${p.disabled ? "Unban" : "Ban"}</button></td>
+        <td data-label="Password"><button class="chip-btn admin-set-password" type="button">Set password</button></td>
+        <td data-label="Delete"><button class="chip-btn negative admin-delete" type="button">Delete</button></td>
       </tr>`
       )
       .join("");
     wrap.innerHTML = `
       <table>
-        <thead><tr><th>Username</th><th>Created</th><th>Admin</th><th>Access</th></tr></thead>
+        <thead><tr><th>Username</th><th>Created</th><th>Admin</th><th>Access</th><th>Password</th><th>Delete</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>`;
 
@@ -175,7 +200,7 @@
         const userId = row.getAttribute("data-user-id");
         const field = btn.getAttribute("data-field");
         const value = btn.getAttribute("data-value") === "true";
-        const label = field === "is_admin" ? (value ? "make this account an admin" : "revoke admin from this account") : value ? "disable this account" : "re-enable this account";
+        const label = value ? "make this account an admin" : "revoke admin from this account";
         if (!window.confirm(`Are you sure you want to ${label}?`)) return;
         btn.disabled = true;
         try {
@@ -184,6 +209,64 @@
             headers: { Prefer: "return=minimal" },
             body: JSON.stringify({ [field]: value }),
           });
+          await loadAdmin(token);
+        } catch (e) {
+          window.alert(e instanceof Error ? e.message : String(e));
+          btn.disabled = false;
+        }
+      });
+    });
+
+    wrap.querySelectorAll(".admin-ban").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const row = btn.closest("tr");
+        const userId = row.getAttribute("data-user-id");
+        const banned = btn.getAttribute("data-value") === "true";
+        const label = banned ? "ban this account? They won't be able to sign in or use their saved data." : "unban this account?";
+        if (!window.confirm(`Are you sure you want to ${label}`)) return;
+        btn.disabled = true;
+        try {
+          await callAccountFn("adminSetBanned", token, { userId, banned });
+          await loadAdmin(token);
+        } catch (e) {
+          window.alert(e instanceof Error ? e.message : String(e));
+          btn.disabled = false;
+        }
+      });
+    });
+
+    wrap.querySelectorAll(".admin-set-password").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const row = btn.closest("tr");
+        const userId = row.getAttribute("data-user-id");
+        const username = row.getAttribute("data-username");
+        const password = window.prompt(`New password for ${username} (at least 8 characters):`);
+        if (password === null) return;
+        if (password.length < 8) {
+          window.alert("The password needs at least 8 characters.");
+          return;
+        }
+        btn.disabled = true;
+        try {
+          await callAccountFn("adminSetPassword", token, { userId, password });
+          window.alert(`Password updated for ${username}.`);
+        } catch (e) {
+          window.alert(e instanceof Error ? e.message : String(e));
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+
+    wrap.querySelectorAll(".admin-delete").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const row = btn.closest("tr");
+        const userId = row.getAttribute("data-user-id");
+        const username = row.getAttribute("data-username");
+        if (!window.confirm(`Permanently delete ${username}'s account? This can't be undone.`)) return;
+        btn.disabled = true;
+        try {
+          await callAccountFn("adminDeleteUser", token, { userId });
           await loadAdmin(token);
         } catch (e) {
           window.alert(e instanceof Error ? e.message : String(e));
@@ -253,6 +336,42 @@
     $("tab-admin").addEventListener("click", () => setTab("admin"));
   }
 
+  function wirePasswordForm(session) {
+    $("password-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const newPassword = $("password-new").value;
+      const confirm = $("password-confirm").value;
+      const err = $("password-error");
+      const ok = $("password-success");
+      const btn = $("password-submit");
+      err.hidden = true;
+      ok.hidden = true;
+      if (newPassword.length < 8) {
+        err.textContent = "The password needs at least 8 characters.";
+        err.hidden = false;
+        return;
+      }
+      if (newPassword !== confirm) {
+        err.textContent = "Those passwords don't match.";
+        err.hidden = false;
+        return;
+      }
+      btn.disabled = true;
+      btn.textContent = "Updating…";
+      try {
+        await changeOwnPassword(session.accessToken, newPassword);
+        $("password-form").reset();
+        ok.hidden = false;
+      } catch (ex) {
+        err.textContent = ex instanceof Error ? ex.message : String(ex);
+        err.hidden = false;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Update password";
+      }
+    });
+  }
+
   function wireSignOut() {
     $("sign-out").addEventListener("click", () => {
       clearSession();
@@ -269,6 +388,7 @@
     $("app-shell").hidden = false;
     wireSignOut();
     wireTabs();
+    wirePasswordForm(session);
     setTab("ips");
     loadDashboard(session);
   }

@@ -55,6 +55,21 @@
           <h2>Account</h2>
           <p class="lead">Basic information about your EqNetwork account.</p>
           <div id="account-info"></div>
+
+          <h3 class="panel-subhead">Change password</h3>
+          <form id="password-form" novalidate>
+            <p class="error-text" id="password-error" role="alert" hidden></p>
+            <p class="success-text" id="password-success" role="status" hidden>Password updated.</p>
+            <div class="field">
+              <label for="password-new">New password</label>
+              <input id="password-new" name="new-password" type="password" autocomplete="new-password" minlength="8" required />
+            </div>
+            <div class="field">
+              <label for="password-confirm">Confirm new password</label>
+              <input id="password-confirm" name="confirm-password" type="password" autocomplete="new-password" minlength="8" required />
+            </div>
+            <button class="btn secondary" type="submit" id="password-submit">Update password</button>
+          </form>
         </section>
 
         <section class="panel" id="panel-admin" hidden>
