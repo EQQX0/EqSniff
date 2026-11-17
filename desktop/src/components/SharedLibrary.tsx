@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { api } from "@/lib/api";
 import { CloudError, FILTERS_SYNCED, listShared, shareItem, unshareItem, type CloudSession, type SharedItem } from "@/lib/cloud";
-import { fromStored, newId, type Filter } from "@/lib/filters";
+import { fromStored, isIspFilter, newId, type Filter } from "@/lib/filters";
 import { loadEntries, newEntryId, saveEntries, type IpEntry } from "@/lib/ipstore";
 
 type Kind = "tunnel" | "filter" | "ip";
@@ -130,7 +130,17 @@ export function SharedLibrary({ session }: { session: CloudSession }) {
       `Added ${item.name} to your ${item.kind === "tunnel" ? "VPN tunnels" : item.kind === "ip" ? "IP Storage" : "filters"}.${item.kind === "filter" ? " Filters are added switched off." : ""}`
     );
 
-  const others = shared.filter((s) => s.ownerId !== session.userId);
+  // ISP filters (a Hide filter that only names ISPs) are left out of sharing, both yours and other accounts'.
+  const shareableFilters = filters.filter((f) => !isIspFilter(f));
+  const isIspBody = (body: string) => {
+    try {
+      const f = fromStored([{ ...(JSON.parse(body) as object), id: "x", name: "x" }])[0];
+      return !!f && isIspFilter(f);
+    } catch {
+      return false;
+    }
+  };
+  const others = shared.filter((s) => s.ownerId !== session.userId && !(s.kind === "filter" && isIspBody(s.body)));
 
   return (
     <Card className="space-y-4">
@@ -140,7 +150,7 @@ export function SharedLibrary({ session }: { session: CloudSession }) {
           Choose a tunnel, filter, or your whole IP Storage to make it visible to every signed-in account, so they can add their own copy. Stop sharing
           at any time (copies people already made stay with them). A shared tunnel includes its
           private key, so share a config you made for other people to use. Sharing IP Storage shares every address and label in
-          it with every signed-in account, so share only a list you are happy to publish. Nothing is shared unless you press Share.
+          it with every signed-in account, so share only a list you are happy to publish. ISP filters (Hide ISP …) are not shared; they live on the Filters page's ISP tab. Nothing is shared unless you press Share.
         </p>
       </div>
 
@@ -157,7 +167,7 @@ export function SharedLibrary({ session }: { session: CloudSession }) {
 
       <div className="space-y-2">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-muted">Yours</h3>
-        {tunnels.length === 0 && filters.length === 0 && ips.length === 0 ? (
+        {tunnels.length === 0 && shareableFilters.length === 0 && ips.length === 0 ? (
           <p className="text-xs text-muted">Nothing to share yet. Add a tunnel, filter or IP address first.</p>
         ) : (
           <ul className="space-y-2">
@@ -183,7 +193,7 @@ export function SharedLibrary({ session }: { session: CloudSession }) {
                 </Button>
               </li>
             )}
-            {filters.map((f) => (
+            {shareableFilters.map((f) => (
               <li key={`f:${f.id}`} className="flex items-center justify-between gap-3 text-sm text-text">
                 <span className="truncate">
                   <span className="text-xs text-muted">Filter · </span>

@@ -204,7 +204,7 @@ interface Props {
   details: Record<string, IpDetails>;
 }
 
-function CopiedBadge() {
+export function CopiedBadge() {
   return <span className="rounded-pill bg-accent-soft/30 px-2 py-0.5 text-xs font-semibold text-accent">Copied</span>;
 }
 

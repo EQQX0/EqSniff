@@ -1,6 +1,6 @@
 {
-  "version": "0.2.34",
+  "version": "0.2.35",
   "url": "https://sniff.eqqx2.com/updates/EqNetwork-setup.exe",
-  "sha256": "9c55f0694ef6c540cd58759d4816d6fda9cbb0dcb68e21a8f05f75512d7f0ca0",
-  "notes": "Move your filters up and down; the top one has the highest priority in the Filter column of the IP lists. Admins can set whether a global filter starts on for everyone. Global filters are labelled on the Filters and Capture pages."
+  "sha256": "32c2473a2227c4e6374c842bd0e9e0d1638230feeea4a4df8155e8c88ba75612",
+  "notes": "Clicking a cell in the traffic table copies it, with a Copied badge, a row flash and a toast; right-click has Copy row. ISP filters are no longer listed in Share with other accounts. Admins can switch a filter between mine and global on the Filters page."
 }

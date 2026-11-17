@@ -20,7 +20,7 @@ import { NetworkIcon } from "@/components/ui/icons";
 import { Switch } from "@/components/ui/Switch";
 import { NAME_MAX, loadEntries, newEntryId, onChange as onIpStoreChange, saveEntries, setName } from "@/lib/ipstore";
 import { labelFor, parseMinecraftLog } from "@/lib/mclog";
-import { ACTIVE_EACH_WAY, IpList, absorb, listBook, type IpBook } from "@/views/CaptureIps";
+import { ACTIVE_EACH_WAY, CopiedBadge, IpList, absorb, listBook, type IpBook } from "@/views/CaptureIps";
 import "flag-icons/css/flag-icons.min.css";
 
 type ColumnId = "name" | "srcIp" | "srcPort" | "dstIp" | "dstPort" | "country" | "protocol" | "bytes" | "time";
@@ -556,6 +556,36 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
     }
   }, [ingest]);
 
+  // Click-to-copy feedback in the packet table: a badge in the cell and a flash on the row (about a second), plus a toast.
+  const [copiedCell, setCopiedCell] = useState<{ row: number; col: string } | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toastCount = useRef(0);
+  useEffect(() => () => {
+    if (copiedTimer.current) clearTimeout(copiedTimer.current);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+  }, []);
+  async function copyCellValue(rowId: number, col: string, text: string, what: string) {
+    if (text === "") return;
+    const ok = await copyText(text);
+    // A zero-width character that alternates keeps a screen reader announcing a repeat copy of the same value.
+    toastCount.current += 1;
+    const tail = toastCount.current % 2 ? "" : "​";
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    if (copiedTimer.current) clearTimeout(copiedTimer.current);
+    if (!ok) {
+      setNotice("Copying was blocked by Windows. Select the text and press Ctrl+C instead.");
+      setToast("Copying was blocked by Windows. Select the text and press Ctrl+C instead." + tail);
+    } else {
+      setNotice(`Copied ${what}.`);
+      setToast(`Copied ${what}: ${text.length > 60 ? text.slice(0, 57) + "…" : text}` + tail);
+      setCopiedCell({ row: rowId, col });
+      copiedTimer.current = setTimeout(() => setCopiedCell(null), 1000);
+    }
+    toastTimer.current = setTimeout(() => setToast(null), 2200);
+  }
+
   async function copy(text: string, what: string) {
     setNotice((await copyText(text)) ? `Copied ${what}.` : "Copying was blocked by Windows. Select the text and press Ctrl+C instead.");
   }
@@ -885,19 +915,24 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
               )}
               {visibleRows.map((r) => {
                 const far = farOf(r);
-                const cellCopy = (text: string, what: string) => ({
-                  title: "Double-click to copy",
-                  onDoubleClick: () => copy(text, what),
+                // One click copies a cell. A click that ends a text selection is left alone so you can still select and copy by hand.
+                const cellCopy = (col: string, text: string, what: string) => ({
+                  title: `Click to copy ${what}`,
+                  onClick: () => {
+                    if (window.getSelection()?.toString()) return;
+                    void copyCellValue(r.id, col, text, what);
+                  },
                 });
+                const copiedHere = (col: string) => copiedCell?.row === r.id && copiedCell.col === col;
                 const port = (n: number | null) => (n === null ? "" : String(n));
                 return (
                   <tr
                     key={r.id}
                     onContextMenu={(e) => {
                       e.preventDefault();
-                      setRowMenu({ x: Math.min(e.clientX, window.innerWidth - 260), y: Math.min(e.clientY, window.innerHeight - 90), row: r });
+                      setRowMenu({ x: Math.min(e.clientX, window.innerWidth - 260), y: Math.min(e.clientY, window.innerHeight - 130), row: r });
                     }}
-                    className="border-b border-border transition-colors duration-fast last:border-0 hover:bg-white/[0.05]"
+                    className={`border-b border-border transition-colors duration-fast last:border-0 hover:bg-white/[0.05] ${copiedCell?.row === r.id ? "bg-accent-soft/20" : ""}`}
                   >
                     {show("name") && (
                       <td className="max-w-[14rem] px-3 py-1.5">
@@ -934,10 +969,10 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
                         )}
                       </td>
                     )}
-                    {show("srcIp") && <td className="px-3 py-1.5 font-mono text-text" {...cellCopy(r.src, "the source address")}>{r.src}</td>}
-                    {show("srcPort") && <td className="px-3 py-1.5 font-mono text-muted" {...cellCopy(port(r.srcPort), "the source port")}>{port(r.srcPort)}</td>}
-                    {show("dstIp") && <td className="px-3 py-1.5 font-mono text-text" {...cellCopy(r.dst, "the destination address")}>{r.dst}</td>}
-                    {show("dstPort") && <td className="px-3 py-1.5 font-mono text-muted" {...cellCopy(port(r.dstPort), "the destination port")}>{port(r.dstPort)}</td>}
+                    {show("srcIp") && <td className="cursor-copy px-3 py-1.5 font-mono text-text" {...cellCopy("srcIp", r.src, "the source address")}>{copiedHere("srcIp") ? <CopiedBadge /> : r.src}</td>}
+                    {show("srcPort") && <td className="cursor-copy px-3 py-1.5 font-mono text-muted" {...cellCopy("srcPort", port(r.srcPort), "the source port")}>{copiedHere("srcPort") ? <CopiedBadge /> : port(r.srcPort)}</td>}
+                    {show("dstIp") && <td className="cursor-copy px-3 py-1.5 font-mono text-text" {...cellCopy("dstIp", r.dst, "the destination address")}>{copiedHere("dstIp") ? <CopiedBadge /> : r.dst}</td>}
+                    {show("dstPort") && <td className="cursor-copy px-3 py-1.5 font-mono text-muted" {...cellCopy("dstPort", port(r.dstPort), "the destination port")}>{copiedHere("dstPort") ? <CopiedBadge /> : port(r.dstPort)}</td>}
                     {show("country") && (
                       <td className="px-3 py-1.5 text-text">
                         {(() => {
@@ -954,8 +989,8 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
                       </td>
                     )}
                     {show("protocol") && <td className="px-3 py-1.5 font-mono text-muted">{r.protocol}</td>}
-                    {show("bytes") && <td className="px-3 py-1.5 text-right font-mono text-muted" {...cellCopy(String(r.length), "the size")}>{r.length}</td>}
-                    {show("time") && <td className="px-3 py-1.5 text-right font-mono text-muted" {...cellCopy(clock(r.time), "the time")}>{clock(r.time)}</td>}
+                    {show("bytes") && <td className="cursor-copy px-3 py-1.5 text-right font-mono text-muted" {...cellCopy("bytes", String(r.length), "the size")}>{copiedHere("bytes") ? <CopiedBadge /> : r.length}</td>}
+                    {show("time") && <td className="cursor-copy px-3 py-1.5 text-right font-mono text-muted" {...cellCopy("time", clock(r.time), "the time")}>{copiedHere("time") ? <CopiedBadge /> : clock(r.time)}</td>}
                   </tr>
                 );
               })}
@@ -972,12 +1007,29 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
         </div>
       </Card>
       )}
+      <div role="status" aria-live="polite" className="sr-only">{toast}</div>
+      {toast && (
+        <div aria-hidden="true" className="glass-strong anim-fade pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-pill px-5 py-2 text-sm text-text shadow-xl">
+          {toast}
+        </div>
+      )}
       {rowMenu && (() => {
         const r = rowMenu.row;
         const far = isLocalAddress(r.src) ? r.dst : r.src;
         const item = "block w-full px-4 py-2 text-left text-sm text-text hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-none";
         return (
           <div role="menu" aria-label={`Actions for the packet with ${far}`} style={{ left: rowMenu.x, top: rowMenu.y }} onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()} className="fixed z-50 w-60 overflow-hidden rounded-lg border border-border bg-[#1c0b11] py-1 shadow-xl">
+            <button
+              role="menuitem"
+              type="button"
+              className={item}
+              onClick={() => {
+                void copyCellValue(r.id, "row", tableToTsv([r], countryOf).split("\r\n").slice(1).join(""), "the row");
+                setRowMenu(null);
+              }}
+            >
+              Copy row
+            </button>
             <button
               role="menuitem"
               type="button"

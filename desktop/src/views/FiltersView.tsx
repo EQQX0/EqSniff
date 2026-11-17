@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Switch } from "@/components/ui/Switch";
+import { Modal } from "@/components/ui/Modal";
 import { Tabs } from "@/components/ui/Tabs";
 import { NetworkIcon } from "@/components/ui/icons";
 import { FilterWizard } from "@/components/FilterWizard";
@@ -41,6 +42,7 @@ export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = f
   const [draftGlobal, setDraftGlobal] = useState(false);
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [ispText, setIspText] = useState("");
+  const [confirm, setConfirm] = useState<{ kind: "global" | "mine"; f: Filter } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   // ISP filters (a Hide filter that only names ISPs) get their own tab. Everything else is a packet filter.
@@ -120,6 +122,21 @@ export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = f
     [next[a], next[b]] = [next[b], next[a]];
     return run(() => onChange(next), `Moved “${f.name}” ${dir < 0 ? "up" : "down"}.`);
   };
+
+  /** Admin only: turns one of your filters into a global one for every account. It leaves "Your filters". */
+  const makeGlobal = (f: Filter) =>
+    run(async () => {
+      await onPublishGlobal!(f);
+      await onChange(filters.filter((x) => x.id !== f.id));
+    }, `“${f.name}” is now a global filter for every signed-in account. It starts ${f.enabled ? "on" : "off"} for them.`);
+
+  /** Admin only: turns a global filter back into one of your own. It stops being global for everyone. */
+  const makeMine = (f: Filter) =>
+    run(async () => {
+      const { globalId: _g, defaultEnabled: _d, ...rest } = f;
+      await onChange([...filters, { ...rest, id: newId() }]); // the copy is saved first, so nothing is lost if retiring fails
+      await onRetireGlobal!(f.globalId!);
+    }, `“${f.name}” is yours again. It is gone from every other account.`);
 
   const retireGlobal = (f: Filter) =>
     run(() => onRetireGlobal!(f.globalId!), `Retired “${f.name}”. It is gone for everyone who had it switched on.`);
@@ -209,6 +226,10 @@ export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = f
                       />
                       Default for everyone
                     </label>
+                    <label className="mr-2 flex cursor-pointer items-center gap-2 text-xs text-muted" title="Admin: switch off to take this filter back as one of your own. It stops being global for everyone.">
+                      <Switch checked label={`Global: switch off to make ${f.name} yours`} onChange={() => setConfirm({ kind: "mine", f })} />
+                      Global
+                    </label>
                     <Button size="sm" variant="ghost" onClick={() => { setDraft({ ...f }); setDraftGlobal(true); }} aria-label={`Edit ${f.name} for everyone`}>
                       Edit
                     </Button>
@@ -282,6 +303,12 @@ export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = f
                     <p className="truncate text-xs text-muted">{describe(f)}</p>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
+                    {isAdmin && (
+                      <label className="mr-2 flex cursor-pointer items-center gap-2 text-xs text-muted" title="Admin: switch on to publish this filter for every account.">
+                        <Switch checked={false} label={`Global: switch on to publish ${f.name} for everyone`} onChange={() => setConfirm({ kind: "global", f })} />
+                        Global
+                      </label>
+                    )}
                     <Button size="sm" variant="ghost" onClick={() => { setDraft({ ...f }); }} aria-label={`Edit ${f.name}`}>Edit</Button>
                     <Button size="sm" variant="ghost" onClick={() => remove(f)} aria-label={`Delete ${f.name}`}>Delete</Button>
                   </div>
@@ -378,6 +405,42 @@ export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = f
           {message.text}
         </p>
       )}
+
+      <Modal
+        open={confirm !== null}
+        onClose={() => setConfirm(null)}
+        title={confirm?.kind === "global" ? "Make this filter global?" : "Make this filter yours?"}
+      >
+        {confirm && (
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted">
+              {confirm.kind === "global" ? (
+                <>
+                  <strong className="font-semibold text-text">{confirm.f.name}</strong> will be published for every signed-in account and move out of
+                  Your filters. It starts {confirm.f.enabled ? "on" : "off"} for them, and each account can turn it off for itself.
+                </>
+              ) : (
+                <>
+                  <strong className="font-semibold text-text">{confirm.f.name}</strong> will stop being global and disappear for every other account.
+                  A copy stays in Your filters, switched {confirm.f.enabled ? "on" : "off"}.
+                </>
+              )}
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setConfirm(null)}>Cancel</Button>
+              <Button
+                onClick={() => {
+                  const c = confirm;
+                  setConfirm(null);
+                  void (c.kind === "global" ? makeGlobal(c.f) : makeMine(c.f));
+                }}
+              >
+                {confirm.kind === "global" ? "Make global" : "Make mine"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Tabs
         key={tabsKey}
