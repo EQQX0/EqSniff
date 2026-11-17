@@ -1,6 +1,6 @@
 {
-  "version": "0.4.1",
+  "version": "0.4.2",
   "url": "https://sniff.eqqx2.com/updates/EqNetwork-setup.exe",
-  "sha256": "1b58a08fb91f3b9e2aaf52f44a220ba677bf92fb040b4991eb55acfe407b2edc",
-  "notes": "Fixes: hidden IPs match in any written form (IPv6 case and length), failed saves no longer show a success toast, Undo restores only what you deleted, a failing side list no longer blocks filter and tunnel sync, and toasts pause on hover. Rows for an address that becomes hidden leave the capture table at the next sync."
+  "sha256": "e0a5d3694047871bb96051f86899129e0da91a03ad2b7c2b9e4d447fffc15bdd",
+  "notes": "Fix: the crown is back to the likely-host rule. Only one address gets it, the busy one among addresses matched by the crown filter an admin chose, instead of every matched address."
 }

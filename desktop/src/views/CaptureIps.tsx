@@ -319,6 +319,10 @@ export function IpList({ items, names, geo, hidden, hiddenBy, showedBy, crownBy,
     );
   };
   const onlineCount = useMemo(() => items.filter((i) => isOnline(i, now)).length, [items, now]);
+  // The old host-crown logic (one busy address, sticky), but only among addresses a crown filter the admin chose has matched.
+  const hostState = useRef<HostState>(newHostState());
+  const hostCandidates = useMemo(() => items.filter((i) => crownBy?.has(i.address) && !hidden?.has(i.address)), [items, crownBy, hidden]);
+  const hostAddress = useMemo(() => pickHost(hostCandidates, now, hostState.current), [hostCandidates, now]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -454,11 +458,11 @@ export function IpList({ items, names, geo, hidden, hiddenBy, showedBy, crownBy,
                      )}
                     </td>
                     <td className="px-0 py-1.5 text-center">
-                      {crownBy?.has(i.address) && (
+                      {hostAddress === i.address && (
                         <span
                           role="img"
-                          aria-label="Crown"
-                          title={`Matched the crown filter “${crownBy.get(i.address)}”, set by an admin.`}
+                          aria-label="Likely host"
+                          title={`Carrying far more traffic than the other online players matched by the crown filter “${crownBy?.get(i.address) ?? ""}”: may be hosting, not just playing.`}
                           className="inline-flex"
                         >
                           <CrownIcon className="h-3.5 w-3.5 shrink-0 text-[#ffd34d]" />
