@@ -569,7 +569,7 @@ export async function getGlobalFilters(): Promise<{ filters: Filter[]; admin: bo
   ]);
   const rows = (await rowsRes.json()) as GlobalFilterRow[];
   const overrides = new Map((await overridesRes.json() as { filter_id: string; enabled: boolean }[]).map((o) => [o.filter_id, o.enabled]));
-  const filters = rows.map((r) => filterFromGlobal(r.id, r.name, overrides.get(r.id) ?? r.enabled, r.body));
+  const filters = rows.map((r) => filterFromGlobal(r.id, r.name, overrides.get(r.id) ?? r.enabled, r.body, r.enabled));
   return { filters, admin };
 }
 
@@ -609,7 +609,8 @@ export async function editGlobalFilter(id: string, f: Filter): Promise<void> {
       method: "PATCH",
       token,
       headers: { Prefer: "return=minimal" },
-      body: JSON.stringify({ name: f.name, body: bodyForGlobal(f), enabled: f.enabled }),
+      // The shared default, not this admin's own on/off choice (`enabled` can be a personal override).
+      body: JSON.stringify({ name: f.name, body: bodyForGlobal(f), enabled: f.defaultEnabled ?? f.enabled }),
     })
   );
   window.dispatchEvent(new Event(GLOBAL_FILTERS_SYNCED));

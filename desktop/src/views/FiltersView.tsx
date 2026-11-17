@@ -100,6 +100,27 @@ export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = f
   const toggleGlobal = (f: Filter) =>
     run(() => onToggleGlobal!(f).then(() => {}), `${f.name} is now ${f.enabled ? "off" : "on"} for you. Nobody else is affected.`);
 
+  /** Admin only: changes whether a global filter starts switched on for every account. */
+  const setDefaultForAll = (f: Filter) => {
+    const next = !(f.defaultEnabled ?? f.enabled);
+    return run(
+      () => onEditGlobal!(f.globalId!, { ...f, defaultEnabled: next }),
+      `“${f.name}” now starts ${next ? "on" : "off"} for everyone. Accounts that chose for themselves keep their own choice.`
+    );
+  };
+
+  /** Moves a filter one place up or down among the packet filters. The top filter comes first in the Filter column of the IP lists. */
+  const move = (f: Filter, dir: -1 | 1) => {
+    const i = packetFilters.findIndex((x) => x.id === f.id);
+    const other = packetFilters[i + dir];
+    if (!other) return;
+    const next = [...filters];
+    const a = next.findIndex((x) => x.id === f.id);
+    const b = next.findIndex((x) => x.id === other.id);
+    [next[a], next[b]] = [next[b], next[a]];
+    return run(() => onChange(next), `Moved “${f.name}” ${dir < 0 ? "up" : "down"}.`);
+  };
+
   const retireGlobal = (f: Filter) =>
     run(() => onRetireGlobal!(f.globalId!), `Retired “${f.name}”. It is gone for everyone who had it switched on.`);
 
@@ -176,10 +197,18 @@ export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = f
                     </span>
                     <span className="truncate">{f.name}</span>
                   </p>
-                  <p className="truncate text-xs text-muted">{describe(f)}</p>
+                  <p className="truncate text-xs text-muted">Set by an admin for everyone · {describe(f)}</p>
                 </div>
                 {isAdmin && (
                   <div className="flex shrink-0 items-center gap-1">
+                    <label className="mr-2 flex cursor-pointer items-center gap-2 text-xs text-muted" title="Admin: whether this filter starts switched on for every account. Accounts can still turn it off for themselves.">
+                      <Switch
+                        checked={f.defaultEnabled ?? f.enabled}
+                        label={`Switch ${f.name} on by default for everyone`}
+                        onChange={() => setDefaultForAll(f)}
+                      />
+                      Default for everyone
+                    </label>
                     <Button size="sm" variant="ghost" onClick={() => { setDraft({ ...f }); setDraftGlobal(true); }} aria-label={`Edit ${f.name} for everyone`}>
                       Edit
                     </Button>
@@ -206,15 +235,38 @@ export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = f
             <div className="flex items-center justify-between border-b border-border px-5 py-3">
               <h2 className="text-sm font-semibold text-text">Your filters</h2>
               <span className="text-xs text-muted">
-                {packetFilters.length} saved · {onCount} on
+                {packetFilters.length} saved · {onCount} on · top = highest priority in the IP lists' Filter column
               </span>
             </div>
             <ul>
-              {packetFilters.map((f) => (
+              {packetFilters.map((f, idx) => (
                 <li
                   key={f.id}
                   className="flex flex-wrap items-center gap-4 border-b border-border px-5 py-3.5 transition-colors duration-fast last:border-0 hover:bg-white/[0.04]"
                 >
+                  <div className="flex shrink-0 items-center gap-1" role="group" aria-label={`Priority ${idx + 1}: ${f.name}`}>
+                    <span className="w-5 text-center text-xs font-semibold tabular-nums text-muted" title={`Priority ${idx + 1}`}>{idx + 1}</span>
+                    <button
+                      type="button"
+                      onClick={() => move(f, -1)}
+                      disabled={idx === 0}
+                      aria-label={`Move ${f.name} up`}
+                      title="Move up (higher priority)"
+                      className="grid h-7 w-7 place-items-center rounded-md text-muted transition-colors duration-fast hover:bg-white/10 hover:text-text disabled:opacity-25 disabled:hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
+                    >
+                      <span aria-hidden="true">▲</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => move(f, 1)}
+                      disabled={idx === packetFilters.length - 1}
+                      aria-label={`Move ${f.name} down`}
+                      title="Move down (lower priority)"
+                      className="grid h-7 w-7 place-items-center rounded-md text-muted transition-colors duration-fast hover:bg-white/10 hover:text-text disabled:opacity-25 disabled:hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
+                    >
+                      <span aria-hidden="true">▼</span>
+                    </button>
+                  </div>
                   <Switch checked={f.enabled} label={`Switch ${f.name} on`} onChange={() => toggle(f)} />
                   <div className="min-w-0 flex-1">
                     <p className="flex items-center gap-2 truncate text-sm font-semibold text-text">

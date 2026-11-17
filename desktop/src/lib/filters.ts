@@ -31,6 +31,8 @@ export interface Filter {
    * edit, so it never changes the filter for anyone else.
    */
   globalId?: string;
+  /** Runtime only, global filters only: the on/off state every account starts with (an admin sets it). `enabled` is this account's own choice. */
+  defaultEnabled?: boolean;
 }
 
 /** What the filters can ask about an address besides its digits. Unknown (not looked up yet) never matches. */
@@ -335,7 +337,7 @@ export function fromStored(raw: unknown): Filter[] {
  * if they have one, else the shared default. The id is the shared filter's id, so toggling it can be
  * told apart from a normal local filter (see `Filter.globalId`).
  */
-export function filterFromGlobal(id: string, name: string, effectiveEnabled: boolean, bodyJson: string): Filter {
+export function filterFromGlobal(id: string, name: string, effectiveEnabled: boolean, bodyJson: string, defaultEnabled?: boolean): Filter {
   let raw: Record<string, unknown> = {};
   try {
     const parsed = JSON.parse(bodyJson);
@@ -343,11 +345,11 @@ export function filterFromGlobal(id: string, name: string, effectiveEnabled: boo
   } catch {
     /* a damaged body falls back to a blank filter */
   }
-  return { ...clean({ ...raw, id, name, enabled: effectiveEnabled }, true), globalId: id };
+  return { ...clean({ ...raw, id, name, enabled: effectiveEnabled }, true), globalId: id, defaultEnabled: defaultEnabled ?? effectiveEnabled };
 }
 
 /** Everything but id/name/enabled, for an admin to save as a global filter's shared definition. */
 export function bodyForGlobal(f: Filter): string {
-  const { id: _id, name: _name, enabled: _enabled, globalId: _globalId, ...rest } = f;
+  const { id: _id, name: _name, enabled: _enabled, globalId: _globalId, defaultEnabled: _defaultEnabled, ...rest } = f;
   return JSON.stringify(rest);
 }

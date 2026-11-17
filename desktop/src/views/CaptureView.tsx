@@ -223,6 +223,16 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ipVersion, portNum, rows, filteredRows]);
 
+  /** Filter names in priority order: the filter higher in the Filters page list first, your own before global ones. */
+  const byPriority = useCallback(
+    (names: string[]) => {
+      const rank = new Map<string, number>();
+      effectiveFilters.forEach((f, i) => rank.has(f.name) || rank.set(f.name, i));
+      return names.sort((a, b) => (rank.get(a) ?? 1e9) - (rank.get(b) ?? 1e9));
+    },
+    [effectiveFilters]
+  );
+
   /** For the All Traffic list: the addresses the filters hide, and which filter hid each one. */
   const hiddenBy = useMemo(() => {
     const out: Record<string, string[]> = {};
@@ -240,9 +250,10 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
     // Not caught by a Hide filter: a Show filter left it out.
     if (effectiveFilters.some((f) => f.enabled && f.mode !== "hide"))
       for (const a of gone) if (!out[a]?.length) out[a] = ["Not in a Show filter"];
+    for (const a of Object.keys(out)) byPriority(out[a]);
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, rows, allIps, filteredIps, effectiveFilters, lookup]);
+  }, [tab, rows, allIps, filteredIps, effectiveFilters, lookup, byPriority]);
 
   /** For each address that gets through the filters, the Show filters that let it in. Empty list with no Show filter on means nothing was limiting it. */
   const showedBy = useMemo(() => {
@@ -257,9 +268,10 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
       if (list.length === show.length) continue;
       for (const f of show) if (!list.includes(f.name) && matches(f, r, lookup)) list.push(f.name);
     }
+    for (const a of Object.keys(out)) byPriority(out[a]);
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, filteredIps, effectiveFilters, lookup]);
+  }, [rows, filteredIps, effectiveFilters, lookup, byPriority]);
 
   const shown = useMemo(() => {
     let kept = tab === "all" ? rows : filteredRows;
@@ -655,7 +667,15 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
             {f.enabled ? "✓ " : ""}{f.mode === "hide" ? "Hide: " : ""}{f.name}
           </button>
         ))}
-        {!anyOn && packetFilters.length > 0 && <span className="text-xs text-muted">None switched on, so everything shows.</span>}
+        {globalFilters.length > 0 && (
+          <span
+            className="rounded-full border border-dashed border-border px-3 py-1 text-xs text-muted"
+            title={`Set by an admin: ${globalFilters.map((f) => `${f.enabled ? "on" : "off"} – ${f.mode === "hide" ? "Hide" : "Show"}: ${f.name}`).join("; ")}. Turn them on or off on the Filters page.`}
+          >
+            + {globalFilters.filter((f) => f.enabled).length} of {globalFilters.length} global filter{globalFilters.length === 1 ? "" : "s"} on
+          </span>
+        )}
+        {!anyOn && packetFilters.length > 0 &&<span className="text-xs text-muted">None switched on, so everything shows.</span>}
       </div>
 
       <div className={`flex flex-wrap items-center gap-2 ${ipsOpen ? "hidden" : ""}`}>
