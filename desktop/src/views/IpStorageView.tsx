@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -61,14 +61,24 @@ export function IpStorageView() {
     };
   }, []);
 
-  async function persist(next: IpEntry[]) {
-    setEntries(next);
+  const entriesRef = useRef(entries);
+  entriesRef.current = entries;
+
+  /** Saves the list. Returns false (after showing why) when nothing was saved, so callers only confirm real successes. */
+  async function persist(next: IpEntry[]): Promise<boolean> {
     try {
-      await saveEntries(next);
+      const saved = await saveEntries(next);
+      setEntries(saved);
       setError(null);
+      if (saved.length < next.length) {
+        toast("An admin always hides one of these addresses, so it was not saved.", { kind: "error" });
+        return false;
+      }
+      return true;
     } catch (e) {
       setError(String(e));
       toast(String(e instanceof Error ? e.message : e), { kind: "error" });
+      return false;
     }
   }
 
@@ -91,7 +101,7 @@ export function IpStorageView() {
     const clean: IpEntry = { ...entry, address, note };
     const exists = entries.some((e) => e.id === clean.id);
     const next = exists ? entries.map((e) => (e.id === clean.id ? clean : e)) : [...entries, clean];
-    await persist(next);
+    if (!(await persist(next))) return;
     toast(exists ? `Saved changes to ${address}` : `Added ${address}`);
     setModal(null);
   }
@@ -99,9 +109,22 @@ export function IpStorageView() {
   async function confirmDelete() {
     if (!deleteTarget) return;
     const ids = new Set(deleteTarget.map((e) => e.id));
-    const before = entries;
-    await persist(entries.filter((e) => !ids.has(e.id)));
-    toast(ids.size === 1 ? `Deleted ${deleteTarget[0].address}` : `Deleted ${ids.size} addresses`, { action: { label: "Undo", run: () => void persist(before).then(() => toast("Restored")) } });
+    const removed = entries.filter((e) => ids.has(e.id));
+    if (!(await persist(entries.filter((e) => !ids.has(e.id))))) {
+      setDeleteTarget(null);
+      return;
+    }
+    toast(ids.size === 1 ? `Deleted ${deleteTarget[0].address}` : `Deleted ${ids.size} addresses`, {
+      // Undo puts back only what was deleted, so anything changed in the meantime stays.
+      action: {
+        label: "Undo",
+        run: () => {
+          const now = entriesRef.current;
+          const have = new Set(now.map((e) => e.address));
+          void persist([...now, ...removed.filter((e) => !have.has(e.address))]).then((saved) => saved && toast("Restored"));
+        },
+      },
+    });
     setSelected((prev) => {
       const next = new Set(prev);
       ids.forEach((id) => next.delete(id));

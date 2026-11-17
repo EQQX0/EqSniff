@@ -66,7 +66,7 @@ export default function App() {
 
   // Optional account sync. Does nothing unless the user signed in and turned it on.
   useEffect(() => startAutoSync(), []);
-  useEffect(() => void loadHidden(), []); // the always-hidden list, read from this computer before the first sync
+  useEffect(() => void loadHidden().catch(() => {}), []); // the always-hidden list, read from this computer before the first sync
 
   // The filters an admin published for every signed-in account, and whether this account is the admin.
   // Empty and false while signed out; a sync refreshes this list the same way it refreshes your own filters.

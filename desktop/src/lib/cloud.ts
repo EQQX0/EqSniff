@@ -1,5 +1,5 @@
 import { api } from "@/lib/api";
-import { HIDDEN_STORE, IP_DELETED, IP_STORE, SHARED_STORE, announceChange, loadEntries, saveEntries, setHiddenCache, isEntryArray, loadDeleted, newEntryId, onEdited, type IpEntry, type StorageAccess } from "@/lib/ipstore";
+import { HIDDEN_STORE, IP_DELETED, IP_STORE, SHARED_STORE, announceChange, hiddenIps, isHiddenIp, normalizeIp, loadEntries, saveEntries, setHiddenCache, isEntryArray, loadDeleted, newEntryId, onEdited, type IpEntry, type StorageAccess } from "@/lib/ipstore";
 import { mergeSync, type Meta, type RemoteEntry } from "@/lib/ipmerge";
 import { bodyForGlobal, filterFromGlobal, type Filter } from "@/lib/filters";
 
@@ -452,11 +452,11 @@ export async function listHiddenIps(): Promise<HiddenIp[]> {
 /** Keeps a local copy of the hidden list, and removes any hidden address already saved in IP Storage. */
 async function refreshHidden(token: string) {
   const res = await ok(await call("/rest/v1/hidden_ips?select=address&limit=1000", { token }));
-  const list = ((await res.json()) as { address: string }[]).map((r) => r.address);
+  const list = ((await res.json()) as { address: string }[]).map((r) => normalizeIp(r.address) ?? r.address);
   setHiddenCache(list);
   await api.saveStore(HIDDEN_STORE, list);
   const entries = await loadEntries();
-  if (entries.some((e) => list.includes(e.address))) await saveEntries(entries, entries); // saveEntries drops hidden addresses and records the deletions
+  if (entries.some((e) => isHiddenIp(e.address))) await saveEntries(entries, entries); // saveEntries drops hidden addresses and records the deletions
 }
 
 /** Admin only: hides an address for every account, from IP Storage and from capture. */
@@ -467,10 +467,14 @@ export async function addHiddenIp(address: string, note: string): Promise<void> 
       method: "POST",
       token,
       headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-      body: JSON.stringify({ address, note }),
+      body: JSON.stringify({ address: normalizeIp(address) ?? address, note }),
     })
   );
-  await refreshHidden(token);
+  try {
+    await refreshHidden(token); // the address is already hidden for everyone; a failed refresh only delays this computer
+  } catch {
+    setHiddenCache([...hiddenIps(), normalizeIp(address) ?? address]);
+  }
 }
 
 /** Admin only: stops hiding an address. */
@@ -501,13 +505,19 @@ async function refreshSharedStorage(token: string) {
   }
   const ownerRes = await ok(await call("/rest/v1/rpc/shared_storage_owner", { method: "POST", token, body: "{}" }));
   const owner = ((await ownerRes.json()) as string | null) ?? "";
-  if (!owner) return;
+  if (!owner) {
+    if (before && (before.entries?.length ?? 0) > 0) {
+      await api.saveStore(SHARED_STORE, { access, owner: "", entries: [] });
+      announceChange();
+    }
+    return;
+  }
   const res = await ok(await call(`/rest/v1/ip_entries?user_id=eq.${owner}&deleted=eq.false&select=${IP_COLUMNS}&limit=10000`, { token }));
   const entries: IpEntry[] = ((await res.json()) as IpRow[]).map((row) => {
     const r = rowToRemote(row);
     const { address, label, updatedAt, deleted: _d, ...meta } = r;
     return { id: `shared-${address}`, address, note: label, createdAt: updatedAt, updatedAt, ...meta };
-  });
+  }).filter((e) => !isHiddenIp(e.address));
   const next = { access, owner, entries };
   if (JSON.stringify(next) !== JSON.stringify(before)) {
     await api.saveStore(SHARED_STORE, next);
@@ -549,9 +559,18 @@ async function doSync(): Promise<SyncReport> {
   let filtersHash = session.filtersHash;
 
   // Only an admin's IP Storage goes to the cloud (it is the shared list). Everyone else keeps theirs on this computer.
+  // A failure in one of the small side lists must not stop the filters and tunnels from syncing.
+  try {
+    await refreshHidden(token);
+  } catch (e) {
+    report.notes.push(`Hidden IP list: ${e instanceof Error ? e.message : String(e)}`);
+  }
   if (await isAdmin()) await syncIps(token, report);
-  await refreshSharedStorage(token);
-  await refreshHidden(token);
+  try {
+    await refreshSharedStorage(token);
+  } catch (e) {
+    report.notes.push(`Shared IP Storage: ${e instanceof Error ? e.message : String(e)}`);
+  }
   filtersHash = await syncFilters(token, session, report);
   await syncTunnels(token, report);
 

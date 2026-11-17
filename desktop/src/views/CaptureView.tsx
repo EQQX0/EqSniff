@@ -18,6 +18,7 @@ import {
 import { EmptyState } from "@/components/ui/EmptyState";
 import { NetworkIcon } from "@/components/ui/icons";
 import { Switch } from "@/components/ui/Switch";
+import { SYNC_DONE } from "@/lib/cloud";
 import { toast } from "@/components/ui/Toast";
 import { NAME_MAX, loadEntries, loadShared, newEntryId, onChange as onIpStoreChange, hiddenIps, isHiddenIp, pastFor, recordSeen, saveEntries, setName, type IpEntry } from "@/lib/ipstore";
 import { labelFor, parseMinecraftLog } from "@/lib/mclog";
@@ -517,6 +518,18 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
   const resetGeo = useCallback(() => {
     asked.current.clear();
     setGeo({});
+  }, []);
+
+  // When the hidden list changes (a sync), packets already on screen for a hidden address go too.
+  useEffect(() => {
+    const purge = () => {
+      if (hiddenIps().size === 0) return;
+      for (const a of [...ipBook.current.keys()]) if (isHiddenIp(a)) ipBook.current.delete(a);
+      setRows((prev) => (prev.some((p) => isHiddenIp(p.src) || isHiddenIp(p.dst)) ? prev.filter((p) => !isHiddenIp(p.src) && !isHiddenIp(p.dst)) : prev));
+      setIpVersion((v) => v + 1);
+    };
+    window.addEventListener(SYNC_DONE, purge);
+    return () => window.removeEventListener(SYNC_DONE, purge);
   }, []);
 
   /** Adds packets from the app side to the table. */

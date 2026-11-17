@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { toast } from "@/components/ui/Toast";
+import { normalizeIp } from "@/lib/ipstore";
 import { Switch } from "@/components/ui/Switch";
 import { addHiddenIp, adminRemoveShared, CloudError, listHiddenIps, removeHiddenIp, type HiddenIp, listProfiles, listShared, setProfileFlags, setProfileStorage, type AdminProfile, type SharedItem } from "@/lib/cloud";
 
@@ -47,16 +48,18 @@ export function AdminView() {
     void refresh();
   }, [refresh]);
 
-  async function act(key: string, task: () => Promise<void>, done?: string) {
+  async function act(key: string, task: () => Promise<void>, done?: string): Promise<boolean> {
     setBusy(key);
     setError(null);
     try {
       await task();
       await refresh();
       if (done) toast(done);
+      return true;
     } catch (e) {
       setError(e instanceof CloudError ? e.message : String(e));
       toast(e instanceof CloudError ? e.message : String(e), { kind: "error" });
+      return false;
     } finally {
       setBusy(null);
     }
@@ -68,12 +71,13 @@ export function AdminView() {
   const removeShared = (s: SharedItem) => act(`r:${s.id}`, () => adminRemoveShared(s.id), "Removed from the shared library");
 
   const addHidden = () => {
-    const address = hideAddr.trim();
-    if (!/^[0-9a-fA-F:.]{2,45}$/.test(address) || !/[.:]/.test(address)) {
+    const address = normalizeIp(hideAddr);
+    if (!address) {
       toast("Enter a valid IPv4 or IPv6 address.", { kind: "error" });
       return;
     }
-    void act("h:add", () => addHiddenIp(address, hideNote.trim().slice(0, 80)), `${address} is now always hidden for every account`).then(() => {
+    void act("h:add", () => addHiddenIp(address, hideNote.trim().slice(0, 80)), `${address} is now always hidden for every account`).then((done) => {
+      if (!done) return;
       setHideAddr("");
       setHideNote("");
     });

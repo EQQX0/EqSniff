@@ -1,3 +1,4 @@
+import { toast } from "@/components/ui/Toast";
 import { api } from "@/lib/api";
 
 /** One row of the IP Storage page. The label given in Capture is stored in `note` (the field keeps its old name so saved lists still load). */
@@ -35,20 +36,52 @@ export const SHARED_STORE = "ip-shared";
 /** Addresses an admin marked "always hidden": never saved to IP Storage, never captured. A local copy of the cloud list. */
 export const HIDDEN_STORE = "ip-hidden";
 let hiddenCache = new Set<string>();
+let hiddenVersion = 0;
+
+/**
+ * The one written form of an IP address: trimmed, lower case, IPv6 shortened. Returns null when it is not an IPv4 or IPv6 address.
+ * Used for the hidden list, so "2001:0DB8::1" and "2001:db8::1" are the same address.
+ */
+export function normalizeIp(input: string): string | null {
+  const a = input.trim().toLowerCase();
+  const v4 = a.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (v4) return v4.slice(1).every((n) => Number(n) <= 255) ? v4.slice(1).map((n) => String(Number(n))).join(".") : null;
+  if (!a.includes(":") || !/^[0-9a-f:.]+$/.test(a)) return null;
+  try {
+    return new URL(`http://[${a}]`).hostname.slice(1, -1);
+  } catch {
+    return null;
+  }
+}
 
 /** True when an admin hid this address for everyone. Answered from memory, so it is safe to call per packet. */
-export const isHiddenIp = (address: string) => hiddenCache.has(address);
+export const isHiddenIp = (address: string) => {
+  if (hiddenCache.size === 0) return false;
+  if (hiddenCache.has(address)) return true;
+  const n = normalizeIp(address);
+  return n !== null && hiddenCache.has(n);
+};
 export const hiddenIps = () => hiddenCache;
 
 export function setHiddenCache(list: string[]) {
-  hiddenCache = new Set(list);
+  hiddenVersion += 1;
+  hiddenCache = new Set(list.map((x) => normalizeIp(x) ?? x));
 }
 
-/** Reads the local copy of the hidden list into memory. */
+/** Reads the local copy of the hidden list into memory. A newer list set while this was reading is kept. */
 export async function loadHidden(): Promise<Set<string>> {
+  const seen = hiddenVersion;
   const v = await api.getStore(HIDDEN_STORE);
-  setHiddenCache(Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+  if (seen === hiddenVersion) setHiddenCache(Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
   return hiddenCache;
+}
+
+// Writes to the list wait for each other, so a sighting written during capture can never overwrite a user's edit.
+let writeChain: Promise<unknown> = Promise.resolve();
+function exclusive<T>(job: () => Promise<T>): Promise<T> {
+  const run = writeChain.then(job, job);
+  writeChain = run.catch(() => {});
+  return run;
 }
 
 export type StorageAccess = "none" | "read" | "edit";
@@ -88,8 +121,12 @@ export async function loadDeleted(): Promise<Record<string, number>> {
 }
 
 /** The one way to write the list. Stamps changed labels, records deletions, then tells the pages and the sync. */
-export async function saveEntries(next: IpEntry[], prev?: IpEntry[]): Promise<IpEntry[]> {
-  next = next.filter((e) => !hiddenCache.has(e.address)); // an always-hidden address is never stored
+export function saveEntries(next: IpEntry[], prev?: IpEntry[]): Promise<IpEntry[]> {
+  return exclusive(() => writeEntries(next, prev));
+}
+
+async function writeEntries(next: IpEntry[], prev?: IpEntry[]): Promise<IpEntry[]> {
+  next = next.filter((e) => !isHiddenIp(e.address)); // an always-hidden address is never stored
   const before = prev ?? (await loadEntries());
   const was = new Map(before.map((e) => [e.address, e]));
   const now = Date.now();
@@ -162,8 +199,12 @@ export interface Sighting {
  * Records that capture just saw these addresses. Only addresses that already have a label are kept.
  * Written straight to the store (a sighting is not a user edit), and only when something worth saving changed.
  */
-export async function recordSeen(sightings: Sighting[], now = Date.now()): Promise<boolean> {
-  if (sightings.length === 0) return false;
+export function recordSeen(sightings: Sighting[], now = Date.now()): Promise<boolean> {
+  if (sightings.length === 0) return Promise.resolve(false);
+  return exclusive(() => writeSeen(sightings, now));
+}
+
+async function writeSeen(sightings: Sighting[], now: number): Promise<boolean> {
   const list = await loadEntries();
   const by = new Map(sightings.map((x) => [x.address, x]));
   let changed = false;
@@ -227,7 +268,7 @@ export function pastFor(list: IpEntry[], address: string): IpEntry[] {
 export async function setName(address: string, name: string): Promise<IpEntry[]> {
   const list = await loadEntries(); // read fresh, so a change made on the IP Storage page is never overwritten
   const clean = name.trim().slice(0, NAME_MAX);
-  if (clean !== "" && hiddenCache.has(address)) throw new Error(`${address} is always hidden by an admin, so it cannot be saved.`);
+  if (clean !== "" && isHiddenIp(address)) throw new Error(`${address} is always hidden by an admin, so it cannot be saved.`);
   const at = list.findIndex((e) => e.address === address);
   const now = Date.now();
   let next: IpEntry[];
@@ -240,7 +281,11 @@ export async function setName(address: string, name: string): Promise<IpEntry[]>
       const prev = e.note && e.note !== clean ? [...(e.prevLabels ?? []), { label: e.note, until: now }].slice(-10) : e.prevLabels;
       return { ...e, note: clean, prevLabels: prev };
     });
-  if (clean !== "") next = capLabel(next, clean, address);
+  if (clean !== "") {
+    const capped = capLabel(next, clean, address);
+    if (capped.length < next.length) toast(`A label keeps at most ${LABEL_IPS_MAX} addresses, so the oldest address of “${clean}” was removed.`, { kind: "error" });
+    next = capped;
+  }
   return saveEntries(next, list);
 }
 

@@ -63,11 +63,22 @@ export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = f
     }
   }
 
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
   const remove = async (f: Filter) => {
-    const before = filters;
     try {
       await onChange(filters.filter((x) => x.id !== f.id));
-      toast(`Deleted “${f.name}”`, { action: { label: "Undo", run: () => void onChange(before).then(() => toast(`Restored “${f.name}”`)).catch((e) => toast(String(e instanceof Error ? e.message : e), { kind: "error" })) } });
+      // Undo adds back only this filter, so anything changed in the meantime stays.
+      toast(`Deleted “${f.name}”`, {
+        action: {
+          label: "Undo",
+          run: () => {
+            const now = filtersRef.current;
+            if (now.some((x) => x.id === f.id)) return;
+            void onChange([...now, f]).then(() => toast(`Restored “${f.name}”`)).catch((e) => toast(String(e instanceof Error ? e.message : e), { kind: "error" }));
+          },
+        },
+      });
     } catch (e) {
       toast(e instanceof Error ? e.message : String(e), { kind: "error" });
     }

@@ -1,6 +1,6 @@
 {
-  "version": "0.4.0",
+  "version": "0.4.1",
   "url": "https://sniff.eqqx2.com/updates/EqNetwork-setup.exe",
-  "sha256": "1702e3e1e53c6cacc9e5b12207bff6b62a8077b6f31cb586898054f4b5baba8d",
-  "notes": "Every action now shows a confirmation toast, with Undo on deletes, and copying an address or label gives feedback. Admins can hide IPs for every account: hidden addresses are never saved to IP Storage and never appear in captures. Labels keep the addresses they used before (more+), and admins can share IP Storage live with chosen accounts."
+  "sha256": "1b58a08fb91f3b9e2aaf52f44a220ba677bf92fb040b4991eb55acfe407b2edc",
+  "notes": "Fixes: hidden IPs match in any written form (IPv6 case and length), failed saves no longer show a success toast, Undo restores only what you deleted, a failing side list no longer blocks filter and tunnel sync, and toasts pause on hover. Rows for an address that becomes hidden leave the capture table at the next sync."
 }
