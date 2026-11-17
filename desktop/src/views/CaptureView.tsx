@@ -87,10 +87,12 @@ interface Props {
   onToggle: (id: string) => void;
   /** Adds or switches on a Hide filter for an ISP. */
   onHideIsp: (isp: string) => Promise<void>;
+  /** Adds or switches on a Show filter for a port. */
+  onShowPort: (port: number) => Promise<void>;
   onSeen: (rows: PacketRow[]) => void;
 }
 
-export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, onSeen }: Props) {
+export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, onShowPort, onSeen }: Props) {
   /** Your own filters plus whatever global filters are in effect. Used for matching only; the quick toggle
    * row below still lists your own filters alone. */
   const effectiveFilters = useMemo(() => (globalFilters.length ? [...filters, ...globalFilters] : filters), [filters, globalFilters]);
@@ -705,6 +707,7 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
             onClear={clearCaptured}
             onDelete={deleteRow}
             onHideIsp={(isp) => void onHideIsp(isp).then(() => setNotice(`Added the filter “Hide ISP: ${isp}” and switched it on. Find it on the Filters page. The Filtered IPs tab no longer lists it.`)).catch((e) => setError(String(e)))}
+            onShowPort={(port) => void onShowPort(port).then(() => setNotice(`Added the filter “Show port ${port}” and switched it on. Find it on the Filters page.`)).catch((e) => setError(String(e)))}
             details={details}
           />
         </Card>

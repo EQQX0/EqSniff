@@ -5,7 +5,7 @@ import { isLocalAddress } from "@/lib/export";
 import { DevicesView, type Seen } from "@/views/DevicesView";
 import { IpStorageView } from "@/views/IpStorageView";
 import { HelpView } from "@/views/HelpView";
-import { blankFilter, fromStored, newId, type Filter } from "@/lib/filters";
+import { blankFilter, fromStored, newId, splitList, type Filter } from "@/lib/filters";
 import { FiltersView } from "@/views/FiltersView";
 import { CaptureView } from "@/views/CaptureView";
 import { VpnView } from "@/views/VpnView";
@@ -152,6 +152,21 @@ export default function App() {
     [saveFilters]
   );
 
+  // Right-click "Show filter: port N": a Show filter for that port, switched on.
+  // Reuses an existing "Show port N" filter if there is one, adding to its port list rather than making a duplicate.
+  const showPort = useCallback(
+    async (port: number) => {
+      const name = `Show port ${port}`;
+      const list = latest.current;
+      const have = list.find((f) => f.name === name);
+      const next = have
+        ? list.map((f) => (f.id === have.id ? { ...f, enabled: true, port: splitList(f.port).includes(String(port)) ? f.port : [...splitList(f.port), String(port)].join(", ") } : f))
+        : [...list, { ...blankFilter(newId()), name, mode: "show" as const, port: String(port), enabled: true }];
+      await saveFilters(next);
+    },
+    [saveFilters]
+  );
+
   const toggleGlobalFilter = useCallback((f: Filter) => setGlobalOverride(f.globalId!, !f.enabled), []);
   const publishGlobal = useCallback((f: Filter) => publishGlobalFilter(f), []);
   const editGlobal = useCallback((id: string, f: Filter) => editGlobalFilter(id, f), []);
@@ -211,7 +226,7 @@ export default function App() {
         <div className="mx-auto h-full w-full max-w-[1400px]">
           {/* Every view stays mounted so a running capture keeps its table while Settings is open. */}
           <div className={pane("capture", "h-full")}>
-            <CaptureView filters={filters} globalFilters={globalFilters} onToggle={toggleFilter} onHideIsp={hideIsp} onSeen={onSeen} />
+            <CaptureView filters={filters} globalFilters={globalFilters} onToggle={toggleFilter} onHideIsp={hideIsp} onShowPort={showPort} onSeen={onSeen} />
           </div>
           <div className={pane("filters")}>
             <FiltersView

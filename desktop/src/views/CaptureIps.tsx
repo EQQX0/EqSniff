@@ -185,6 +185,8 @@ interface Props {
   onDelete: (address: string) => void;
   /** Adds (or switches on) a Hide filter for this ISP in the Filters page. */
   onHideIsp: (isp: string) => void;
+  /** Adds (or switches on) a Show filter for a port, or adds the port to it if it already exists. */
+  onShowPort: (port: number) => void;
   /** The moment to judge online against, in seconds: now while capturing, the newest packet in a saved file. */
   now: number;
   /** City, ISP and VPN flags from the online lookup, keyed by address. */
@@ -196,7 +198,7 @@ function CopiedBadge() {
 }
 
 /** The addresses seen in a capture, each with an editable label saved in IP Storage. */
-export function IpList({ items, names, geo, hidden, onSave, onClear, onDelete, onHideIsp, now, details }: Props) {
+export function IpList({ items, names, geo, hidden, onSave, onClear, onDelete, onHideIsp, onShowPort, now, details }: Props) {
   const [editing, setEditing] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   // Right-click menu and the views it sets up. These only change what this list shows, not the capture.
@@ -447,6 +449,7 @@ export function IpList({ items, names, geo, hidden, onSave, onClear, onDelete, o
         if (!i) return null;
         const isp = ispOf(i.address);
         const d = details[i.address];
+        const ports = [...i.ports].sort((a, b) => a - b).slice(0, 3);
         const row = [names[i.address] ?? "", i.address, [...i.protocols].join("/"), [...i.ports].sort((a, b) => a - b).slice(0, 2).join(","), geo[i.address]?.name ?? "", d?.city ?? "", isp, d ? (d.vpn ? "VPN" : "No") : "", `${i.inbound}/${i.outbound}`].join("\t");
         const item = "block w-full px-4 py-2 text-left text-sm text-text hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-none";
         const danger = "block w-full px-4 py-2 text-left text-sm text-[#ff4d4d] hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-none";
@@ -459,6 +462,10 @@ export function IpList({ items, names, geo, hidden, onSave, onClear, onDelete, o
             {isp && <button role="menuitem" type="button" className={item} onClick={() => { setOnlyIsp(isp); setMenu(null); }}>Show only ISP: {isp}</button>}
             {isp && <button role="menuitem" type="button" className={item} onClick={() => { onHideIsp(isp); setMenu(null); }}>Hide ISP: {isp}</button>}
             <button role="menuitem" type="button" className={item} onClick={() => { setHiddenIps((s) => new Set(s).add(i.address)); setMenu(null); }}>Hide this IP</button>
+            {ports.length > 0 && <div className="my-1 border-t border-border" />}
+            {ports.map((p) => (
+              <button key={p} role="menuitem" type="button" className={item} onClick={() => { onShowPort(p); setMenu(null); }}>Show filter: port {p}</button>
+            ))}
             <div className="my-1 border-t border-border" />
             <button role="menuitem" type="button" className={danger} onClick={() => { onDelete(i.address); setMenu(null); }}>Delete row</button>
             <button role="menuitem" type="button" className={danger} onClick={() => { onClear(); setMenu(null); }}>Clear all</button>
