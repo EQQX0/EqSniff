@@ -321,6 +321,40 @@ main {
 .chip-btn.positive { background: rgba(209, 73, 91, 0.18); color: var(--accent-soft); }
 .chip-btn.negative { background: rgba(255, 141, 151, 0.14); color: var(--danger); }
 
+.panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.panel-head .btn.secondary { flex: 0 0 auto; height: 40px; padding: 0 18px; white-space: nowrap; }
+
+.cell-copy { display: inline-flex; align-items: center; gap: 8px; }
+
+.copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: background 160ms var(--ease-out), color 160ms var(--ease-out);
+}
+.copy-btn:hover, .copy-btn:focus-visible { background: color-mix(in srgb, var(--ink) 10%, transparent); color: var(--ink); }
+.copy-btn svg { width: 16px; height: 16px; }
+.copy-btn.copied { color: var(--accent-soft); }
+
+@media (max-width: 640px) {
+  .panel-head { flex-wrap: wrap; }
+  .panel-head .btn.secondary { width: 100%; }
+}
+
 table {
   width: 100%;
   border-collapse: collapse;

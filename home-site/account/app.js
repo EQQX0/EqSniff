@@ -7,6 +7,7 @@
   const CLOUD_URL = "https://bswzptrmeeobbnthjioz.supabase.co";
   const CLOUD_KEY = "sb_publishable_efMWSpsdDD8crieaCVSlow_PGXONxdi";
   const SESSION_KEY = "eqnetwork-account-session";
+  let currentIps = [];
 
   const $ = (id) => document.getElementById(id);
 
@@ -83,6 +84,66 @@
 
   const splitList = (t) => String(t || "").split(",").map((x) => x.trim()).filter(Boolean);
 
+  const COPY_ICON =
+    '<svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="5.5" y="5.5" width="8.5" height="8.5" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M3.5 10.5V3.5C3.5 2.67157 4.17157 2 5 2H10.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
+
+  function copyButton(value, label) {
+    if (!value) return "";
+    return `<button class="copy-btn" type="button" data-copy="${escapeHtml(value)}" aria-label="Copy ${escapeHtml(label)}" title="Copy ${escapeHtml(label)}">${COPY_ICON}</button>`;
+  }
+
+  function wireCopyButtons(wrap) {
+    wrap.querySelectorAll(".copy-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const value = btn.getAttribute("data-copy") || "";
+        try {
+          await navigator.clipboard.writeText(value);
+        } catch {
+          const ta = document.createElement("textarea");
+          ta.value = value;
+          ta.style.position = "fixed";
+          ta.style.opacity = "0";
+          document.body.appendChild(ta);
+          ta.select();
+          try {
+            document.execCommand("copy");
+          } catch {
+            /* nothing more we can do */
+          }
+          ta.remove();
+        }
+        btn.classList.add("copied");
+        window.clearTimeout(btn._copyTimer);
+        btn._copyTimer = window.setTimeout(() => btn.classList.remove("copied"), 1200);
+      });
+    });
+  }
+
+  function toCsvField(v) {
+    return `"${String(v ?? "").replace(/"/g, '""')}"`;
+  }
+
+  function exportIpsCsv(entries) {
+    const live = entries.filter((e) => !e.deleted);
+    if (!live.length) {
+      window.alert("No saved addresses to export yet.");
+      return;
+    }
+    const lines = [
+      ["Address", "Label", "Updated"].map(toCsvField).join(","),
+      ...live.map((e) => [e.address, e.label || "", e.updated_at || ""].map(toCsvField).join(",")),
+    ];
+    const blob = new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `eqnetwork-ips-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
   /** Short plain-language summary of a filter, mirroring the app's own `describe()`. */
   function describeFilter(f) {
     const side = f.direction === "from" ? "source " : f.direction === "to" ? "destination " : "";
@@ -101,17 +162,17 @@
 
   function renderIps(entries) {
     const wrap = $("ips-table-wrap");
-    const live = entries.filter((e) => !e.deleted);
-    if (live.length === 0) {
+    currentIps = entries.filter((e) => !e.deleted);
+    if (currentIps.length === 0) {
       wrap.innerHTML = '<p class="empty">No saved addresses yet. Add one in the app’s IP Storage page.</p>';
       return;
     }
-    const rows = live
+    const rows = currentIps
       .map(
         (e) => `
       <tr>
-        <td data-label="Address" class="mono">${escapeHtml(e.address)}</td>
-        <td data-label="Label">${escapeHtml(e.label) || '<span style="opacity:.6">No label</span>'}</td>
+        <td data-label="Address" class="mono"><span class="cell-copy"><span>${escapeHtml(e.address)}</span>${copyButton(e.address, "address")}</span></td>
+        <td data-label="Label"><span class="cell-copy"><span>${escapeHtml(e.label) || '<span style="opacity:.6">No label</span>'}</span>${copyButton(e.label, "label")}</span></td>
         <td data-label="Updated">${fmtDate(e.updated_at)}</td>
       </tr>`
       )
@@ -121,6 +182,7 @@
         <thead><tr><th>Address</th><th>Label</th><th>Updated</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>`;
+    wireCopyButtons(wrap);
   }
 
   function renderFilters(filters) {
@@ -337,6 +399,7 @@
   }
 
   function wirePasswordForm(session) {
+    $("password-form-username").value = session.username;
     $("password-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       const newPassword = $("password-new").value;
@@ -372,6 +435,10 @@
     });
   }
 
+  function wireIpsExport() {
+    $("ips-export").addEventListener("click", () => exportIpsCsv(currentIps));
+  }
+
   function wireSignOut() {
     $("sign-out").addEventListener("click", () => {
       clearSession();
@@ -388,6 +455,7 @@
     $("app-shell").hidden = false;
     wireSignOut();
     wireTabs();
+    wireIpsExport();
     wirePasswordForm(session);
     setTab("ips");
     loadDashboard(session);
