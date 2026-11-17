@@ -26,6 +26,15 @@ export function LockIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function CopyIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <rect x="7.5" y="7.5" width="9.5" height="9.5" rx="1.5" />
+      <path d="M4.5 12.5V5.5a2 2 0 0 1 2-2h7" />
+    </Base>
+  );
+}
+
 export function BellIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <Base {...props}>

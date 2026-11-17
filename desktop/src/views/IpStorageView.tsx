@@ -6,11 +6,11 @@ import { Checkbox } from "@/components/ui/Checkbox";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import { BookmarkIcon } from "@/components/ui/icons";
+import { BookmarkIcon, CopyIcon } from "@/components/ui/icons";
 
 import { IP_STORE, isEntryArray, newEntryId, onChange, saveEntries, type IpEntry } from "@/lib/ipstore";
 import { CloudError, syncNow } from "@/lib/cloud";
-import { cell, download } from "@/lib/export";
+import { cell, copyText, download } from "@/lib/export";
 
 export type { IpEntry };
 
@@ -26,6 +26,13 @@ export function IpStorageView() {
   const [modal, setModal] = useState<{ mode: "add" | "edit"; entry: IpEntry } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<IpEntry[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  function handleCopy(key: string, value: string) {
+    void copyText(value);
+    setCopiedKey(key);
+    window.setTimeout(() => setCopiedKey((k) => (k === key ? null : k)), 1200);
+  }
 
   useEffect(() => {
     const load = () =>
@@ -224,8 +231,30 @@ export function IpStorageView() {
                       aria-label={`Select ${e.address}`}
                     />
                   </td>
-                  <td className="px-3 py-2 font-mono text-xs text-text">{e.address}</td>
-                  <td className="max-w-sm px-3 py-2 text-sm text-muted">{e.note || <span className="italic">No label</span>}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-text">
+                    <span className="inline-flex items-center gap-1.5">
+                      {e.address}
+                      <CopyButton
+                        value={e.address}
+                        label="address"
+                        copied={copiedKey === `${e.id}-address`}
+                        onCopy={() => handleCopy(`${e.id}-address`, e.address)}
+                      />
+                    </span>
+                  </td>
+                  <td className="max-w-sm px-3 py-2 text-sm text-muted">
+                    <span className="inline-flex items-center gap-1.5">
+                      {e.note || <span className="italic">No label</span>}
+                      {e.note && (
+                        <CopyButton
+                          value={e.note}
+                          label="label"
+                          copied={copiedKey === `${e.id}-note`}
+                          onCopy={() => handleCopy(`${e.id}-note`, e.note)}
+                        />
+                      )}
+                    </span>
+                  </td>
                   <td className="px-3 py-2 text-xs text-muted">{new Date(e.createdAt).toLocaleDateString()}</td>
                   <td className="px-3 py-1.5 text-right">
                     <div className="flex justify-end gap-2">
@@ -283,6 +312,31 @@ export function IpStorageView() {
         )}
       </Modal>
     </div>
+  );
+}
+
+function CopyButton({
+  value,
+  label,
+  copied,
+  onCopy,
+}: {
+  value: string;
+  label: string;
+  copied: boolean;
+  onCopy: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onCopy}
+      aria-label={`Copy ${label}`}
+      title={`Copy ${label}`}
+      className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-white/10
+        ${copied ? "text-accent-soft" : "text-muted hover:text-text"}`}
+    >
+      <CopyIcon className="h-3.5 w-3.5" />
+    </button>
   );
 }
 
