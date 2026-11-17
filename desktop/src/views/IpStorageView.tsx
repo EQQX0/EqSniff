@@ -9,7 +9,7 @@ import { Modal } from "@/components/ui/Modal";
 import { BookmarkIcon, CopyIcon } from "@/components/ui/icons";
 
 import { IP_STORE, isEntryArray, newEntryId, onChange, saveEntries, type IpEntry } from "@/lib/ipstore";
-import { CloudError, syncNow } from "@/lib/cloud";
+import { SYNC_DONE } from "@/lib/cloud";
 import { cell, copyText, download } from "@/lib/export";
 
 export type { IpEntry };
@@ -21,8 +21,6 @@ export function IpStorageView() {
   const [entries, setEntries] = useState<IpEntry[]>([]);
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [syncNote, setSyncNote] = useState<string | null>(null);
-  const [syncing, setSyncing] = useState(false);
   const [modal, setModal] = useState<{ mode: "add" | "edit"; entry: IpEntry } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<IpEntry[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -41,7 +39,12 @@ export function IpStorageView() {
         .then((v) => isEntryArray(v) && setEntries(v))
         .catch((e) => setError(String(e)));
     load();
-    return onChange(load); // a label added on the Capture page appears here at once
+    window.addEventListener(SYNC_DONE, load); // a change pulled from the account in the background
+    const off = onChange(load); // a label added on the Capture page appears here at once
+    return () => {
+      window.removeEventListener(SYNC_DONE, load);
+      off();
+    };
   }, []);
 
   async function persist(next: IpEntry[]) {
@@ -51,20 +54,6 @@ export function IpStorageView() {
       setError(null);
     } catch (e) {
       setError(String(e));
-    }
-  }
-
-  async function sync() {
-    setSyncing(true);
-    setError(null);
-    setSyncNote(null);
-    try {
-      const r = await syncNow();
-      setSyncNote(`Synced. ${r.added} added here, ${r.sent} sent, ${r.removed} removed from the account.`);
-    } catch (e) {
-      setError(e instanceof CloudError ? e.message : String(e));
-    } finally {
-      setSyncing(false);
     }
   }
 
@@ -149,8 +138,8 @@ export function IpStorageView() {
         <h1 className="text-xl font-bold text-text">IP Storage</h1>
         <p className="mt-1 text-sm text-muted">
           Your own saved addresses and labels. Jot down a router, a server, or any address you want to remember, with a
-          label next to it. Not used by any capture filter. If you're signed in (Settings &gt; Account), this list syncs
-          with your account automatically, or press Sync to pull in a change made elsewhere right away.
+          label next to it. Not used by any capture filter. If you're signed in (Settings &gt; Account), this list stays in sync
+          with your account automatically, within about 30 seconds of a change on another computer.
         </p>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -163,9 +152,6 @@ export function IpStorageView() {
           className="w-full max-w-xs"
         />
         <div className="flex gap-2">
-          <Button variant="secondary" onClick={sync} loading={syncing}>
-            Sync
-          </Button>
           <Button variant="secondary" disabled={filtered.length === 0} onClick={exportEntries}>
             Export
           </Button>
@@ -173,7 +159,6 @@ export function IpStorageView() {
         </div>
       </div>
       {error && <p role="alert" className="text-sm text-danger">{error}</p>}
-      {syncNote && <p role="status" className="text-sm text-muted">{syncNote}</p>}
       {selected.size > 0 && (
         <div className="flex items-center justify-between rounded-md border border-border bg-surface px-3 py-2">
           <span className="text-sm text-text">{selected.size} selected</span>

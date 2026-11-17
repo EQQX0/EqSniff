@@ -408,16 +408,31 @@ async function doSync(): Promise<SyncReport> {
  */
 export function startAutoSync(onResult?: (r: SyncReport | CloudError) => void): () => void {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let running = false;
+  let lastRun = 0;
   const run = async () => {
+    if (running) return; // never overlap two syncs
+    running = true;
     try {
       if (!(await loadSession())) return;
-      onResult?.(await syncNow());
+      const r = await syncNow();
+      lastRun = Date.now();
+      window.dispatchEvent(new Event(SYNC_DONE)); // screens showing synced lists reload
+      onResult?.(r);
     } catch (e) {
       onResult?.(e instanceof CloudError ? e : new CloudError(String(e)));
+    } finally {
+      running = false;
     }
   };
+  // Back in the app after being away: catch up at once (at most every 10 seconds).
+  const onFocus = () => {
+    if (document.visibilityState === "visible" && Date.now() - lastRun > 10_000) void run();
+  };
   const first = setTimeout(run, 1500);
-  const every = setInterval(run, 5 * 60_000);
+  const every = setInterval(run, 30_000);
+  window.addEventListener("focus", onFocus);
+  document.addEventListener("visibilitychange", onFocus);
   const off = onEdited(() => {
     clearTimeout(timer);
     timer = setTimeout(run, 3000);
@@ -426,9 +441,14 @@ export function startAutoSync(onResult?: (r: SyncReport | CloudError) => void): 
     clearTimeout(first);
     clearTimeout(timer);
     clearInterval(every);
+    window.removeEventListener("focus", onFocus);
+    document.removeEventListener("visibilitychange", onFocus);
     off();
   };
 }
+
+/** Fired after every background sync, so screens that show synced lists can reload them. */
+export const SYNC_DONE = "eqnet-sync-done";
 
 // ---- shared library: tunnels and filters shared with every signed-in account ----
 

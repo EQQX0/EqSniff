@@ -499,12 +499,11 @@ export function IpList({ items, names, geo, hidden, hiddenBy, showedBy, showFilt
                       {copiedCell === `${i.address}:io` ? <CopiedBadge /> : `${i.inbound.toLocaleString()} / ${i.outbound.toLocaleString()}`}
                     </td>
                     {(() => {
-                      const note = isHidden
-                        ? hiddenBy?.[i.address]?.join(", ") || "Hidden"
-                        : showFiltersOn
-                          ? showedBy?.[i.address]?.join(", ") || ""
-                          : "No Show filter on";
-                      return <td className={`truncate px-3 py-1.5 ${isHidden ? "text-muted" : showFiltersOn ? "text-text" : "text-muted/70"}`} title={note}>{note}</td>;
+                      // Only the highest-priority filter is shown; the hover text lists every filter that matched, in priority order.
+                      const all = isHidden ? hiddenBy?.[i.address] : showFiltersOn ? showedBy?.[i.address] : undefined;
+                      const note = isHidden ? all?.[0] || "Hidden" : showFiltersOn ? all?.[0] || "" : "No Show filter on";
+                      const tip = all && all.length > 1 ? `${all[0]} (highest priority). Also matched: ${all.slice(1).join(", ")}` : note;
+                      return <td className={`truncate px-3 py-1.5 ${isHidden ? "text-muted" : showFiltersOn ? "text-text" : "text-muted/70"}`} title={tip}>{note}</td>;
                     })()}
                   </tr>
                 );

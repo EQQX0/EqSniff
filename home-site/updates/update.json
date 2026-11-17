@@ -1,6 +1,6 @@
 {
-  "version": "0.2.36",
+  "version": "0.3.0",
   "url": "https://sniff.eqqx2.com/updates/EqNetwork-setup.exe",
-  "sha256": "ffc35a0e2590118e479db9502c9ed6fd56c7e09bd4ff91b8dbbec875bfe2ad45",
-  "notes": "Global filters: set by an admin once in the header, on by default for everyone until you turn one off for yourself, with one admin-set order that ranks above your own filters. Filters are no longer shared. You can now share a tunnel or your IP Storage with one named account."
+  "sha256": "685cc02f8385493c6c9f4e40d674a236fe4e9606f7e843f59e33eb7ad94a3a00",
+  "notes": "Sync is now always on while you are signed in: it runs every 30 seconds and whenever you return to the app, so the Sync buttons are gone. The Filter column in the IP lists shows only the highest-priority filter, with the others on hover."
 }

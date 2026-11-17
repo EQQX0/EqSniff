@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
-import { CloudError, GLOBAL_FILTERS_SYNCED, loadSession, renameUser, resetPassword, signIn, signOut, signOutIfDisabled, signUp, syncNow, type CloudSession } from "@/lib/cloud";
+import { CloudError, GLOBAL_FILTERS_SYNCED, loadSession, renameUser, resetPassword, signIn, signOut, signOutIfDisabled, signUp, SYNC_DONE, type CloudSession } from "@/lib/cloud";
 import { SharedLibrary } from "@/components/SharedLibrary";
 import { BackupCard } from "@/components/BackupCard";
 
@@ -95,12 +95,12 @@ export function CloudSync() {
     });
   };
 
-  const syncAgain = () =>
-    run(async () => {
-      const r = await syncNow();
-      setNote([`Synced. ${r.added} added here, ${r.sent} sent, ${r.removed} removed from the account.`, ...r.notes].join(" "));
-      setSession(await loadSession());
-    });
+  // Sync runs by itself; this just keeps the "Last sync" time current.
+  useEffect(() => {
+    const refresh = () => void loadSession().then((s) => s && setSession(s));
+    window.addEventListener(SYNC_DONE, refresh);
+    return () => window.removeEventListener(SYNC_DONE, refresh);
+  }, []);
 
   const rename = (e: FormEvent) => {
     e.preventDefault();
@@ -167,9 +167,6 @@ export function CloudSync() {
               </Button>
             </form>
             <div className="flex flex-wrap gap-3">
-              <Button size="sm" variant="secondary" onClick={syncAgain} loading={busy}>
-                Sync now
-              </Button>
               <Button size="sm" variant="secondary" onClick={leave}>
                 Sign out
               </Button>
