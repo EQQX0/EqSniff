@@ -9,8 +9,8 @@ import { Modal } from "@/components/ui/Modal";
 import { BookmarkIcon, CopyIcon } from "@/components/ui/icons";
 
 import { toast } from "@/components/ui/Toast";
-import { IP_STORE, ago, groupByLabel, isEntryArray, isHiddenIp, loadShared, newEntryId, onChange, renameLabel, saveEntries, setFavorite, setLink, type IpEntry, type LabelGroup, type SharedStorage } from "@/lib/ipstore";
-import { SYNC_DONE, deleteSharedEntry, saveSharedEntry } from "@/lib/cloud";
+import { IP_STORE, ago, groupByLabel, isEntryArray, isHiddenIp, loadShared, loadSharedFavs, setSharedFav, newEntryId, onChange, renameLabel, saveEntries, setFavorite, setLink, type IpEntry, type IpSort, type IpSortKey, type LabelGroup, type SharedStorage } from "@/lib/ipstore";
+import { SYNC_DONE, deleteSharedEntry, loadSession, saveSharedEntry } from "@/lib/cloud";
 import { cell, copyText, download } from "@/lib/export";
 
 export type { IpEntry };
@@ -31,6 +31,35 @@ export function IpStorageView() {
   const [shared, setShared] = useState<SharedStorage>({ access: "none", owner: "", entries: [] });
   const [sharedModal, setSharedModal] = useState<{ mode: "add" | "edit"; entry: IpEntry } | null>(null);
   const [sharedDelete, setSharedDelete] = useState<IpEntry | null>(null);
+  const [sort, setSort] = useState<IpSort | null>(null);
+  const [userId, setUserId] = useState("");
+  const [sharedFavs, setSharedFavs] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    void loadSession()
+      .then(async (s) => {
+        if (!s?.userId) return;
+        setUserId(s.userId);
+        setSharedFavs(await loadSharedFavs(s.userId));
+      })
+      .catch(() => {});
+  }, []);
+  /** Click a heading to sort A to Z, again for Z to A, a third time to go back to newest first. Favourites stay on top either way. */
+  const toggleSort = (key: IpSortKey) => setSort((s) => (s?.key !== key ? { key, dir: "asc" } : s.dir === "asc" ? { key, dir: "desc" } : null));
+  const sortTh = (key: IpSortKey, text: string) => (
+    <th scope="col" className="px-3 py-2 font-semibold" aria-sort={sort?.key === key ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}>
+      <button
+        type="button"
+        onClick={() => toggleSort(key)}
+        title={`Sort by ${text.toLowerCase()}`}
+        className="-mx-1 inline-flex items-center gap-1 rounded px-1 font-semibold hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
+      >
+        {text}
+        <span aria-hidden className={sort?.key === key ? "text-text" : "text-muted/40"}>
+          {sort?.key === key ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}
+        </span>
+      </button>
+    </th>
+  );
 
   function handleCopy(key: string, value: string) {
     void copyText(value).then((ok) =>
@@ -138,14 +167,14 @@ export function IpStorageView() {
   const matches = (e: IpEntry) =>
     q === "" || [e.address, e.note, e.place ?? "", e.isp ?? "", ...(e.prevLabels ?? []).map((p) => p.label)].some((v) => v.toLowerCase().includes(q));
   const groups = useMemo(
-    () => groupByLabel(entries).filter((g) => [g.current, ...g.past].some(matches)),
+    () => groupByLabel(entries, { sort }).filter((g) => [g.current, ...g.past].some(matches)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [entries, q]
+    [entries, q, sort]
   );
   const filtered = useMemo(() => groups.flatMap((g) => [g.current, ...g.past]), [groups]);
-  const sharedGroups = useMemo(() => groupByLabel(shared.entries).filter((g) => [g.current, ...g.past].some(matches)),
+  const sharedGroups = useMemo(() => groupByLabel(shared.entries, { sort, isFav: (e) => sharedFavs.has(e.address) }).filter((g) => [g.current, ...g.past].some(matches)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [shared.entries, q]);
+    [shared.entries, q, sort, sharedFavs]);
 
   useEffect(() => {
     const ids = new Set(entries.map((e) => e.id));
@@ -288,10 +317,10 @@ export function IpStorageView() {
                     aria-label="Select all addresses"
                   />
                 </th>
-                <th scope="col" className="px-3 py-2 font-semibold">Address</th>
-                <th scope="col" className="px-3 py-2 font-semibold">Label</th>
-                <th scope="col" className="px-3 py-2 font-semibold">Last seen</th>
-                <th scope="col" className="px-3 py-2 font-semibold">First seen</th>
+                {sortTh("address", "Address")}
+                {sortTh("label", "Label")}
+                {sortTh("lastSeen", "Last seen")}
+                {sortTh("firstSeen", "First seen")}
                 <th scope="col" className="px-3 py-2"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
@@ -339,10 +368,10 @@ export function IpStorageView() {
             <table className="w-full text-left text-sm">
               <thead className="text-muted">
                 <tr className="border-b border-border">
-                  <th scope="col" className="px-3 py-2 font-semibold">Address</th>
-                  <th scope="col" className="px-3 py-2 font-semibold">Label</th>
-                  <th scope="col" className="px-3 py-2 font-semibold">Last seen</th>
-                  <th scope="col" className="px-3 py-2 font-semibold">First seen</th>
+                  {sortTh("address", "Address")}
+                  {sortTh("label", "Label")}
+                  {sortTh("lastSeen", "Last seen")}
+                  {sortTh("firstSeen", "First seen")}
                   <th scope="col" className="px-3 py-2"><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
@@ -358,6 +387,18 @@ export function IpStorageView() {
                     onCopy={handleCopy}
                     onEdit={shared.access === "edit" ? (e) => setSharedModal({ mode: "edit", entry: e }) : undefined}
                     onDelete={shared.access === "edit" ? (e) => setSharedDelete(e) : undefined}
+                    isFav={(e) => sharedFavs.has(e.address)}
+                    onFavorite={
+                      userId
+                        ? (e) =>
+                            void setSharedFav(userId, e.address, !sharedFavs.has(e.address))
+                              .then((set) => {
+                                setSharedFavs(set);
+                                toast(set.has(e.address) ? `Added ${e.address} to your favourites` : `Removed ${e.address} from your favourites`);
+                              })
+                              .catch((err) => toast(String(err), { kind: "error" }))
+                        : undefined
+                    }
                   />
                 ))}
               </tbody>
@@ -579,6 +620,7 @@ function GroupRows({
   onDelete,
   onFavorite,
   onRename,
+  isFav = (e) => !!e.favorite,
 }: {
   g: LabelGroup;
   entries: IpEntry[];
@@ -592,6 +634,8 @@ function GroupRows({
   onDelete?: (e: IpEntry) => void;
   onFavorite?: (e: IpEntry) => void;
   onRename?: (label: string) => void;
+  /** Whether this entry is a favourite for the person looking. The shared list uses their own stars, not the admin's. */
+  isFav?: (e: IpEntry) => boolean;
 }) {
   const e = g.current;
   const linked = e.groupKey ? [...new Set(entries.filter((x) => x.groupKey === e.groupKey && x.note !== e.note && x.note).map((x) => x.note))] : [];
@@ -623,10 +667,10 @@ function GroupRows({
                 <button
                   type="button"
                   onClick={() => onFavorite(x)}
-                  aria-pressed={!!x.favorite}
-                  aria-label={`${x.favorite ? "Unfavourite" : "Favourite"} ${x.note || x.address}`}
-                  title={x.favorite ? "Favourite. Click to remove." : "Mark as a favourite (kept at the top)"}
-                  className={`text-base leading-none ${x.favorite ? "text-[#ffd34d]" : "text-muted/40 hover:text-muted"}`}
+                  aria-pressed={isFav(x)}
+                  aria-label={`${isFav(x) ? "Unfavourite" : "Favourite"} ${x.note || x.address}`}
+                  title={isFav(x) ? "Favourite. Click to remove." : "Mark as a favourite (kept at the top)"}
+                  className={`text-base leading-none ${isFav(x) ? "text-[#ffd34d]" : "text-muted/40 hover:text-muted"}`}
                 >
                   {star}
                 </button>

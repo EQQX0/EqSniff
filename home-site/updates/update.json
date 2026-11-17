@@ -1,6 +1,6 @@
 {
-  "version": "0.4.3",
+  "version": "0.4.4",
   "url": "https://sniff.eqqx2.com/updates/EqNetwork-setup.exe",
-  "sha256": "8c1d8f2383210728a5be5a8353bf3627acdbff427b50f16f0d2e812c4d7f062e",
-  "notes": "Fix: labels show in Capture again (the shared and hidden IP lists could not be read, which dropped your labels), and the hidden list now survives a restart. IP Storage shows First seen instead of Added, and the detail line under a label shows only country and city."
+  "sha256": "da5e57a0fa776b6ab8d1d5dc1cc1555227a8e6f957081993b676c7ff24376236",
+  "notes": "IP Storage: click Address, Label, Last seen or First seen to sort (favourites always stay on top). The shared list now shows your own favourites, not the admin's."
 }

@@ -241,8 +241,29 @@ export interface LabelGroup {
 
 const recency = (e: IpEntry) => e.lastSeen ?? e.updatedAt ?? e.createdAt;
 
-/** Groups the list by label. Entries without a label each stand alone under an empty label. Favourites first, then newest. */
-export function groupByLabel(list: IpEntry[]): LabelGroup[] {
+export type IpSortKey = "address" | "label" | "lastSeen" | "firstSeen";
+export interface IpSort {
+  key: IpSortKey;
+  dir: "asc" | "desc";
+}
+
+/** Orders addresses numerically (10.0.0.9 before 10.0.0.10); anything else falls back to text. */
+function addressCompare(a: string, b: string): number {
+  const pa = a.split("."), pb = b.split(".");
+  if (pa.length === 4 && pb.length === 4 && [...pa, ...pb].every((p) => /^\d+$/.test(p))) {
+    for (let i = 0; i < 4; i++) if (Number(pa[i]) !== Number(pb[i])) return Number(pa[i]) - Number(pb[i]);
+    return 0;
+  }
+  return a.localeCompare(b);
+}
+
+/**
+ * Groups the list by label. Entries without a label each stand alone under an empty label.
+ * Favourites always come first; inside the favourites and inside the rest the order is the chosen `sort`
+ * (newest first when none). `isFav` lets a list use the viewer's own favourites instead of the stored flag.
+ */
+export function groupByLabel(list: IpEntry[], opts: { sort?: IpSort | null; isFav?: (e: IpEntry) => boolean } = {}): LabelGroup[] {
+  const isFav = opts.isFav ?? ((e: IpEntry) => !!e.favorite);
   const map = new Map<string, IpEntry[]>();
   const loose: IpEntry[] = [];
   for (const e of list) {
@@ -254,7 +275,48 @@ export function groupByLabel(list: IpEntry[]): LabelGroup[] {
     return { label, current: sorted[0], past: sorted.slice(1) };
   });
   for (const e of loose) groups.push({ label: "", current: e, past: [] });
-  return groups.sort((a, b) => Number(!!b.current.favorite) - Number(!!a.current.favorite) || recency(b.current) - recency(a.current));
+  const { sort } = opts;
+  const order = (a: LabelGroup, b: LabelGroup): number => {
+    if (!sort) return recency(b.current) - recency(a.current);
+    const s = sort.dir === "asc" ? 1 : -1;
+    const x = a.current, y = b.current;
+    if (sort.key === "lastSeen" || sort.key === "firstSeen") {
+      const vx = sort.key === "lastSeen" ? x.lastSeen : x.firstSeen;
+      const vy = sort.key === "lastSeen" ? y.lastSeen : y.firstSeen;
+      if (vx === undefined && vy === undefined) return 0;
+      if (vx === undefined) return 1; // never seen goes last in either direction
+      if (vy === undefined) return -1;
+      return (vx - vy) * s;
+    }
+    if (sort.key === "label") {
+      if (!x.note && !y.note) return 0;
+      if (!x.note) return 1;
+      if (!y.note) return -1;
+      return x.note.localeCompare(y.note, undefined, { sensitivity: "base" }) * s;
+    }
+    return addressCompare(x.address, y.address) * s;
+  };
+  return groups.sort((a, b) => Number(isFav(b.current)) - Number(isFav(a.current)) || order(a, b));
+}
+
+/** Favourites for the admin's shared list. Each account keeps its own, on this computer, so one account's stars never show for another. */
+export const SHARED_FAVS = "ip-shared-favs";
+
+export async function loadSharedFavs(userId: string): Promise<Set<string>> {
+  const v = await api.getStore(SHARED_FAVS);
+  const mine = v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>)[userId] : undefined;
+  return new Set(Array.isArray(mine) ? mine.filter((x): x is string => typeof x === "string") : []);
+}
+
+export async function setSharedFav(userId: string, address: string, on: boolean): Promise<Set<string>> {
+  const v = await api.getStore(SHARED_FAVS);
+  const all: Record<string, string[]> = v && typeof v === "object" && !Array.isArray(v) ? { ...(v as Record<string, string[]>) } : {};
+  const set = new Set(Array.isArray(all[userId]) ? all[userId] : []);
+  if (on) set.add(address);
+  else set.delete(address);
+  all[userId] = [...set];
+  await api.saveStore(SHARED_FAVS, all);
+  return set;
 }
 
 /** The other addresses that carry (or once carried) the same label as `address`, newest first. */
