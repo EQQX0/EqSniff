@@ -1,6 +1,6 @@
 {
-  "version": "0.2.30",
+  "version": "0.2.31",
   "url": "https://sniff.eqqx2.com/updates/EqNetwork-setup.exe",
-  "sha256": "e0067b9b37c2b77acad6bec9b8de9b63dce94a2f8b6c51602b15dc231a0eb266",
-  "notes": "The app now checks for updates at sniff.eqqx2.com instead of updates.eqqx2.com."
+  "sha256": "558cc3d5cba1af78cfebd2c42f8c9dfa83978fed7044e2ada5564f9a9a67048b",
+  "notes": "Copy buttons for addresses and labels in IP Storage. Fixed the likely-host crown showing on an IP hidden by a filter."
 }

@@ -242,7 +242,8 @@ export function IpList({ items, names, geo, hidden, onSave, onClear, onDelete, o
   }, [items, names, query, now, hiddenIps, onlyIsp, details]);
   const onlineCount = useMemo(() => items.filter((i) => isOnline(i, now)).length, [items, now]);
   const hostState = useRef<HostState>(newHostState());
-  const hostAddress = useMemo(() => pickHost(items, now, hostState.current), [items, now]);
+  const hostCandidates = useMemo(() => (hidden && hidden.size > 0 ? items.filter((i) => !hidden.has(i.address)) : items), [items, hidden]);
+  const hostAddress = useMemo(() => pickHost(hostCandidates, now, hostState.current), [hostCandidates, now]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
