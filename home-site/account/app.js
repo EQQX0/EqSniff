@@ -160,7 +160,28 @@
     return parts.length ? parts.join(" · ") : "Matches everything";
   }
 
-  function renderIps(entries) {
+  /** Which of the saved filters would hide this address, and which would show it — matched by the filter's own address list. */
+  function matchingFilters(address, filters) {
+    const addr = String(address || "").trim().toLowerCase();
+    const hide = [];
+    const show = [];
+    for (const f of filters || []) {
+      const addrs = splitList(f.address).map((a) => a.toLowerCase());
+      if (!addrs.includes(addr)) continue;
+      const label = (f.name || "Untitled") + (f.enabled ? "" : " (off)");
+      (f.mode === "hide" ? hide : show).push(label);
+    }
+    return { hide, show };
+  }
+
+  function renderFilterMatch(address, filters) {
+    const { hide, show } = matchingFilters(address, filters);
+    if (!hide.length && !show.length) return '<span style="opacity:.6">No matching filter</span>';
+    const pills = (names, cls) => names.map((n) => `<span class="pill ${cls}">${escapeHtml(n)}</span>`).join("");
+    return `<span class="filter-match">${pills(hide, "hide")}${pills(show, "show")}</span>`;
+  }
+
+  function renderIps(entries, filters) {
     const wrap = $("ips-table-wrap");
     currentIps = entries.filter((e) => !e.deleted);
     if (currentIps.length === 0) {
@@ -173,13 +194,14 @@
       <tr>
         <td data-label="Address" class="mono"><span class="cell-copy"><span>${escapeHtml(e.address)}</span>${copyButton(e.address, "address")}</span></td>
         <td data-label="Label"><span class="cell-copy"><span>${escapeHtml(e.label) || '<span style="opacity:.6">No label</span>'}</span>${copyButton(e.label, "label")}</span></td>
+        <td data-label="Filters">${renderFilterMatch(e.address, filters)}</td>
         <td data-label="Updated">${fmtDate(e.updated_at)}</td>
       </tr>`
       )
       .join("");
     wrap.innerHTML = `
       <table>
-        <thead><tr><th>Address</th><th>Label</th><th>Updated</th></tr></thead>
+        <thead><tr><th>Address</th><th>Label</th><th>Filters</th><th>Updated</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>`;
     wireCopyButtons(wrap);
@@ -377,7 +399,7 @@
       }
 
       renderAccount(profile);
-      renderIps(ips);
+      renderIps(ips, filters);
       renderFilters(filters);
 
       $("loading").hidden = true;

@@ -393,6 +393,12 @@ tbody tr:hover td { background: color-mix(in srgb, var(--ink) 4%, transparent); 
 .pill.hide { background: var(--danger); color: #241307; }
 .pill.show { background: var(--field-1); color: var(--field-1-ink); }
 
+.filter-match {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .empty {
   text-align: center;
   color: var(--muted);
