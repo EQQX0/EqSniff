@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type UIEvent } from "react";
 import { api, type Adapter, type Country, type IpDetails, type PacketRow } from "@/lib/api";
-import { isIspFilter, matches, matchesAny, type Filter, type Lookup } from "@/lib/filters";
+import { isIspFilter, matches, matchesAny, seedFromRow, type Filter, type Lookup } from "@/lib/filters";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import {
@@ -87,12 +87,31 @@ interface Props {
   onToggle: (id: string) => void;
   /** Adds or switches on a Hide filter for an ISP. */
   onHideIsp: (isp: string) => Promise<void>;
+  /** Opens the Filters page's new-filter window, filled in from a row. */
+  onCreateFilter: (seed: Partial<Filter>) => void;
   /** Adds or switches on a Show filter for a port. */
   onShowPort: (port: number) => Promise<void>;
   onSeen: (rows: PacketRow[]) => void;
 }
 
-export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, onShowPort, onSeen }: Props) {
+export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, onShowPort, onCreateFilter, onSeen }: Props) {
+  // Right-click menu on a packet row.
+  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; row: PacketRow } | null>(null);
+  useEffect(() => {
+    if (!rowMenu) return;
+    const close = () => setRowMenu(null);
+    const key = (e: KeyboardEvent) => e.key === "Escape" && close();
+    window.addEventListener("click", close);
+    window.addEventListener("resize", close);
+    window.addEventListener("keydown", key);
+    window.addEventListener("scroll", close, true);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("keydown", key);
+      window.removeEventListener("scroll", close, true);
+    };
+  }, [rowMenu]);
   /** Your own filters plus whatever global filters are in effect. Used for matching only; the quick toggle
    * row below still lists your own filters alone. */
   const effectiveFilters = useMemo(() => (globalFilters.length ? [...filters, ...globalFilters] : filters), [filters, globalFilters]);
@@ -224,6 +243,23 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, rows, allIps, filteredIps, effectiveFilters, lookup]);
+
+  /** For each address that gets through the filters, the Show filters that let it in. Empty list with no Show filter on means nothing was limiting it. */
+  const showedBy = useMemo(() => {
+    const out: Record<string, string[]> = {};
+    const show = effectiveFilters.filter((f) => f.enabled && f.mode !== "hide");
+    if (show.length === 0) return out;
+    const kept = new Set(filteredIps.map((i) => i.address));
+    for (const r of rows) {
+      const far = farOf(r);
+      if (!kept.has(far)) continue;
+      const list = (out[far] ??= []);
+      if (list.length === show.length) continue;
+      for (const f of show) if (!list.includes(f.name) && matches(f, r, lookup)) list.push(f.name);
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, filteredIps, effectiveFilters, lookup]);
 
   const shown = useMemo(() => {
     let kept = tab === "all" ? rows : filteredRows;
@@ -746,11 +782,14 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
             geo={geo}
             hidden={tab === "all" ? new Set(allIps.map((i) => i.address).filter((a) => !filteredIps.some((f) => f.address === a))) : undefined}
             hiddenBy={hiddenBy}
+            showedBy={showedBy}
+            showFiltersOn={effectiveFilters.some((f) => f.enabled && f.mode !== "hide")}
             onSave={saveName}
             now={fromFile ? allIps.reduce((m, i) => Math.max(m, i.last), 0) : clockNow}
             onClear={clearCaptured}
             onDelete={deleteRow}
             onHideIsp={(isp) => void onHideIsp(isp).then(() => setNotice(`Added the filter “Hide ISP: ${isp}” and switched it on. Find it on the Filters page. The Filtered IPs tab no longer lists it.`)).catch((e) => setError(String(e)))}
+            onCreateFilter={onCreateFilter}
             onShowPort={(port) => void onShowPort(port).then(() => setNotice(`Added the filter “Show port ${port}” and switched it on. Find it on the Filters page.`)).catch((e) => setError(String(e)))}
             details={details}
           />
@@ -832,7 +871,14 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
                 });
                 const port = (n: number | null) => (n === null ? "" : String(n));
                 return (
-                  <tr key={r.id} className="border-b border-border transition-colors duration-fast last:border-0 hover:bg-white/[0.05]">
+                  <tr
+                    key={r.id}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      setRowMenu({ x: Math.min(e.clientX, window.innerWidth - 260), y: Math.min(e.clientY, window.innerHeight - 90), row: r });
+                    }}
+                    className="border-b border-border transition-colors duration-fast last:border-0 hover:bg-white/[0.05]"
+                  >
                     {show("name") && (
                       <td className="max-w-[14rem] px-3 py-1.5">
                         {editing === r.id ? (
@@ -906,6 +952,26 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
         </div>
       </Card>
       )}
+      {rowMenu && (() => {
+        const r = rowMenu.row;
+        const far = isLocalAddress(r.src) ? r.dst : r.src;
+        const item = "block w-full px-4 py-2 text-left text-sm text-text hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-none";
+        return (
+          <div role="menu" aria-label={`Actions for the packet with ${far}`} style={{ left: rowMenu.x, top: rowMenu.y }} onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()} className="fixed z-50 w-60 overflow-hidden rounded-lg border border-border bg-[#1c0b11] py-1 shadow-xl">
+            <button
+              role="menuitem"
+              type="button"
+              className={item}
+              onClick={() => {
+                onCreateFilter(seedFromRow(far, [r.protocol], [r.srcPort, r.dstPort], names[far]));
+                setRowMenu(null);
+              }}
+            >
+              Create filter from this packet
+            </button>
+          </div>
+        );
+      })()}
 
     </div>
   );

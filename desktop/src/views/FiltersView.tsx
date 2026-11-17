@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -24,10 +24,20 @@ interface Props {
   onEditGlobal?: (id: string, f: Filter) => Promise<void>;
   /** Admin only: retires a global filter. It disappears for everyone. */
   onRetireGlobal?: (id: string) => Promise<void>;
+  /** A new filter to open in the window, already filled in (from a right-click on a row). `n` changes with every request. */
+  draftRequest?: { filter: Filter; n: number } | null;
 }
 
-export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = false, onToggleGlobal, onPublishGlobal, onEditGlobal, onRetireGlobal }: Props) {
+export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = false, onToggleGlobal, onPublishGlobal, onEditGlobal, onRetireGlobal, draftRequest }: Props) {
   const [draft, setDraft] = useState<Filter | null>(null);
+  // Remounting the tabs puts the packet filters tab (where the window opens) in front.
+  const [tabsKey, setTabsKey] = useState(0);
+  useEffect(() => {
+    if (!draftRequest) return;
+    setDraft(draftRequest.filter);
+    setDraftGlobal(false);
+    setTabsKey((k) => k + 1);
+  }, [draftRequest]);
   const [draftGlobal, setDraftGlobal] = useState(false);
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [ispText, setIspText] = useState("");
@@ -318,6 +328,7 @@ export function FiltersView({ filters, onChange, globalFilters = [], isAdmin = f
       )}
 
       <Tabs
+        key={tabsKey}
         tabs={[
           { id: "packet", label: "Packet filters", panel: packetPanel },
           {

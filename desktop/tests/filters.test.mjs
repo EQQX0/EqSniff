@@ -127,4 +127,13 @@ for (const protocol of protocols) for (const port of ports) for (const address o
   if (!WHITELIST.test(text) || text.length > 600) bad.push(text);
 }
 ok(combos > 500 && bad.length === 0, "every toBpf output matches the whitelist and length cap: " + bad[0]);
+
+// seedFromRow: a right-clicked row becomes the starting point of a new filter
+{
+  const a = f.seedFromRow("13.134.141.148", ["UDP"], [50498, 56066], "");
+  ok(a.address === "13.134.141.148" && a.protocol === "UDP" && a.port === "" && a.name === "Filter for 13.134.141.148", "seed: only high ports -> no port box");
+  const b = f.seedFromRow("1.2.3.4", ["TCP", "UDP"], [9305, 3478, 3479, 61000], "Steve");
+  ok(b.protocol === "any" && b.port === "3478, 3479" && b.name === "Filter for Steve", "seed: mixed protocols -> any, two lowest service ports, label as name");
+  ok(f.seedFromRow("1.2.3.4", ["ICMPv6"], [null, null]).protocol === "ICMP", "seed: ICMPv6 maps to ICMP");
+}
 console.log(`${n} checks passed`);

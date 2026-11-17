@@ -1,6 +1,6 @@
 {
-  "version": "0.2.32",
+  "version": "0.2.33",
   "url": "https://sniff.eqqx2.com/updates/EqNetwork-setup.exe",
-  "sha256": "f93af7c883111ff57e73bcb7d44e554a0abe2f43ae576a5f9f880dcdbb929992",
-  "notes": "ISP filters get their own tab on the Filters page and stay out of the Capture filter row. The Filter column names the filter that hid each IP. Search box for the traffic table and sortable columns in the IP list."
+  "sha256": "9e38503c416ba3bb9d353d0b49a1fe16cc1d7b39e5b4f51268e411eb9bd8cef7",
+  "notes": "Right-click an IP or a traffic row to create a filter from it; the new-filter window opens already filled in. Filtered IPs now has a Filter column naming the Show filter that let each IP in. Fixed the Country column overlapping City."
 }

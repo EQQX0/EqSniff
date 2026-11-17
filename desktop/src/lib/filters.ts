@@ -252,6 +252,17 @@ export const isIspFilter = (f: Filter) =>
   f.mode === "hide" && f.isps.trim() !== "" && f.protocol === "any" && f.port.trim() === "" && f.address.trim() === "" &&
   f.countries.trim() === "" && f.minBytes.trim() === "" && f.maxBytes.trim() === "" && f.hex.trim() === "";
 
+/**
+ * The boxes of a new filter filled in from a row (an IP in the list, or one packet): its address, its protocol when
+ * there is only one, and its service ports (below 49152, the ones games use; random high ports are left out).
+ */
+export function seedFromRow(address: string, protocols: string[], ports: (number | null)[], label?: string): Partial<Filter> {
+  const kinds = [...new Set(protocols.map((p) => (p === "ICMPv6" ? "ICMP" : p)))];
+  const protocol = kinds.length === 1 && PROTOCOLS.includes(kinds[0] as Proto) ? (kinds[0] as Proto) : "any";
+  const service = [...new Set(ports.filter((p): p is number => p !== null && p < 49152))].sort((a, b) => a - b).slice(0, 2);
+  return { name: `Filter for ${label || address}`.slice(0, 80), address, protocol, port: service.join(", ") };
+}
+
 export const newId = () => `f-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 
 /** Short plain-language summary of what a filter checks. */

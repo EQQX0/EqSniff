@@ -3,6 +3,7 @@ import type { Country, IpDetails, PacketRow } from "@/lib/api";
 import { Flag, ipKey } from "@/views/CaptureView";
 import { isLocalAddress } from "@/lib/export";
 import { NAME_MAX } from "@/lib/ipstore";
+import { seedFromRow, type Filter } from "@/lib/filters";
 import { CrownIcon } from "@/components/ui/icons";
 
 export interface IpSummary {
@@ -182,6 +183,10 @@ interface Props {
   hidden?: Set<string>;
   /** For each hidden address, the names of the filters that hid it. */
   hiddenBy?: Record<string, string[]>;
+  /** For each address that gets through, the Show filters that let it in. */
+  showedBy?: Record<string, string[]>;
+  /** True when at least one Show filter is switched on. With none on, nothing limits what is shown. */
+  showFiltersOn?: boolean;
   onSave: (address: string, value: string) => void;
   /** Forgets every captured address (saved labels stay). */
   onClear: () => void;
@@ -191,6 +196,8 @@ interface Props {
   onHideIsp: (isp: string) => void;
   /** Adds (or switches on) a Show filter for a port, or adds the port to it if it already exists. */
   onShowPort: (port: number) => void;
+  /** Opens the Filters page's new-filter window, filled in from this address. */
+  onCreateFilter: (seed: Partial<Filter>) => void;
   /** The moment to judge online against, in seconds: now while capturing, the newest packet in a saved file. */
   now: number;
   /** City, ISP and VPN flags from the online lookup, keyed by address. */
@@ -202,7 +209,7 @@ function CopiedBadge() {
 }
 
 /** The addresses seen in a capture, each with an editable label saved in IP Storage. */
-export function IpList({ items, names, geo, hidden, hiddenBy, onSave, onClear, onDelete, onHideIsp, onShowPort, now, details }: Props) {
+export function IpList({ items, names, geo, hidden, hiddenBy, showedBy, showFiltersOn, onSave, onClear, onDelete, onHideIsp, onShowPort, onCreateFilter, now, details }: Props) {
   const [editing, setEditing] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   // Right-click menu and the views it sets up. These only change what this list shows, not the capture.
@@ -350,7 +357,7 @@ export function IpList({ items, names, geo, hidden, hiddenBy, onSave, onClear, o
                 {sortTh("isp", "ISP", "w-[12%]")}
                 {sortTh("vpn", "VPN", "w-[7%]", "", "Sort by VPN. Known VPN, proxy or data-centre address (needs the lookup)")}
                 {sortTh("io", "In / out", "w-[9%]", "text-right", "Sort by packets in plus out")}
-                <th className="w-[13%] px-3 py-2 font-semibold">{hidden ? "Filter" : ""}</th>
+                <th className="w-[13%] px-3 py-2 font-semibold" title="Which filter hid this address, or which Show filter let it in">Filter</th>
               </tr>
             </thead>
             <tbody>
@@ -364,7 +371,7 @@ export function IpList({ items, names, geo, hidden, hiddenBy, onSave, onClear, o
                     key={i.address}
                     onContextMenu={(e) => {
                       e.preventDefault();
-                      setMenu({ x: Math.min(e.clientX, window.innerWidth - 240), y: Math.min(e.clientY, window.innerHeight - 330), address: i.address });
+                      setMenu({ x: Math.min(e.clientX, window.innerWidth - 240), y: Math.min(e.clientY, window.innerHeight - 370), address: i.address });
                     }}
                     title={isHidden ? "A Hide filter matches this row. It stays here, dimmed, but is left out of the Filtered IPs tab." : undefined}
                     className={`border-b border-border last:border-0 hover:bg-white/[0.05] ${isHidden ? "opacity-40" : ""}`}
@@ -444,16 +451,16 @@ export function IpList({ items, names, geo, hidden, hiddenBy, onSave, onClear, o
                       {copiedCell === `${i.address}:port` ? <CopiedBadge /> : [...i.ports].sort((a, b) => a - b).slice(0, 2).join(", ")}
                     </td>
                     <td
-                      className="relative cursor-text px-3 py-1.5 text-text"
-                      title="Double-click to copy"
+                      className="relative cursor-text overflow-hidden px-3 py-1.5 text-text"
+                      title={hit?.name ?? "Double-click to copy"}
                       onDoubleClick={() => copyCell(`${i.address}:country`, hit?.name ?? "")}
                     >
                       {copiedCell === `${i.address}:country` ? (
                         <CopiedBadge />
                       ) : hit ? (
-                        <span className="inline-flex items-center gap-2">
-                          <Flag code={hit.code} />
-                          <span className="truncate">{hit.name}</span>
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="shrink-0"><Flag code={hit.code} /></span>
+                          <span className="min-w-0 truncate">{hit.name}</span>
                         </span>
                       ) : null}
                     </td>
@@ -491,9 +498,14 @@ export function IpList({ items, names, geo, hidden, hiddenBy, onSave, onClear, o
                     >
                       {copiedCell === `${i.address}:io` ? <CopiedBadge /> : `${i.inbound.toLocaleString()} / ${i.outbound.toLocaleString()}`}
                     </td>
-                    <td className="truncate px-3 py-1.5 text-muted" title={isHidden ? (hiddenBy?.[i.address]?.join(", ") || "Hidden") : undefined}>
-                      {isHidden ? (hiddenBy?.[i.address]?.join(", ") || "Hidden") : ""}
-                    </td>
+                    {(() => {
+                      const note = isHidden
+                        ? hiddenBy?.[i.address]?.join(", ") || "Hidden"
+                        : showFiltersOn
+                          ? showedBy?.[i.address]?.join(", ") || ""
+                          : "No Show filter on";
+                      return <td className={`truncate px-3 py-1.5 ${isHidden ? "text-muted" : showFiltersOn ? "text-text" : "text-muted/70"}`} title={note}>{note}</td>;
+                    })()}
                   </tr>
                 );
               })}
@@ -515,6 +527,7 @@ export function IpList({ items, names, geo, hidden, hiddenBy, onSave, onClear, o
             <button role="menuitem" type="button" className={item} onClick={() => { copy(i.address); setMenu(null); }}>Copy IP address</button>
             <button role="menuitem" type="button" className={item} onClick={() => { copy(row); setMenu(null); }}>Copy row</button>
             <button role="menuitem" type="button" className={item} onClick={() => { setEditing(i.address); setMenu(null); }}>{names[i.address] ? "Change label" : "Create IP label"}</button>
+            <button role="menuitem" type="button" className={item} onClick={() => { onCreateFilter(seedFromRow(i.address, [...i.protocols], [...i.ports], names[i.address])); setMenu(null); }}>Create filter from this IP</button>
             <div className="my-1 border-t border-border" />
             {isp && <button role="menuitem" type="button" className={item} onClick={() => { setOnlyIsp(isp); setMenu(null); }}>Show only ISP: {isp}</button>}
             {isp && <button role="menuitem" type="button" className={item} onClick={() => { onHideIsp(isp); setMenu(null); }}>Hide ISP: {isp}</button>}

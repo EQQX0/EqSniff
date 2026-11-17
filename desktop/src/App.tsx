@@ -167,6 +167,14 @@ export default function App() {
     [saveFilters]
   );
 
+  // Right-click "Create filter": opens the Filters page with the new-filter window already filled in from the row.
+  // Nothing is saved until the user steps through it and presses Save.
+  const [draftRequest, setDraftRequest] = useState<{ filter: Filter; n: number } | null>(null);
+  const createFilterFrom = useCallback((seed: Partial<Filter>) => {
+    setDraftRequest((prev) => ({ filter: { ...blankFilter(newId()), ...seed }, n: (prev?.n ?? 0) + 1 }));
+    setView("filters");
+  }, []);
+
   const toggleGlobalFilter = useCallback((f: Filter) => setGlobalOverride(f.globalId!, !f.enabled), []);
   const publishGlobal = useCallback((f: Filter) => publishGlobalFilter(f), []);
   const editGlobal = useCallback((id: string, f: Filter) => editGlobalFilter(id, f), []);
@@ -226,7 +234,7 @@ export default function App() {
         <div className="mx-auto h-full w-full max-w-[1400px]">
           {/* Every view stays mounted so a running capture keeps its table while Settings is open. */}
           <div className={pane("capture", "h-full")}>
-            <CaptureView filters={filters} globalFilters={globalFilters} onToggle={toggleFilter} onHideIsp={hideIsp} onShowPort={showPort} onSeen={onSeen} />
+            <CaptureView filters={filters} globalFilters={globalFilters} onToggle={toggleFilter} onHideIsp={hideIsp} onShowPort={showPort} onCreateFilter={createFilterFrom} onSeen={onSeen} />
           </div>
           <div className={pane("filters")}>
             <FiltersView
@@ -238,6 +246,7 @@ export default function App() {
               onPublishGlobal={publishGlobal}
               onEditGlobal={editGlobal}
               onRetireGlobal={retireGlobal}
+              draftRequest={draftRequest}
             />
           </div>
           <div className={pane("devices")}>
