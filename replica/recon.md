@@ -1,4 +1,4 @@
-# Recon map: OctoSniff (Windows desktop, v5.0)
+# Recon map: the reference app (Windows desktop, v5.0)
 
 > **Scope changed 2026-11-15.** The product is now a free, account-free, local-only Windows app. `replica/scope.md` overrides this file where they disagree. Web, Supabase, Stripe, licence and support sections below are historical.
 
@@ -14,14 +14,14 @@ Date: 2026-11-14
 
 | # | source | URL | notes |
 | --- | --- | --- | --- |
-| 1 | Marketing home | https://octosniff.net/ | feature summary, pricing, comparison table vs Wireshark/LANC |
-| 2 | Features page | https://octosniff.net/features/ | full feature list by category |
-| 3 | About page | https://octosniff.net/about/ | company history, 2015–2026 timeline |
-| 4 | FAQ (expanded) | https://octosniff.net/faq/ | definitions for every major feature, legal/safety stance |
-| 5 | Supported games | https://octosniff.net/games/ | example P2P/hybrid-networking titles |
-| 6 | News — 5.0 release | https://octosniff.net/news/ | confirms 5.0 is a C++ rewrite, new dashboard, Traffic Control, Packet Tester, Packet Inspector, built-in nmap |
-| 7 | buy.octosniff.net | https://buy.octosniff.net/ | checkout page, no extractable text (canvas/JS-rendered) |
-| 8 | dashboard.octosniff.net | https://dashboard.octosniff.net/, /tools, /tools/resolver, /ip-labels, /filters, /blacklist, /downloads, /device-access, /xbox, /entitlements, /billing | your own account, confirmed; walked every nav item |
+| 1 | Marketing home | [reference-site]/ | feature summary, pricing, comparison table vs Wireshark/LANC |
+| 2 | Features page | [reference-site]/features/ | full feature list by category |
+| 3 | About page | [reference-site]/about/ | company history, 2015–2026 timeline |
+| 4 | FAQ (expanded) | [reference-site]/faq/ | definitions for every major feature, legal/safety stance |
+| 5 | Supported games | [reference-site]/games/ | example P2P/hybrid-networking titles |
+| 6 | News — 5.0 release | [reference-site]/news/ | confirms 5.0 is a C++ rewrite, new dashboard, Traffic Control, Packet Tester, Packet Inspector, built-in nmap |
+| 7 | [reference-site-billing] | [reference-site-billing]/ | checkout page, no extractable text (canvas/JS-rendered) |
+| 8 | [reference-site-dashboard] | [reference-site-dashboard]/, /tools, /tools/resolver, /ip-labels, /filters, /blacklist, /downloads, /device-access, /xbox, /entitlements, /billing | your own account, confirmed; walked every nav item |
 
 **Dashboard walkthrough (your account, confirmed 2026-11-15):** screenshots
 saved to `replica/screens/`. Notes per screen, personal data redacted:
@@ -30,7 +30,7 @@ saved to `replica/screens/`. Notes per screen, personal data redacted:
   you submit an IP. Confirms S-GeoIP below.
 - **Tools → Resolver (Gamertag Resolver)**: a PSN/Xbox toggle, a username
   input, a "Resolve" button, and two live counters — **10,654,689 PSN** and
-  **8,570,115 Xbox** entries in "OctoSniff's database." This is the Username
+  **8,570,115 Xbox** entries in "the reference app's database." This is the Username
   AI feature in its actual form: a lookup against a precomputed database of
   gamertag→IP pairs, not a live AI decrypt as the marketing copy implies. I
   did not run a lookup. Still a `skip` — see Out of scope.
@@ -49,8 +49,8 @@ saved to `replica/screens/`. Notes per screen, personal data redacted:
   feature, confirming that feature's reach (it works on any un-blacklisted
   gamertag) rather than adding a new one to clone.
 - **Downloads**: platform tabs (Windows/macOS/Linux), one card per product
-  (OctoSniff "Owned", current version + release date; Traffic Control/Lag
-  Switch "Not Owned" with a buy link), an "Antivirus flagging OctoSniff?"
+  (the reference app "Owned", current version + release date; Traffic Control/Lag
+  Switch "Not Owned" with a buy link), an "Antivirus flagging the reference app?"
   help note saying they obfuscate the binary against cracking.
 - **Device Access**: list of devices that have run the software (name, "last
   used"/"active" status), a monthly device-switch limit (used 1 of 3), a
@@ -86,7 +86,7 @@ traffic, then optionally act on a chosen IP with the Traffic Control engine.
 | ID | screen | route / how to reach | purpose | key components | states seen |
 | --- | --- | --- | --- | --- | --- |
 | S01 | Install / first run | installer → desktop app | get the app running, pick network interface | installer wizard, interface picker | empty, error (no interface found) |
-| S02 | Login / account | app launch, dashboard.octosniff.net | sign in, 2FA, license check | email/password form, 2FA code field | empty, error, locked-out |
+| S02 | Login / account | app launch, [reference-site-dashboard] | sign in, 2FA, license check | email/password form, 2FA code field | empty, error, locked-out |
 | S03 | Dashboard home | main app window | entry point, quick actions, news | nav sidebar, quick-action tiles, news feed, user count badge | filled (unconfirmed-source screenshot) |
 | S04 | Network/device scan | Tools → ARP scan | discover devices on the LAN | device list, vendor tag, router flag | empty (no devices yet), scanning, filled |
 | S05 | Live capture / traffic table | main capture view | show captured packets per device | start/stop button, interface selector, traffic table (IP, packets, bytes, port, timestamp) | empty, capturing, filled, error |
@@ -100,7 +100,7 @@ traffic, then optionally act on a chosen IP with the Traffic Control engine.
 | S13 | PSN / Xbox account link | Integrations settings | link platform account for auto-filter | OAuth connect button, linked-account card (avatar, online ID), background-refresh status | not linked, linking, linked, token-expired |
 | S14 | Settings | nav → Settings | theme, language, 2FA, account | theme picker (Ultra Dark/Dark/Light), accent color picker, language dropdown, 2FA toggle | filled |
 | S15 | Export dialog | capture table → export | save/copy captured rows | format picker (CSV/JSON/TXT), copy-row/cell/table buttons | empty, exported |
-| S16 | Store / billing | Store nav item, buy.octosniff.net | buy base app and add-ons | plan cards, price, payment methods | filled (checkout page itself was JS-rendered, not readable as text) |
+| S16 | Store / billing | Store nav item, [reference-site-billing] | buy base app and add-ons | plan cards, price, payment methods | filled (checkout page itself was JS-rendered, not readable as text) |
 | S17 | Support | Support nav item, in-app helpdesk | FAQ, ticket, Discord link | FAQ accordion, "open ticket" button, Discord button | filled |
 | S18 | GeoIP lookup | dashboard Tools → GeoIP Lookup | look up one IP's geolocation | IP input, lookup button, results panel | empty, filled |
 | S19 | Gamertag resolver | dashboard Tools → Resolver | look up a gamertag against the shared IP database | platform toggle, username input, resolve button, live entry-count badges | empty, filled — **skip**, see Out of scope |
@@ -141,7 +141,7 @@ F05 Build and test a custom packet
     edge: malformed packet, target unreachable, replay source capture deleted
 
 F06 Buy and activate
-    S16 store -> checkout (buy.octosniff.net) -> S02 login -> license applied
+    S16 store -> checkout ([reference-site-billing]) -> S02 login -> license applied
     edge: payment declined, license already in use on another device
 ```
 
@@ -171,7 +171,7 @@ Device       id, mac, ip, vendor, is_router (bool), last_seen, label
              confidence: high (own-device scanning); medium (fields beyond mac/ip/vendor)
 
 CaptureSession   id, user_id, started_at, ended_at, interface, device_id (nullable)
-             evidence: S05 live capture, FAQ "How does OctoSniff pull IPs"
+             evidence: S05 live capture, FAQ "How does the reference app pull IPs"
              confidence: medium
 
 PacketSample id, session_id, src_ip, dst_ip, src_port, dst_port, protocol,

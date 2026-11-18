@@ -24,7 +24,7 @@ EqNetwork: a Windows network toolkit (Tauri 2 + React) with a Capture IP list fo
 - [[Projects/EqSniff/Unfinished/account-roundtrip-untested]] : sign-up and sync never run end to end
 - [[Projects/EqSniff/Unfinished/self-signed-installer]] : Windows warning on other PCs
 - ~~[[Projects/EqSniff/Unfinished/port-scan-own-ip]]~~ : dropped 2026-11-16
-- ~~[[Projects/EqSniff/Unfinished/octosniff-extras]]~~ : dropped 2026-11-16
+- ~~[[Projects/EqSniff/Unfinished/reference-app-extras]]~~ : dropped 2026-11-16
 
 ## Decisions
 - [[Projects/EqSniff/Decisions/offline-isp-city-databases]] : chose local databases over ip-api.com

@@ -28,7 +28,7 @@ Everything asked for is built and tested. The Ember glass redesign (top nav, gla
 - NOT verified live: Start/Stop Hotspot, Share internet, Reset, the elevated result-file round trip. The sharing read returned no connections without admin; it may under-report, so check the ON chip against Windows.
 - Names in the devices table are placeholders ("Unnamed device"); no vendor lookup exists in the repo.
 
-## Hotspot page: OctoSniff-style layout and auto sharing (added later)
+## Hotspot page: reference-app-style layout and auto sharing (added later)
 - `components/ui/Select.tsx` (new): accessible listbox dropdown (combobox pattern, arrows/Home/End/Enter/Esc/typeahead, outside click). Used only by the Hotspot page.
 - `HotspotView.tsx`: two cards in one row (stack under 900px), both adapter pickers list every Windows connection (connected real adapters first, then virtual or disconnected, tags "Not connected"/"Virtual"). Switch "Share internet automatically when the hotspot starts" (default on); the public adapter and the switch are saved in `hotspot.json` via the new `hotspot_prefs` command. While the hotspot is on, the private picker auto-selects the hotspot adapter.
 - `hotspot.rs`: `hotspot_start` snapshots adapters, starts the hotspot, polls up to 15 s with `pick_hotspot_adapter`, then runs the existing elevated sharing apply (one UAC). `hotspot_stop` resets sharing first when `sharing.json` has `viaHotspot` (only sharing started by the auto path; manual sharing is left alone, so Stop Hotspot does not kill a wired share). The job now carries `note` and `warning`. If the adapter is not found or apply fails, the hotspot stays on and a warning tells the user to pick Private by hand.
@@ -58,10 +58,10 @@ Everything asked for is built and tested. The Ember glass redesign (top nav, gla
 
 ## Unfinished (kept on purpose)
 - DNS for `updates.eqqx2.com` is done (CNAME to Vercel, certificate issued). `DEFAULT_URL` now uses it; the release is 0.2.0.
-- OctoSniff screens not seen: Tools submenu, Process Filters, Hotkeys, Appearance, Account, Link Account, Start Sniff dropdown, FAQ, tutorial chapters 2 to 4. Needs the user's screenshots.
+- Reference-app screens not seen: Tools submenu, Process Filters, Hotkeys, Appearance, Account, Link Account, Start Sniff dropdown, FAQ, tutorial chapters 2 to 4. Needs the user's screenshots.
 - VPN: kill switch, edit tunnel and log tab are built but the kill switch has not been tested live (needs an elevated run). No new keys. IPv6 MTU note in the log is harmless. DNS may still leak through other adapters (Windows multi-homed lookup).
 - Installer is self-signed (`release/EqSniff-selfsigned.cer` must be imported by hand). The installer was not run end to end after the engine change.
-- Candidate OctoSniff features not built: ISP filters, device categories, manual device add, auto-remove inactive IPs, buffer settings, in-app changelog, tutorial.
+- Candidate reference-app features not built: ISP filters, device categories, manual device add, auto-remove inactive IPs, buffer settings, in-app changelog, tutorial.
 
 ## Cleaned up this session
 - Dropped: none requested.

@@ -12,7 +12,7 @@ THIS FOLDER (C:\Users\Admin\Desktop\EqSniff)
     features.csv    every feature and whether it is built
     unbuilt.md      what is missing and why
     build-log.md    what was done, round by round
-    octosniff-ui-notes.md   what the OctoSniff screens showed
+    reference-app-ui-notes.md   what the reference app's screens showed
   release\          installer, portable zip, certificate (not in git)
   README.md         overview
   update.json       the file the update check reads

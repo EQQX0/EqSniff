@@ -52,7 +52,7 @@ Everything asked for is built, released (0.2.14, commit a6d9657 on main) and pus
 - [[Projects/EqSniff/Unfinished/self-signed-installer|Self-signed installer]]: Windows warns on other PCs.
 
 ## Cleaned up this session
-- Dropped: [[Projects/EqSniff/Unfinished/port-scan-own-ip|Port scan on own IP]] and [[Projects/EqSniff/Unfinished/octosniff-extras|OctoSniff extras]] (device categories, manual device add, auto-remove inactive IPs, buffer settings, changelog, tutorial), at the user's request.
+- Dropped: [[Projects/EqSniff/Unfinished/port-scan-own-ip|Port scan on own IP]] and [[Projects/EqSniff/Unfinished/reference-app-extras|reference app extras]] (device categories, manual device add, auto-remove inactive IPs, buffer settings, changelog, tutorial), at the user's request.
 - Finished: the update-feed folder moved from a temp scratch folder to `C:\Users\Admin\Desktop\EqSniff\updates-site` so releases keep working (files copied, `.vercel` link included; the temp copy is left in place).
 
 ## Open questions and blockers

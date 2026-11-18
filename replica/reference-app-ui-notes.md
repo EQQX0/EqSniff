@@ -1,4 +1,4 @@
-# OctoSniff UI notes (observed on the user's own PC, first screen only)
+# Reference app UI notes (observed on the user's own PC, first screen only)
 
 Reference only. Screens seen: launch tutorial dialog and the Network screen. Nothing was run. The app appears to run as administrator, so it could not be clicked through.
 

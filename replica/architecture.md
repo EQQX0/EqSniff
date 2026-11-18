@@ -1,4 +1,4 @@
-# Architecture: your network toolkit (a rebuild of OctoSniff's own-network features)
+# Architecture: your network toolkit (a rebuild of the reference app's own-network features)
 
 > **Scope changed 2026-11-15.** The product is now a free, account-free, local-only Windows app. `replica/scope.md` overrides this file where they disagree. Web, Supabase, Stripe, licence and support sections below are historical.
 
@@ -27,7 +27,7 @@ Xbox Toolkit are `skip` rows and have no schema, routes, or screens below.
 | hosting | Vercel (dashboard) + Supabase (DB/Auth) | zero-ops at low volume |
 
 **Why the desktop app and the web dashboard are two codebases, not one:**
-the original does this too (desktop OctoSniff.exe vs. dashboard.octosniff.net)
+the original does this too (desktop reference-app.exe vs. [reference-site-dashboard])
 because packet capture and ARP scanning need OS-level access a browser can't
 get. The dashboard is account/billing/sync only; it never touches packets.
 

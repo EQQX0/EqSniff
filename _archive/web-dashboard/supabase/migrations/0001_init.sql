@@ -1,5 +1,5 @@
 -- 0001_init.sql
--- Schema for the own-network toolkit (clone of OctoSniff's non-skip features).
+-- Schema for the own-network toolkit (clone of the reference app's non-skip features).
 -- See replica/architecture.md for the rationale behind what is and isn't here.
 
 create extension if not exists pgcrypto;

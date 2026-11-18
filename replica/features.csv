@@ -47,7 +47,7 @@ pcap import/export,export,should,no,yes,"Classic .pcap (Ethernet), 20,000 packet
 Usage and crash reporting,platform,skip,no,skip,Moved to Out 2026-11-15: it conflicts with the local-only rule.
 macOS and Linux builds,platform,skip,no,skip,Out by decision 2026-11-15.
 Open-source the code,platform,could,no,no,Maybe-later: after v1 is stable for 3 months.
-ISP filter (hide or dim hosting providers),filters,could,yes,no,Seen in OctoSniff. Needs an ISP lookup per address.
+ISP filter (hide or dim hosting providers),filters,could,yes,no,Seen in the reference app. Needs an ISP lookup per address.
 "Device categories (router, console, PC, phone, IoT)",devices,could,yes,no,Seen. Needs MAC vendor data.
 Add a device by IP by hand,devices,could,yes,no,Seen.
 Process filters (beta),filters,could,yes,no,Not opened.
