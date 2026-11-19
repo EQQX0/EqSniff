@@ -1,6 +1,6 @@
 {
-  "version": "0.4.4",
+  "version": "0.5.0",
   "url": "https://sniff.eqqx2.com/updates/EqNetwork-setup.exe",
-  "sha256": "da5e57a0fa776b6ab8d1d5dc1cc1555227a8e6f957081993b676c7ff24376236",
-  "notes": "IP Storage: click Address, Label, Last seen or First seen to sort (favourites always stay on top). The shared list now shows your own favourites, not the admin's."
+  "sha256": "49d6e0823de546f2551063174ed436cd77f1eed4494761e9df4f6b21b4dec9fb",
+  "notes": "Capture: open and export .pcapng files, and a HEX packet inspector (right-click a packet, Inspect bytes). The IP list shows full labels."
 }

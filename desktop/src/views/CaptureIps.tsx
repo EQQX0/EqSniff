@@ -359,20 +359,20 @@ export function IpList({ items, names, geo, hidden, hiddenBy, showedBy, crownBy,
         {shown.length === 0 ? (
           <p className="p-6 text-sm text-muted">{items.length === 0 ? "No addresses yet. Start a capture or open a file." : "Nothing matches that search."}</p>
         ) : (
-          <table className="w-full min-w-[64rem] table-fixed text-left text-xs">
+          <table className="w-full min-w-[72rem] table-fixed text-left text-xs">
             <thead className="sticky top-0 z-10 bg-[linear-gradient(180deg,#4a1621,#33101a)] text-text">
               <tr>
-                {sortTh("label", "Label", "w-[11%]")}
+                {sortTh("label", "Label", "w-[20%]")}
                 <th className="w-[3%] px-0 py-2 text-center font-semibold" title="Likely host"><span className="sr-only">Likely host</span></th>
-                {sortTh("ip", "IP address", "w-[12%]")}
-                {sortTh("type", "Type", "w-[6%]")}
-                {sortTh("port", "Port", "w-[7%]")}
-                {sortTh("country", "Country", "w-[10%]")}
-                {sortTh("city", "City", "w-[10%]")}
-                {sortTh("isp", "ISP", "w-[12%]")}
-                {sortTh("vpn", "VPN", "w-[7%]", "", "Sort by VPN. Known VPN, proxy or data-centre address (needs the lookup)")}
-                {sortTh("io", "In / out", "w-[9%]", "text-right", "Sort by packets in plus out")}
-                <th className="w-[13%] px-3 py-2 font-semibold" title="Which filter hid this address, or which Show filter let it in">Filter</th>
+                {sortTh("ip", "IP address", "w-[11%]")}
+                {sortTh("type", "Type", "w-[5%]")}
+                {sortTh("port", "Port", "w-[6%]")}
+                {sortTh("country", "Country", "w-[9%]")}
+                {sortTh("city", "City", "w-[9%]")}
+                {sortTh("isp", "ISP", "w-[11%]")}
+                {sortTh("vpn", "VPN", "w-[6%]", "", "Sort by VPN. Known VPN, proxy or data-centre address (needs the lookup)")}
+                {sortTh("io", "In / out", "w-[8%]", "text-right", "Sort by packets in plus out")}
+                <th className="w-[12%] px-3 py-2 font-semibold" title="Which filter hid this address, or which Show filter let it in">Filter</th>
               </tr>
             </thead>
             <tbody>
@@ -425,7 +425,8 @@ export function IpList({ items, names, geo, hidden, hiddenBy, showedBy, crownBy,
                           type="button"
                           onClick={() => setEditing(i.address)}
                           aria-label={`${label ? "Change the label for" : "Add a label for"} ${i.address}`}
-                          className={`max-w-full truncate rounded-pill px-2 py-0.5 text-left hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft ${label ? "font-semibold text-text" : "text-muted/70"}`}
+                          title={label ? `${label} (click to change)` : undefined}
+                          className={`min-w-0 max-w-full truncate rounded-pill px-2 py-0.5 text-left hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft ${label ? "font-semibold text-text" : "text-muted/70"}`}
                         >
                           {label ?? "+ Add label"}
                         </button>
