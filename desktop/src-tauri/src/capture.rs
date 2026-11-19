@@ -9,9 +9,11 @@ use std::{
     thread::JoinHandle,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use crate::packet::{both_ends_local, summarize};
+use crate::inspect::{self, Field};
+use crate::packet::{both_ends_local, link_name, link_supported, summarize_link, LINK_ETHERNET};
 pub use crate::packet::PacketRow;
 use crate::pcapfile;
+use crate::pcapng::{self, IfaceInfo};
 use tauri::State;
 
 /// If the window stops asking for packets, keep memory bounded.
@@ -36,11 +38,17 @@ struct Shared {
     rows: Mutex<Vec<PacketRow>>,
     error: Mutex<Option<String>>,
     done: AtomicBool,
+    /// Interfaces the frames came from (one for a live capture, as many as the file has otherwise).
+    ifaces: Mutex<Vec<IfaceInfo>>,
 }
 
 struct Frame {
     id: u64,
     time: f64,
+    /// Exact capture time in nanoseconds since 1970.
+    ts_ns: u64,
+    link: u32,
+    iface: u32,
     wire_len: u32,
     data: Vec<u8>,
     /// The driver kept only part of the packet, so it cannot be sent again.
@@ -138,6 +146,9 @@ pub fn start_capture(state: State<CaptureState>, adapter: String, filter: Option
 
     let stop = Arc::new(AtomicBool::new(false));
     let shared = Arc::new(Shared::default());
+    if let Ok(mut i) = shared.ifaces.lock() {
+        *i = vec![IfaceInfo { link: LINK_ETHERNET, snaplen: 2048, name: Some(adapter.clone()), description: None }];
+    }
     if let Ok(mut last) = state.last.lock() {
         *last = Some((adapter.clone(), shared.clone()));
     }
@@ -199,11 +210,12 @@ fn run(mut cap: Capture<pcap::Active>, stop: Arc<AtomicBool>, shared: Arc<Shared
     while !stop.load(Ordering::Relaxed) {
         match cap.next_packet() {
             Ok(p) => {
-                let now = now_secs();
-                if let Some((mut row, cut)) = summarize(p.data, p.header.len, now) {
+                let ts_ns = now_ns();
+                let now = ts_ns as f64 / 1e9;
+                if let Some((mut row, cut)) = summarize_link(p.data, LINK_ETHERNET, p.header.len, now) {
                     row.id = next_id;
                     if let Ok(mut frames) = shared.frames.lock() {
-                        frames.push_back(Frame { id: next_id, time: now, wire_len: p.header.len, data: p.data.to_vec(), truncated: p.header.caplen < p.header.len || cut });
+                        frames.push_back(Frame { id: next_id, time: now, ts_ns, link: LINK_ETHERNET, iface: 0, wire_len: p.header.len, data: p.data.to_vec(), truncated: p.header.caplen < p.header.len || cut });
                         if frames.len() > MAX_FRAMES {
                             frames.pop_front();
                         }
@@ -229,8 +241,8 @@ fn run(mut cap: Capture<pcap::Active>, stop: Arc<AtomicBool>, shared: Arc<Shared
     shared.done.store(true, Ordering::Release);
 }
 
-fn now_secs() -> f64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0)
+fn now_ns() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0)
 }
 
 /// Turns driver errors into something a person can act on.
@@ -275,23 +287,54 @@ pub fn replay_packet(state: State<CaptureState>, id: u64) -> Result<String, Stri
     Ok(format!("Sent 1 packet ({} bytes).", data.len()))
 }
 
-/// Builds a .pcap file from the saved packets with these ids (in the order given) and returns it
-/// as base64 text, which is how the window receives binary data.
-#[tauri::command(async)]
-pub fn export_pcap(state: State<CaptureState>, ids: Vec<u64>) -> Result<String, String> {
-    use base64::Engine;
+/// The saved packets with these ids, in the order given, as records, plus the interfaces they came from.
+fn records_for(state: &State<CaptureState>, ids: Vec<u64>) -> Result<(Vec<pcapfile::Rec>, Vec<IfaceInfo>), String> {
     let (_, shared) = state.last.lock().map_err(|_| "capture state is locked")?.clone().ok_or("Capture some traffic first.")?;
     let frames = shared.frames.lock().map_err(|_| "capture buffer is locked")?;
     let wanted: std::collections::HashSet<u64> = ids.into_iter().collect();
     let recs: Vec<pcapfile::Rec> = frames
         .iter()
         .filter(|f| wanted.contains(&f.id))
-        .map(|f| pcapfile::Rec { time: f.time, data: f.data.clone(), wire_len: f.wire_len })
+        .map(|f| pcapfile::Rec { time: f.time, ts_ns: f.ts_ns, data: f.data.clone(), wire_len: f.wire_len, link: f.link, iface: f.iface })
         .collect();
     if recs.is_empty() {
         return Err("None of those packets are still saved. Only the most recent 20,000 are kept.".into());
     }
+    let ifaces = shared.ifaces.lock().map_err(|_| "capture buffer is locked")?.clone();
+    Ok((recs, ifaces))
+}
+
+/// Builds a .pcap file from the saved packets with these ids (in the order given) and returns it
+/// as base64 text, which is how the window receives binary data.
+#[tauri::command(async)]
+pub fn export_pcap(state: State<CaptureState>, ids: Vec<u64>) -> Result<String, String> {
+    use base64::Engine;
+    let (recs, _) = records_for(&state, ids)?;
+    // A classic .pcap file has one link type for the whole file.
+    if recs.iter().any(|r| r.link != recs[0].link) {
+        return Err("These packets come from interfaces with different link types, which a .pcap file cannot hold. Export as PCAPNG instead.".into());
+    }
     Ok(base64::engine::general_purpose::STANDARD.encode(pcapfile::write(&recs)))
+}
+
+/// Same as `export_pcap`, as a .pcapng file: keeps nanosecond timestamps, every interface and its name.
+#[tauri::command(async)]
+pub fn export_pcapng(state: State<CaptureState>, ids: Vec<u64>) -> Result<String, String> {
+    use base64::Engine;
+    let (recs, ifaces) = records_for(&state, ids)?;
+    let app = format!("EqSniff {}", env!("CARGO_PKG_VERSION"));
+    Ok(base64::engine::general_purpose::STANDARD.encode(pcapng::write(&recs, &ifaces, &app)))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IfaceOut {
+    pub link: u32,
+    pub link_name: String,
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub snaplen: u32,
+    pub supported: bool,
 }
 
 #[derive(Serialize)]
@@ -303,35 +346,127 @@ pub struct ImportResult {
     /// Records that were looked at (the first ones, up to a limit). Less than `total_records`
     /// only when the file was really cut short.
     pub read_records: usize,
+    /// "pcap" or "pcapng".
+    pub format: String,
+    pub interfaces: Vec<IfaceOut>,
+    /// What the file says about itself.
+    pub info: Vec<String>,
+    /// What was not kept or could not be read. Always shown to the person.
+    pub notes: Vec<String>,
 }
 
-/// Opens a .pcap file (sent as base64). The packets become the saved capture, so they can be
-/// exported again, but not replayed.
+/// Opens a .pcap or .pcapng file (sent as base64). The packets become the saved capture, so they
+/// can be exported again, but not replayed.
 #[tauri::command(async)]
 pub fn import_pcap(state: State<CaptureState>, data: String) -> Result<ImportResult, String> {
     if state.slot.lock().map_err(|_| "capture state is locked")?.is_some() {
         return Err("Stop the capture before opening a file.".into());
     }
     let bytes = pcapfile::decode_upload(&data)?;
-    let (recs, total_records) = pcapfile::read(&bytes, MAX_IMPORT)?;
-    let read_records = recs.len();
+    drop(data);
+    let loaded = pcapng::read_any(&bytes, MAX_IMPORT)?;
+    drop(bytes);
+    let read_records = loaded.recs.len();
+    let total_records = loaded.total;
     let shared = Arc::new(Shared::default());
     let mut rows = Vec::new();
+    let mut undecoded = vec![0usize; loaded.ifaces.len()];
     {
         let mut frames = shared.frames.lock().map_err(|_| "capture buffer is locked")?;
         let mut next_id = 1u64;
-        for r in recs {
-            if let Some((mut row, cut)) = summarize(&r.data, r.wire_len, r.time) {
+        for r in loaded.recs {
+            if let Some((mut row, cut)) = summarize_link(&r.data, r.link, r.wire_len, r.time) {
                 row.id = next_id;
-                frames.push_back(Frame { id: next_id, time: r.time, wire_len: r.wire_len, truncated: (r.data.len() as u32) < r.wire_len || cut, data: r.data });
+                frames.push_back(Frame {
+                    id: next_id,
+                    time: r.time,
+                    ts_ns: r.ts_ns,
+                    link: r.link,
+                    iface: r.iface,
+                    wire_len: r.wire_len,
+                    truncated: (r.data.len() as u32) < r.wire_len || cut,
+                    data: r.data,
+                });
                 next_id += 1;
                 rows.push(row);
+            } else if let Some(n) = undecoded.get_mut(r.iface as usize) {
+                *n += 1;
             }
         }
     }
+    let mut notes = loaded.notes;
+    for (i, info) in loaded.ifaces.iter().enumerate() {
+        if !link_supported(info.link) {
+            let label = info.name.clone().unwrap_or_else(|| format!("Interface {i}"));
+            notes.push(format!(
+                "{label} uses {}, which the app cannot decode, so its packets are not shown ({} in the part read).",
+                link_name(info.link),
+                undecoded[i]
+            ));
+        }
+    }
     if rows.is_empty() {
+        if let Some(info) = loaded.ifaces.iter().find(|i| !link_supported(i.link)) {
+            return Err(format!(
+                "This capture uses {}, which the app cannot decode. It opens Ethernet, Linux cooked, loopback and raw IP captures.",
+                link_name(info.link)
+            ));
+        }
         return Err("No IPv4 or IPv6 packets were found in that file.".into());
     }
+    let interfaces: Vec<IfaceOut> = loaded
+        .ifaces
+        .iter()
+        .map(|i| IfaceOut { link: i.link, link_name: link_name(i.link), name: i.name.clone(), description: i.description.clone(), snaplen: i.snaplen, supported: link_supported(i.link) })
+        .collect();
+    *shared.ifaces.lock().map_err(|_| "capture buffer is locked")? = loaded.ifaces;
     *state.last.lock().map_err(|_| "capture state is locked")? = Some((String::new(), shared));
-    Ok(ImportResult { rows, total_records, read_records })
+    Ok(ImportResult { rows, total_records, read_records, format: if loaded.pcapng { "pcapng" } else { "pcap" }.into(), interfaces, info: loaded.info, notes })
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PacketDetail {
+    pub id: u64,
+    pub time: f64,
+    pub wire_len: u32,
+    pub cap_len: usize,
+    /// The capture holds less than the packet had on the wire.
+    pub truncated: bool,
+    pub link: u32,
+    pub link_name: String,
+    pub iface: u32,
+    pub iface_name: Option<String>,
+    /// The captured bytes, exactly as saved, as base64.
+    pub data: String,
+    pub fields: Vec<Field>,
+    /// Text hex dump of the bytes. Only built when asked for (large packets make it big).
+    pub hex_dump: Option<String>,
+}
+
+/// Everything about one saved packet for the HEX inspector: its bytes, and the decoded fields
+/// with the byte range of each. The bytes are encoded straight from the saved copy.
+#[tauri::command(async)]
+pub fn packet_detail(state: State<CaptureState>, id: u64, hex_dump: Option<bool>) -> Result<PacketDetail, String> {
+    use base64::Engine;
+    let (_, shared) = state.last.lock().map_err(|_| "capture state is locked")?.clone().ok_or("Capture some traffic first.")?;
+    let frames = shared.frames.lock().map_err(|_| "capture buffer is locked")?;
+    // Ids only grow, so the frame can be found by binary search.
+    let at = frames.partition_point(|f| f.id < id);
+    let f = frames.get(at).filter(|f| f.id == id).ok_or("That packet is no longer saved. Only the most recent 20,000 are kept.")?;
+    let iface_name = shared.ifaces.lock().ok().and_then(|i| i.get(f.iface as usize).and_then(|x| x.name.clone()));
+    Ok(PacketDetail {
+        id,
+        time: f.time,
+        wire_len: f.wire_len,
+        cap_len: f.data.len(),
+        truncated: f.truncated,
+        link: f.link,
+        link_name: link_name(f.link),
+        iface: f.iface,
+        iface_name,
+        data: base64::engine::general_purpose::STANDARD.encode(&f.data),
+        fields: inspect::decode(&f.data, f.link),
+        hex_dump: hex_dump.unwrap_or(false).then(|| inspect::hexdump(&f.data)),
+    })
 }

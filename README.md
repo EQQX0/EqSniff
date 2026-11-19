@@ -2,7 +2,7 @@
 
 Last updated: 2026-11-15 13:00 AST
 
-A Windows desktop app that shows the network traffic on your own computer. You can filter and export it, replay a packet between devices on your own network, save and open .pcap files, copy rows, watch one device, scan your own network for devices and open ports, and run WireGuard tunnels with a built-in engine on a VPN page.
+A Windows desktop app that shows the network traffic on your own computer. You can filter and export it, replay a packet between devices on your own network, save and open .pcap and .pcapng files, inspect any packet byte by byte, copy rows, watch one device, scan your own network for devices and open ports, and run WireGuard tunnels with a built-in engine on a VPN page.
 
 Built with Tauri 2 (Rust) and a React + TypeScript window. Capture uses Npcap.
 
@@ -35,12 +35,44 @@ npm run tauri dev
 
 ```powershell
 cd desktop
-npm test                          # 71 filter checks
+npm test                          # 91 filter, 21 IP-merge, 8 Minecraft-log and 48 hex-formatting checks
 cd src-tauri
-cargo test --tests                # 65 tests: pcap, packet, scan, update, settings, store, VPN parser/engine/extras, hotspot
+cargo test --tests                # 100 tests: pcap, pcapng, packet, inspector, scan, update, settings, store, VPN parser/engine/extras, hotspot
 ```
 
 Rust tests live in `desktop/src-tauri/tests/` and do not link Tauri. Tests that did crashed on the author's PC, so keep new ones there.
+
+## Capture files and the HEX inspector
+
+**Formats.** Open capture file reads `.pcap`, `.pcapng` and `.cap`. Export has a PCAP button and a PCAPNG button. PCAPNG files from Wireshark open as saved, in either byte order, with several sections and several interfaces.
+
+| Link type | Number | Opens |
+| --- | --- | --- |
+| Ethernet | 1 | yes |
+| BSD and OpenBSD loopback | 0, 108 | yes |
+| Raw IP, raw IPv4, raw IPv6 | 101 (also 12, 14), 228, 229 | yes |
+| Linux cooked v1 and v2 | 113, 276 | yes |
+| Anything else (802.11 and so on) | | refused with the link type named |
+
+**What is kept.** Packet bytes are stored exactly as read and exported exactly as stored. Timestamps are kept to the nanosecond: PCAPNG export writes nanosecond times, and PCAP export rounds to the microsecond because that is all `.pcap` holds. A PCAPNG export keeps each interface's link type, name, description and snap length. A classic `.pcap` holds one link type, so exporting packets from interfaces with different link types as PCAP is refused with a message that points to PCAPNG.
+
+**What is not kept, and how you find out.** Name resolution, interface statistics, decryption secrets and custom blocks, packet comments, per-packet flags and interface options other than name, description, time resolution and time offset are not kept. The notice under the table lists each kind with a count (`Not kept: ...`) and a toast says so. A file that ends mid-block, has a block whose two length fields disagree, or has a packet that points at a missing interface is read up to the damage and says so. A file with no readable packet gives an error, not an empty table. Packets from an interface with an undecodable link type are counted in the notice but not shown.
+
+**Limits.** The first 32 MB of a file are read and up to 5,000 packets are shown, same as before. The window sends the file to the Rust side as base64 in one piece, so the file is not streamed from disk; the reader walks it block by block and copies only the packets it keeps. Opening a file replaces the table. Opened packets can be exported again but not replayed. Packets that are not IPv4 or IPv6 (ARP and the like) are counted but not kept, so they are not in a re-export.
+
+**HEX inspector.** Right-click a packet in the traffic table and choose **Inspect bytes (HEX)**. A pane opens under the table:
+
+- Left: the decoded fields (Ethernet or other link header, IPv4 or IPv6, TCP, UDP, ICMP, payload), each with its length in bytes. Click a field to select its bytes.
+- Right: offset, HEX and ASCII, 16 bytes a row. Click a byte or drag to select; Shift+click or Shift+arrows extends; arrows move, Ctrl+A selects all, Esc clears, Ctrl+C copies the selection as HEX. Selecting bytes highlights the field they sit in.
+- Header line: packet number, time, link type, interface, length on the wire (and how many bytes were captured when the capture cut it short) and the selected range.
+- **Copy HEX** copies every byte as `45 00 00 3c ...`. **Copy selected** copies the selection.
+- Bytes covered by a decoded header field are tinted. Payload and undecoded bytes are plain, so captured bytes and decoded fields stay distinguishable. The inspector only reads the saved bytes.
+
+Only the rows in view are drawn, so a packet of 256 KB scrolls like a small one. Live packets stay inspectable while they are among the latest 20,000 kept in memory. The pane closes when the table is cleared or a file is opened.
+
+For scripts, `packet_detail` (`{id, hexDump?}`) returns the bytes as base64, the decoded fields with byte ranges and, on request, a text dump; `export_pcapng` is the PCAPNG twin of `export_pcap`. See `docs/AI-GUIDE.md`.
+
+**Known limitations.** Wireshark itself was not available while this was written, so output is checked against the pcapng specification and a reader written independently from the writer in the tests, not by opening it in Wireshark. Not decoded: IPv6 extension headers, TCP/UDP above the transport header, 802.11. The inspector opens only from the right-click menu, so it has no keyboard-only way in yet. The UI was type-checked but not clicked through in the running app.
 
 ## VPN page
 

@@ -8,7 +8,7 @@ use pcapfile::*;
 
 
 fn rec(t: f64, n: usize) -> Rec {
-    Rec { time: t, data: (0..n).map(|i| i as u8).collect(), wire_len: n as u32 }
+    Rec::new(t, (0..n).map(|i| i as u8).collect(), n as u32)
 }
 
 #[test]
@@ -69,7 +69,7 @@ fn pcapng_gets_its_own_message() {
     let mut ng = vec![0x0a, 0x0d, 0x0d, 0x0a];
     ng.extend([0u8; 40]);
     let e = read(&ng, 5).unwrap_err();
-    assert!(e.contains("pcapng") && e.contains("Save As"), "{e}");
+    assert!(e.contains("pcapng"), "{e}");
 }
 
 #[test]
@@ -105,8 +105,28 @@ fn upload_size_limits() {
 }
 
 #[test]
-fn refuses_non_ethernet() {
+fn refuses_undecodable_link_types() {
+    let mut bytes = write(&[rec(1.0, 20)]);
+    bytes[20] = 105; // 802.11 Wi-Fi
+    assert!(read(&bytes, 5).unwrap_err().contains("link type 105"));
+}
+
+#[test]
+fn reads_raw_ip_and_keeps_the_link_type() {
     let mut bytes = write(&[rec(1.0, 20)]);
     bytes[20] = 101; // raw IP
-    assert!(read(&bytes, 5).unwrap_err().contains("Ethernet"));
+    let (recs, _) = read(&bytes, 5).unwrap();
+    assert_eq!(recs[0].link, 101);
+    // The classic writer puts the record's link type back in the header.
+    assert_eq!(write(&recs)[20], 101);
+}
+
+#[test]
+fn nanosecond_pcap_keeps_exact_time() {
+    let mut bytes = write(&[rec(0.0, 20)]);
+    bytes[..4].copy_from_slice(&[0x4d, 0x3c, 0xb2, 0xa1]); // nanosecond magic, little endian
+    bytes[24..28].copy_from_slice(&1_700_000_000u32.to_le_bytes());
+    bytes[28..32].copy_from_slice(&123_456_789u32.to_le_bytes());
+    let (recs, _) = read(&bytes, 5).unwrap();
+    assert_eq!(recs[0].ts_ns, 1_700_000_000_123_456_789);
 }

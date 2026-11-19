@@ -5,7 +5,9 @@ mod scannet;
 mod settingscore;
 mod storefile;
 mod updatever;
+mod inspect;
 mod pcapfile;
+mod pcapng;
 mod filters;
 mod geo;
 mod ipinfo;
@@ -46,7 +48,9 @@ pub fn run() {
             capture::stop_capture,
             capture::replay_packet,
             capture::export_pcap,
+            capture::export_pcapng,
             capture::import_pcap,
+            capture::packet_detail,
             filters::get_filters,
             filters::save_filters,
             filters::get_store,

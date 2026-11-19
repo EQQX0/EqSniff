@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type UIEvent } from "react";
-import { api, type Adapter, type Country, type IpDetails, type PacketRow } from "@/lib/api";
+import { api, type Adapter, type Country, type IpDetails, type PacketDetail, type PacketRow } from "@/lib/api";
+import { HexInspector } from "@/views/HexInspector";
 import { isIspFilter, matches, matchesAny, seedFromRow, type Filter, type Lookup } from "@/lib/filters";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -125,6 +126,13 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
   const [rows, setRows] = useState<PacketRow[]>([]);
   const [total, setTotal] = useState(0);
   const [fromFile, setFromFile] = useState<string | null>(null);
+  // The packet shown in the HEX inspector (its row id), what the backend returned for it, and any error.
+  const [inspectId, setInspectId] = useState<number | null>(null);
+  const [detail, setDetail] = useState<PacketDetail | null>(null);
+  const inspectIdNow = useRef<number | null>(null);
+  const [detailBusy, setDetailBusy] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  inspectIdNow.current = inspectId;
   const [names, setNames] = useState<Record<string, string>>({});
   const [editing, setEditing] = useState<number | null>(null); // the row whose label is being typed
   const [sort, setSort] = useState<SortState>(null);
@@ -452,6 +460,30 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
     setRows((r) => r.filter((x) => x.src !== address && x.dst !== address));
   }
 
+  /** Opens the HEX inspector on one packet. The bytes stay in the backend until asked for. */
+  async function inspectPacket(id: number) {
+    setInspectId(id);
+    setDetailBusy(true);
+    setDetailError(null);
+    try {
+      const d = await api.packetDetail(id);
+      setDetail((prev) => (inspectIdNow.current === id ? d : prev));
+    } catch (e) {
+      if (inspectIdNow.current === id) {
+        setDetail(null);
+        setDetailError(e instanceof Error ? e.message : String(e));
+      }
+    } finally {
+      if (inspectIdNow.current === id) setDetailBusy(false);
+    }
+  }
+
+  function closeInspector() {
+    setInspectId(null);
+    setDetail(null);
+    setDetailError(null);
+  }
+
   /** Forgets the addresses and packets seen so far. Labels saved in IP Storage stay. */
   function clearCaptured() {
     ipBook.current = new Map();
@@ -589,6 +621,10 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
     };
   }, [running, ingest]);
 
+  useEffect(() => {
+    if (rows.length === 0) closeInspector();
+  }, [rows.length]);
+
   const start = useCallback(async () => {
     setBusy(true);
     setError(null);
@@ -665,6 +701,18 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
     }
   }
 
+  async function exportPcapng() {
+    setError(null);
+    try {
+      const b64 = await api.exportPcapng(shown.map((r) => r.id));
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+      downloadBlob(`capture-${stamp}.pcapng`, new Blob([base64ToBytes(b64) as BlobPart], { type: "application/octet-stream" }));
+      setNotice(`Exported ${shown.length.toLocaleString()} packets as PCAPNG. Windows saved the file in your Downloads folder.`);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
   async function openPcap(file: File | undefined) {
     if (!file) return;
     setError(null);
@@ -672,6 +720,7 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
       const part = file.size > MAX_FILE_BYTES ? file.slice(0, MAX_FILE_BYTES) : file;
       const res = await api.importPcap(bytesToBase64(new Uint8Array(await part.arrayBuffer())));
       if (hiddenIps().size) res.rows = res.rows.filter((p) => !isHiddenIp(p.src) && !isHiddenIp(p.dst));
+      closeInspector();
       setRows(res.rows);
       ipBook.current = new Map();
       absorb(ipBook.current, res.rows, farOf, (r) => matchesAny(filtersNow.current, r, lookupNow.current));
@@ -686,7 +735,12 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
       const cut = res.totalRecords > res.readRecords ? ` Showing the first ${res.readRecords.toLocaleString()} of ${res.totalRecords.toLocaleString()}.` : "";
       const other = res.readRecords > res.rows.length ? ` ${(res.readRecords - res.rows.length).toLocaleString()} non-IP packets were skipped.` : "";
       const big = file.size > MAX_FILE_BYTES ? " Only the first 32 MB of the file was read." : "";
-      setNotice(`Opened ${file.name}: ${res.rows.length.toLocaleString()} packets.${cut}${other}${big}`);
+      const kind = res.format === "pcapng" ? " (PCAPNG)" : "";
+      const ifaces = res.interfaces.length > 1 ? ` ${res.interfaces.length} interfaces: ${res.interfaces.map((i) => `${i.name ?? "unnamed"} (${i.linkName})`).join(", ")}.` : "";
+      // Anything the reader did not keep is said out loud, never dropped quietly.
+      const notes = res.notes.length ? ` Not kept: ${res.notes.join(" ")}` : "";
+      setNotice(`Opened ${file.name}${kind}: ${res.rows.length.toLocaleString()} packets.${cut}${other}${big}${ifaces}${notes}`);
+      if (res.notes.length) toast(`${file.name}: ${res.notes.length} thing${res.notes.length === 1 ? "" : "s"} in the file were not kept. See the message under the table.`, { kind: "error" });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -733,10 +787,10 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
         <input
           ref={fileInput}
           type="file"
-          accept=".pcap,.cap,application/vnd.tcpdump.pcap"
+          accept=".pcap,.cap,.pcapng,application/vnd.tcpdump.pcap"
           className="sr-only"
           tabIndex={-1}
-          aria-label="Choose a .pcap capture file to open"
+          aria-label="Choose a .pcap or .pcapng capture file to open"
           onChange={(e) => openPcap(e.target.files?.[0])}
         />
         <p className="ml-auto text-sm text-muted" aria-live="polite">
@@ -791,8 +845,11 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
             {kind}
           </Button>
         ))}
-        <Button size="sm" variant="secondary" disabled={shown.length === 0} onClick={exportPcap}>
+        <Button size="sm" variant="secondary" disabled={shown.length === 0} onClick={exportPcap} title="Classic .pcap file (microsecond times, one link type)">
           PCAP
+        </Button>
+        <Button size="sm" variant="secondary" disabled={shown.length === 0} onClick={exportPcapng} title=".pcapng file for Wireshark (nanosecond times, interface names)">
+          PCAPNG
         </Button>
         <span className="mx-1 text-sm text-muted">·</span>
         <Button
@@ -998,7 +1055,8 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
                       e.preventDefault();
                       setRowMenu({ x: Math.min(e.clientX, window.innerWidth - 260), y: Math.min(e.clientY, window.innerHeight - 130), row: r });
                     }}
-                    className={`border-b border-border transition-colors duration-fast last:border-0 hover:bg-white/[0.05] ${copiedCell?.row === r.id ? "bg-accent-soft/20" : ""}`}
+                    aria-selected={inspectId === r.id}
+                    className={`border-b border-border transition-colors duration-fast last:border-0 hover:bg-white/[0.05] ${copiedCell?.row === r.id ? "bg-accent-soft/20" : ""} ${inspectId === r.id ? "bg-white/[0.08] shadow-[inset_3px_0_0_var(--color-accent)]" : ""}`}
                   >
                     {show("name") && (
                       <td className="max-w-[14rem] px-3 py-1.5">
@@ -1073,6 +1131,7 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
         </div>
       </Card>
       )}
+      {inspectId !== null && !ipsOpen && <HexInspector detail={detail} loading={detailBusy} error={detailError} onClose={closeInspector} />}
       {rowMenu && (() => {
         const r = rowMenu.row;
         const far = isLocalAddress(r.src) ? r.dst : r.src;
@@ -1089,6 +1148,17 @@ export function CaptureView({ filters, globalFilters = [], onToggle, onHideIsp, 
               }}
             >
               Copy row
+            </button>
+            <button
+              role="menuitem"
+              type="button"
+              className={item}
+              onClick={() => {
+                void inspectPacket(r.id);
+                setRowMenu(null);
+              }}
+            >
+              Inspect bytes (HEX)
             </button>
             <button
               role="menuitem"

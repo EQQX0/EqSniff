@@ -77,3 +77,9 @@ Account sign-in, cloud sync and the shared library run in the window's TypeScrip
 - `desktop/src-tauri/src/lib.rs`: registers the commands for the window; the `cli` cargo feature turns on the headless mode.
 - `desktop/src/views/CaptureView.tsx`, `CaptureIps.tsx`: the same IP list logic in the window (`listBook`, `ACTIVE_EACH_WAY`, `ONLINE_WITHIN`). Keep the numbers in `cli.rs` in step.
 - `HANDOFF.md`: current status. `README.md`: project map.
+
+## Capture files and packet bytes
+
+- `import_pcap {data}` takes base64 of a `.pcap` or `.pcapng` file. The result has `format`, `interfaces`, `info` and `notes` (what the file held that was not kept; report these to the user).
+- `export_pcap {ids}` and `export_pcapng {ids}` return base64 files for the saved packets with those ids.
+- `packet_detail {id, hexDump?}` returns the saved bytes (`data`, base64), `wireLen`, `capLen`, link and interface, `fields` (name, value, `start`, `len`, `depth`; offsets are in the frame) and, with `hexDump: true`, a text dump.

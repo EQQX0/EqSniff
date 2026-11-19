@@ -41,7 +41,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "Can I save a capture and open it in Wireshark?",
-    a: "Yes. The PCAP button saves the packets in the table as a standard .pcap file. Open capture file loads a .pcap file (up to 5,000 packets are shown, from the first 32 MB). Files saved as pcapng must be converted to classic pcap first. Opening a file replaces the table, and its packets can be exported again but not replayed.",
+    a: "Yes. The PCAP and PCAPNG buttons save the packets in the table as standard capture files that Wireshark opens. Open capture file loads .pcap and .pcapng files (up to 5,000 packets are shown, from the first 32 MB). Anything in a file the app does not keep is listed under the table. Opening a file replaces the table, and its packets can be exported again but not replayed. To see a packet byte by byte, right-click it and choose Inspect bytes (HEX).",
   },
   {
     q: "How do I copy packets?",

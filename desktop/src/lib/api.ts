@@ -127,12 +127,45 @@ export interface ScanPoll {
   hosts: ScanHost[];
 }
 
+export interface CaptureInterface {
+  link: number;
+  linkName: string;
+  name: string | null;
+  description: string | null;
+  snaplen: number;
+  /** False when the app cannot decode this link type, so its packets are not shown. */
+  supported: boolean;
+}
+
 export interface ImportResult {
   rows: PacketRow[];
   /** Records in the file. */
   totalRecords: number;
   /** Records looked at. Less than totalRecords only when the file was really cut short. */
   readRecords: number;
+  format: "pcap" | "pcapng";
+  interfaces: CaptureInterface[];
+  /** What the file says about itself (program and system that wrote it). */
+  info: string[];
+  /** What was not kept or could not be read. Always show these to the person. */
+  notes: string[];
+}
+
+export interface PacketDetail {
+  id: number;
+  time: number;
+  wireLen: number;
+  capLen: number;
+  /** The capture holds fewer bytes than the packet had on the wire. */
+  truncated: boolean;
+  link: number;
+  linkName: string;
+  iface: number;
+  ifaceName: string | null;
+  /** The captured bytes, exactly as saved, as base64. */
+  data: string;
+  fields: { name: string; value: string; start: number; len: number; depth: number }[];
+  hexDump: string | null;
 }
 
 export interface Poll {
@@ -152,7 +185,9 @@ export const api = {
   saveFilters: (filters: unknown) => invoke<void>("save_filters", { filters }),
   replayPacket: (id: number) => invoke<string>("replay_packet", { id }),
   exportPcap: (ids: number[]) => invoke<string>("export_pcap", { ids }),
+  exportPcapng: (ids: number[]) => invoke<string>("export_pcapng", { ids }),
   importPcap: (data: string) => invoke<ImportResult>("import_pcap", { data }),
+  packetDetail: (id: number, hexDump = false) => invoke<PacketDetail>("packet_detail", { id, hexDump }),
   getStore: (name: string) => invoke<unknown>("get_store", { name }),
   saveStore: (name: string, value: unknown) => invoke<void>("save_store", { name, value }),
   scanStart: (target: string) => invoke<string>("scan_start", { target }),
